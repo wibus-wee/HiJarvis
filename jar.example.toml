@@ -40,6 +40,18 @@ host = "0.0.0.0"
 # Optional. HTTP bind port for the Slack health check server.
 port = 3000
 
+[platform.telegram]
+# Optional. Telegram bot token.
+bot_token = "123456:replace-me"
+# Optional. Restrict the bot to a fixed set of chat ids.
+allowed_chat_ids = [123456789]
+# Optional. Restrict the bot to a fixed set of Telegram usernames.
+allowed_usernames = ["wibus"]
+# Optional. HTTP bind host for the Telegram health check server.
+host = "0.0.0.0"
+# Optional. HTTP bind port for the Telegram health check server.
+port = 3001
+
 [logging]
 # Optional. Summary log verbosity: error, warn, info, or debug.
 level = "info"

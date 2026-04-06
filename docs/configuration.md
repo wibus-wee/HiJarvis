@@ -51,6 +51,13 @@ context_message_limit = 12
 host = "0.0.0.0"
 port = 3000
 
+[platform.telegram]
+bot_token = "123456:replace-me"
+allowed_chat_ids = [123456789]
+allowed_usernames = ["wibus"]
+host = "0.0.0.0"
+port = 3001
+
 [logging]
 level = "info"
 stderr = true
@@ -113,6 +120,24 @@ Slack gateway 现在默认优先读 `jar.toml` 里的 `[platform.slack]`。
 - `HOST`
 - `PORT`
 
+### `[platform.telegram]`
+
+- `bot_token`: Telegram bot token。
+- `allowed_chat_ids`: 可选 chat id allowlist。配置后，bot 只会处理这些 chat 的消息。
+- `allowed_usernames`: 可选 username allowlist。配置后，bot 只会处理这些发送者发来的消息。
+- `host`: Telegram health check HTTP 服务监听 host。默认：`"0.0.0.0"`。
+- `port`: Telegram health check HTTP 服务监听端口。默认：`3001`。
+
+Telegram gateway 默认使用 long polling，而不是 webhook。
+
+这些环境变量可以覆盖对应配置：
+
+- `TELEGRAM_BOT_TOKEN`
+- `JARVIS_TELEGRAM_ALLOWED_CHAT_IDS`
+- `JARVIS_TELEGRAM_ALLOWED_USERNAMES`
+- `JARVIS_TELEGRAM_HOST`
+- `JARVIS_TELEGRAM_PORT`
+
 ### `[logging]`
 
 - `level`: 运行摘要日志级别，可选 `error`、`warn`、`info`、`debug`。默认：`info`。
@@ -139,6 +164,7 @@ Slack gateway 现在默认优先读 `jar.toml` 里的 `[platform.slack]`。
 
 - `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-core` and wires it into the same core package.
 - `apps/jar-slack/src/slack-runtime.ts` reads `platform.slack`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
+- `apps/jar-telegram/src/telegram-runtime.ts` reads `platform.telegram`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
 - `packages/jar-core/src/session-executor.ts` emits session/tool summary logs without streaming every token delta.
@@ -155,7 +181,7 @@ Validation happens in two stages:
 
 1. Validate the top-level TOML shape.
 2. Validate the active provider config selected by `agent.provider`.
-3. Validate optional platform-specific tables such as `[platform.slack]`.
+3. Validate optional platform-specific tables such as `[platform.slack]` and `[platform.telegram]`.
 
 Common failure cases:
 

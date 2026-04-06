@@ -70,6 +70,7 @@ const redactPaths = [
   "platform.slack.botToken",
   "platform.slack.appToken",
   "platform.slack.signingSecret",
+  "platform.telegram.botToken",
 ];
 
 export const createLogger = (options: LoggerOptions = {}): Logger => {

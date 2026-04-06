@@ -8,7 +8,8 @@
 .
 ├── apps
 │   ├── jar-cli
-│   └── jar-slack
+│   ├── jar-slack
+│   └── jar-telegram
 ├── packages
 │   └── jar-core
 ```

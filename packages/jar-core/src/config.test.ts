@@ -147,6 +147,36 @@ port = 4318
   }
 });
 
+test("loadAgentConfig reads telegram platform config from jar.toml", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[platform.telegram]
+bot_token = "123456:test-token"
+allowed_chat_ids = [12345, "-1009876543210"]
+allowed_usernames = ["Wibus", "@JarvisUser"]
+host = "127.0.0.1"
+port = 4319
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.platform.telegram, {
+      botToken: "123456:test-token",
+      allowedChatIds: ["12345", "-1009876543210"],
+      allowedUsernames: ["wibus", "jarvisuser"],
+      host: "127.0.0.1",
+      port: 4319,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
 test("loadAgentConfig applies default logging config values", async () => {
   const { provider, model } = pickProviderAndModel();
   const configPath = await writeConfigFile(`

@@ -1,0 +1,25 @@
+{
+  "name": "@hijarvis/jar-telegram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "jar-telegram": "./dist/main.js"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "check": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@grammyjs/auto-retry": "^2.0.2",
+    "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/stream": "^1.0.1",
+    "@hijarvis/jar-core": "workspace:*",
+    "grammy": "^1.42.0",
+    "tsx": "^4.21.0",
+    "zod": "^4.3.6"
+  }
+}

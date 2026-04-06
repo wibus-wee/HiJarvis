@@ -46,7 +46,14 @@ const rawConfigSchema = z.object({
       host: nonEmptyString.optional(),
       port: z.number().int().positive().optional(),
     }).strict().default({}),
-  }).strict().default({ slack: {} }),
+    telegram: z.object({
+      bot_token: nonEmptyString.optional(),
+      allowed_chat_ids: z.array(z.union([z.number().int(), nonEmptyString])).optional(),
+      allowed_usernames: z.array(nonEmptyString).optional(),
+      host: nonEmptyString.optional(),
+      port: z.number().int().positive().optional(),
+    }).strict().default({}),
+  }).strict().default({ slack: {}, telegram: {} }),
   logging: z.object({
     level: z.enum(logLevels).optional(),
     stderr: z.boolean().optional(),
@@ -85,6 +92,13 @@ export type LoadedAgentConfig = {
       signingSecret?: string;
       contextLookbackMinutes: number;
       contextMessageLimit: number;
+      host?: string;
+      port?: number;
+    };
+    telegram: {
+      botToken?: string;
+      allowedChatIds?: string[];
+      allowedUsernames?: string[];
       host?: string;
       port?: number;
     };
@@ -147,6 +161,31 @@ export const loadAgentConfig = async (
         ...(parsedConfig.platform.slack.port === undefined
           ? {}
           : { port: parsedConfig.platform.slack.port }),
+      },
+      telegram: {
+        ...(parsedConfig.platform.telegram.bot_token === undefined
+          ? {}
+          : { botToken: parsedConfig.platform.telegram.bot_token }),
+        ...(parsedConfig.platform.telegram.allowed_chat_ids === undefined
+          ? {}
+          : {
+            allowedChatIds: parsedConfig.platform.telegram.allowed_chat_ids.map((value) =>
+              String(value)
+            ),
+          }),
+        ...(parsedConfig.platform.telegram.allowed_usernames === undefined
+          ? {}
+          : {
+            allowedUsernames: parsedConfig.platform.telegram.allowed_usernames.map((value) =>
+              value.replace(/^@/, "").toLowerCase()
+            ),
+          }),
+        ...(parsedConfig.platform.telegram.host === undefined
+          ? {}
+          : { host: parsedConfig.platform.telegram.host }),
+        ...(parsedConfig.platform.telegram.port === undefined
+          ? {}
+          : { port: parsedConfig.platform.telegram.port }),
       },
     },
     runtime: {

@@ -8,6 +8,7 @@ Jar 现在支持两类 runtime surface：
 
 1. `apps/jar-cli`：one-shot CLI 和 Ink REPL。
 2. `apps/jar-slack`：基于 Slack Socket Mode 的 Slack gateway。
+3. `apps/jar-telegram`：基于 grammY long polling 的 Telegram gateway。
 
 CLI invocation 仍然保持原有流程：
 
@@ -33,6 +34,18 @@ Slack gateway 的流程不同：
 8. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
 9. Emits summary logs through `packages/jar-core/src/logger.ts` so the request path is readable without replaying raw events.
 
+Telegram gateway 则是：
+
+1. Starts an HTTP health server in `apps/jar-telegram/src/main.ts`.
+2. Loads the same `jar.toml` through `packages/jar-core/src/config.ts`.
+3. Starts a grammY bot in long polling mode.
+4. Handles all private chat messages, plus group messages that explicitly mention the bot or reply to a bot message.
+5. Coalesces rapid follow-up messages per chat/topic in memory so long-running LLM turns do not interleave.
+6. Builds a Telegram prompt from the current message, optional reply context, and any skipped messages.
+7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
+8. Streams assistant text back to Telegram through `@grammyjs/stream`.
+9. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
+
 ## Entrypoint
 
 `apps/jar-cli/src/main.ts` is the CLI entrypoint.
@@ -55,6 +68,7 @@ The workspace packages are split as follows:
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
 - `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
+- `apps/jar-telegram`: grammY-based Telegram gateway, trigger filtering, queue coalescing, and streaming replies
 
 For local development, `apps/jar-cli/package.json` runs `tsx` with the workspace-level `tsconfig.workspace.json`. That ensures cross-package source imports such as `packages/jar-repl-ink/src/repl.tsx` are matched by a single `include` set and receive the expected JSX runtime settings.
 
@@ -179,6 +193,7 @@ Jar is intentionally minimal right now:
 
 - default CLI runs a single prompt per process (multi-turn is available in REPL/session mode)
 - Slack transport exists, but only as a dedicated Socket Mode app in `apps/jar-slack`
+- Telegram transport exists as a dedicated grammY long-polling app in `apps/jar-telegram`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven; there is no persisted retry history
 - no prompt compaction or transcript pruning
