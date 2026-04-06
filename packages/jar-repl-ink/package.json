@@ -1,0 +1,30 @@
+{
+  "name": "@hijarvis/jar-repl-ink",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "check": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@inkjs/ui": "^2.0.0",
+    "@mariozechner/pi-agent-core": "^0.65.2",
+    "@mariozechner/pi-ai": "^0.65.2",
+    "cli-truncate": "^6.0.0",
+    "ink": "^6.8.0",
+    "react": "^19.2.4",
+    "wrap-ansi": "^10.0.0"
+  }
+}

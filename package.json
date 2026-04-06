@@ -1,0 +1,19 @@
+{
+  "name": "HiJarvis",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HiJarvis workspace",
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "check": "pnpm -r --if-present check",
+    "test": "pnpm -r --if-present test",
+    "dev": "pnpm --filter @hijarvis/jar-cli dev"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "devDependencies": {
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.2.14",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}

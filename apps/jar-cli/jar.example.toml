@@ -1,0 +1,33 @@
+[agent]
+provider = "openai"
+model = "gpt-4o-mini"
+system_prompt = """
+You are Jarvis, a concise local coding assistant.
+Use tools when they materially improve accuracy.
+"""
+thinking_level = "minimal"
+# Optional. Request timeout for each prompt execution attempt.
+request_timeout_ms = 120000
+# Optional. Number of retries after the first failed attempt.
+retry_attempts = 5
+# Optional. Backoff starts at this delay and grows by multiplier.
+retry_initial_delay_ms = 1000
+retry_backoff_multiplier = 2
+# Optional. Upper bound for retry wait and provider-suggested retry delays.
+retry_max_delay_ms = 30000
+
+[provider.openai]
+# Optional. When omitted, pi-ai falls back to provider environment variables.
+api_key = "replace-me"
+# Optional. Useful for OpenAI-compatible gateways, local models, or proxies.
+base_url = "https://api.openai.com/v1"
+
+[tools]
+workspace_root = "."
+max_file_bytes = 32768
+command_timeout_ms = 30000
+max_command_output_bytes = 32768
+
+[sessions]
+# Optional. Session storage root, relative to the config file when not absolute.
+root_dir = ".jar/sessions"
