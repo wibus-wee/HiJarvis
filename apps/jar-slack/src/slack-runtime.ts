@@ -56,6 +56,8 @@ type SlackGatewayIdentity = {
   botId?: string;
 };
 
+type SlackEventType = "app_mention" | "message";
+
 type SlackEventMessage = {
   channel: string;
   channel_type?: string;
@@ -73,6 +75,47 @@ type SlackMessageSeed = {
   authorId: string;
   sentAt: Date;
 };
+
+type NormalizedSlackEvent = {
+  eventType: SlackEventType;
+  eventId: string | undefined;
+  channel: string;
+  channelType: string | undefined;
+  threadTs: string;
+  threadKey: string;
+  messageKey: string;
+  text: string;
+  user: string;
+  hasBotMention: boolean;
+  isDirectMessage: boolean;
+  sentAt: Date;
+  message: SlackMessageSeed;
+};
+
+type SlackTriggerDecision =
+  | {
+    action: "ignore";
+    reason: "thread_not_subscribed";
+    threadKey: string;
+    threadTs: string;
+    channel: string;
+    messageKey: string;
+    isDirectMessage: boolean;
+    hasBotMention: boolean;
+  }
+  | {
+    action: "enqueue";
+    queueKind: QueueEntry["kind"];
+    threadKey: string;
+    threadTs: string;
+    channel: string;
+    messageKey: string;
+    isDirectMessage: boolean;
+    hasBotMention: boolean;
+    alreadySubscribed: boolean;
+    shouldSubscribe: boolean;
+    message: SlackMessageSeed;
+  };
 
 type QueueEntry = {
   kind: "new_mention" | "subscribed";
@@ -97,6 +140,7 @@ type SlackGatewayState = {
   queues: Map<string, ThreadQueueState>;
   userCache: Map<string, string>;
   seenEvents: Map<string, number>;
+  seenMessages: Map<string, number>;
 };
 
 const defaultObservedContextLimits: ObservedContextLimits = {
@@ -109,6 +153,7 @@ const defaultPort = 3000;
 const queueEntryTtlMs = 60_000;
 const maxQueueSize = 20;
 const seenEventTtlMs = 5 * 60_000;
+const seenMessageTtlMs = 5 * 60_000;
 
 export const startSlackGateway = async (
   options: SlackGatewayRuntimeOptions,
@@ -150,6 +195,7 @@ export const startSlackGateway = async (
     queues: new Map<string, ThreadQueueState>(),
     userCache: new Map<string, string>(),
     seenEvents: new Map<string, number>(),
+    seenMessages: new Map<string, number>(),
   };
 
   logger.info("slack.gateway_initialized", {
@@ -235,116 +281,106 @@ const resolveBotIdentity = async (app: App): Promise<SlackGatewayIdentity> => {
 
 const registerSlackHandlers = (app: App, state: SlackGatewayState): void => {
   app.event("app_mention", async (args) => {
-    const event = args.event as SlackEventMessage;
-    const body = args.body as { event_id?: string } | undefined;
-
-    if (!isSlackMessageEvent(event)) {
-      return;
-    }
-
-    if (isDuplicateEvent(body?.event_id, state)) {
-      state.logger.debug("slack.event_deduplicated", {
-        eventType: "app_mention",
-        eventId: body?.event_id,
-      });
-      return;
-    }
-
-    const normalized = normalizeSlackMessageSeed(event, state.identity.botUserId);
-    if (!normalized) {
-      return;
-    }
-
-    const threadTs = event.thread_ts ?? event.ts;
-    const threadKey = buildThreadKey(event.channel, threadTs);
-    const isSubscribed = state.subscriptions.has(threadKey);
-    state.subscriptions.add(threadKey);
-
-    state.logger.info("slack.event_received", {
+    await processSlackEvent({
       eventType: "app_mention",
-      eventId: body?.event_id,
-      threadKey,
-      channel: event.channel,
-      threadTs,
-      isSubscribed,
-      messageTs: normalized.id,
-      textChars: normalized.text.length,
-    });
-
-    enqueueMessage(state, threadKey, {
-      kind: isSubscribed ? "subscribed" : "new_mention",
-      channel: event.channel,
-      threadTs,
-      message: normalized,
-      receivedAt: Date.now(),
+      event: args.event as SlackEventMessage,
+      eventId: (args.body as { event_id?: string } | undefined)?.event_id,
+      state,
     });
   });
 
   app.event("message", async (args) => {
-    const event = args.event as SlackEventMessage;
-    const body = args.body as { event_id?: string } | undefined;
-
-    if (!isSlackMessageEvent(event)) {
-      return;
-    }
-
-    if (isDuplicateEvent(body?.event_id, state)) {
-      state.logger.debug("slack.event_deduplicated", {
-        eventType: "message",
-        eventId: body?.event_id,
-      });
-      return;
-    }
-
-    if (event.subtype || event.bot_id || event.user === state.identity.botUserId) {
-      return;
-    }
-
-    if (!event.user || !event.text) {
-      return;
-    }
-
-    const isDirectMessage = event.channel_type === "im";
-    const threadTs = event.thread_ts ?? event.ts;
-    const threadKey = buildThreadKey(event.channel, threadTs);
-
-    if (!isDirectMessage && !state.subscriptions.has(threadKey)) {
-      state.logger.debug("slack.event_ignored", {
-        eventType: "message",
-        reason: "thread_not_subscribed",
-        threadKey,
-        channel: event.channel,
-      });
-      return;
-    }
-
-    if (isDirectMessage) {
-      state.subscriptions.add(threadKey);
-    }
-
-    const normalized = normalizeSlackMessageSeed(event, state.identity.botUserId);
-    if (!normalized) {
-      return;
-    }
-
-    state.logger.info("slack.event_received", {
+    await processSlackEvent({
       eventType: "message",
-      eventId: body?.event_id,
-      threadKey,
-      channel: event.channel,
-      threadTs,
-      isDirectMessage,
-      messageTs: normalized.id,
-      textChars: normalized.text.length,
+      event: args.event as SlackEventMessage,
+      eventId: (args.body as { event_id?: string } | undefined)?.event_id,
+      state,
     });
+  });
+};
 
-    enqueueMessage(state, threadKey, {
-      kind: "subscribed",
-      channel: event.channel,
-      threadTs,
-      message: normalized,
-      receivedAt: Date.now(),
+const processSlackEvent = async ({
+  eventType,
+  event,
+  eventId,
+  state,
+}: {
+  eventType: SlackEventType;
+  event: SlackEventMessage;
+  eventId: string | undefined;
+  state: SlackGatewayState;
+}): Promise<void> => {
+  if (!isSlackMessageEvent(event)) {
+    return;
+  }
+
+  if (isDuplicateEvent(eventId, state)) {
+    state.logger.debug("slack.event_deduplicated", {
+      eventType,
+      eventId,
     });
+    return;
+  }
+
+  const normalized = normalizeSlackEvent(eventType, event, state.identity.botUserId, eventId);
+  if (!normalized) {
+    return;
+  }
+
+  const decision = classifySlackTrigger(normalized, state.subscriptions);
+  if (decision.action === "ignore") {
+    state.logger.debug("slack.event_ignored", {
+      eventType: normalized.eventType,
+      eventId: normalized.eventId,
+      reason: decision.reason,
+      threadKey: decision.threadKey,
+      channel: decision.channel,
+      threadTs: decision.threadTs,
+      isDirectMessage: decision.isDirectMessage,
+      hasBotMention: decision.hasBotMention,
+      messageTs: normalized.message.id,
+    });
+    return;
+  }
+
+  if (isDuplicateMessage(decision.messageKey, state)) {
+    state.logger.debug("slack.message_deduplicated", {
+      eventType: normalized.eventType,
+      eventId: normalized.eventId,
+      threadKey: decision.threadKey,
+      channel: decision.channel,
+      threadTs: decision.threadTs,
+      messageKey: decision.messageKey,
+      messageTs: normalized.message.id,
+    });
+    return;
+  }
+
+  if (decision.shouldSubscribe) {
+    state.subscriptions.add(decision.threadKey);
+  }
+
+  state.logger.info("slack.event_received", {
+    eventType: normalized.eventType,
+    eventId: normalized.eventId,
+    trigger: decision.queueKind,
+    threadKey: decision.threadKey,
+    channel: decision.channel,
+    threadTs: decision.threadTs,
+    isDirectMessage: decision.isDirectMessage,
+    hasBotMention: decision.hasBotMention,
+    alreadySubscribed: decision.alreadySubscribed,
+    shouldSubscribe: decision.shouldSubscribe,
+    messageTs: normalized.message.id,
+    textChars: normalized.message.text.length,
+  });
+
+  enqueueMessage(state, decision.threadKey, {
+    kind: decision.queueKind,
+    channel: decision.channel,
+    threadTs: decision.threadTs,
+    message: decision.message,
+    receivedAt: Date.now(),
   });
 };
 
@@ -612,10 +648,16 @@ const resolveUserName = async (
   }
 };
 
-const normalizeSlackMessageSeed = (
+export const normalizeSlackEvent = (
+  eventType: SlackEventType,
   event: SlackEventMessage,
   botUserId: string,
-): SlackMessageSeed | null => {
+  eventId: string | undefined,
+): NormalizedSlackEvent | null => {
+  if (event.subtype || event.bot_id || event.user === botUserId) {
+    return null;
+  }
+
   if (!event.user || !event.text) {
     return null;
   }
@@ -624,14 +666,97 @@ const normalizeSlackMessageSeed = (
   if (!Number.isFinite(sentAtMs)) {
     return null;
   }
+
+  const threadTs = event.thread_ts ?? event.ts;
   const sentAt = new Date(sentAtMs);
   const text = stripBotMention(event.text, botUserId);
-
-  return {
+  const message = {
     id: event.ts,
     text,
     authorId: event.user,
     sentAt,
+  };
+
+  return {
+    eventType,
+    eventId,
+    channel: event.channel,
+    channelType: event.channel_type,
+    threadTs,
+    threadKey: buildThreadKey(event.channel, threadTs),
+    messageKey: buildMessageKey(event.channel, event.ts),
+    text,
+    user: event.user,
+    hasBotMention: includesBotMention(event.text, botUserId),
+    isDirectMessage: event.channel_type === "im",
+    sentAt,
+    message,
+  };
+};
+
+export const classifySlackTrigger = (
+  event: NormalizedSlackEvent,
+  subscriptions: ReadonlySet<string>,
+): SlackTriggerDecision => {
+  const alreadySubscribed = subscriptions.has(event.threadKey);
+
+  if (event.isDirectMessage) {
+    return {
+      action: "enqueue",
+      queueKind: "subscribed",
+      threadKey: event.threadKey,
+      threadTs: event.threadTs,
+      channel: event.channel,
+      messageKey: event.messageKey,
+      isDirectMessage: true,
+      hasBotMention: event.hasBotMention,
+      alreadySubscribed,
+      shouldSubscribe: !alreadySubscribed,
+      message: event.message,
+    };
+  }
+
+  if (!alreadySubscribed) {
+    if (event.eventType === "app_mention") {
+      return {
+        action: "enqueue",
+        queueKind: "new_mention",
+        threadKey: event.threadKey,
+        threadTs: event.threadTs,
+        channel: event.channel,
+        messageKey: event.messageKey,
+        isDirectMessage: false,
+        hasBotMention: event.hasBotMention,
+        alreadySubscribed,
+        shouldSubscribe: true,
+        message: event.message,
+      };
+    }
+
+    return {
+      action: "ignore",
+      reason: "thread_not_subscribed",
+      threadKey: event.threadKey,
+      threadTs: event.threadTs,
+      channel: event.channel,
+      messageKey: event.messageKey,
+      isDirectMessage: false,
+      hasBotMention: event.hasBotMention,
+    };
+  }
+
+  return {
+    action: "enqueue",
+    queueKind: "subscribed",
+    threadKey: event.threadKey,
+    threadTs: event.threadTs,
+    channel: event.channel,
+    messageKey: event.messageKey,
+    isDirectMessage: false,
+    hasBotMention: event.hasBotMention,
+    alreadySubscribed,
+    shouldSubscribe: false,
+    message: event.message,
   };
 };
 
@@ -663,6 +788,10 @@ const materializeSkippedMessages = async (
 const stripBotMention = (text: string, botUserId: string): string => {
   const mention = `<@${botUserId}>`;
   return text.replace(mention, "").trim();
+};
+
+const includesBotMention = (text: string, botUserId: string): boolean => {
+  return text.includes(`<@${botUserId}>`);
 };
 
 const respondInSlackThread = async ({
@@ -755,6 +884,10 @@ const buildThreadKey = (channel: string, threadTs: string): string => {
   return `${channel}:${threadTs}`;
 };
 
+const buildMessageKey = (channel: string, messageTs: string): string => {
+  return `${channel}:${messageTs}`;
+};
+
 const isSlackMessageEvent = (event: unknown): event is SlackEventMessage => {
   if (!event || typeof event !== "object") {
     return false;
@@ -767,22 +900,37 @@ const isDuplicateEvent = (
   eventId: string | undefined,
   state: SlackGatewayState,
 ): boolean => {
-  if (!eventId) {
+  return hasSeenKey(state.seenEvents, eventId, seenEventTtlMs);
+};
+
+const isDuplicateMessage = (
+  messageKey: string,
+  state: SlackGatewayState,
+): boolean => {
+  return hasSeenKey(state.seenMessages, messageKey, seenMessageTtlMs);
+};
+
+export const hasSeenKey = (
+  store: Map<string, number>,
+  key: string | undefined,
+  ttlMs: number,
+  now = Date.now(),
+): boolean => {
+  if (!key) {
     return false;
   }
 
-  const now = Date.now();
-  for (const [id, timestamp] of state.seenEvents.entries()) {
-    if (now - timestamp > seenEventTtlMs) {
-      state.seenEvents.delete(id);
+  for (const [currentKey, timestamp] of store.entries()) {
+    if (now - timestamp > ttlMs) {
+      store.delete(currentKey);
     }
   }
 
-  if (state.seenEvents.has(eventId)) {
+  if (store.has(key)) {
     return true;
   }
 
-  state.seenEvents.set(eventId, now);
+  store.set(key, now);
   return false;
 };
 

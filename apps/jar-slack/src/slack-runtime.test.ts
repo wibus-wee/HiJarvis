@@ -8,6 +8,11 @@ import {
   formatQueuedMessagesBlock,
   type SlackMessage,
 } from "./slack-prompt.js";
+import {
+  classifySlackTrigger,
+  hasSeenKey,
+  normalizeSlackEvent,
+} from "./slack-runtime.js";
 
 const createMessage = (input: {
   id: string;
@@ -78,4 +83,132 @@ test("formatCurrentMessageBlock renders the active request", () => {
 
   assert.match(block, /Current user request:/);
   assert.match(block, /Wibus: Summarize what I said above\./);
+});
+
+test("normalizeSlackEvent strips bot mentions and derives stable keys", () => {
+  const normalized = normalizeSlackEvent(
+    "app_mention",
+    {
+      channel: "C123",
+      ts: "1743931234.56789",
+      text: "<@U_BOT> summarize this thread",
+      user: "U_WIBUS",
+    },
+    "U_BOT",
+    "Ev123",
+  );
+
+  assert.ok(normalized);
+  assert.equal(normalized.text, "summarize this thread");
+  assert.equal(normalized.hasBotMention, true);
+  assert.equal(normalized.threadKey, "C123:1743931234.56789");
+  assert.equal(normalized.messageKey, "C123:1743931234.56789");
+  assert.equal(normalized.eventId, "Ev123");
+});
+
+test("classifySlackTrigger opens a new subscription for an unsubscribed mention", () => {
+  const normalized = normalizeSlackEvent(
+    "app_mention",
+    {
+      channel: "C123",
+      ts: "1743931234.56789",
+      text: "<@U_BOT> take a look",
+      user: "U_WIBUS",
+    },
+    "U_BOT",
+    undefined,
+  );
+
+  assert.ok(normalized);
+  const decision = classifySlackTrigger(normalized, new Set<string>());
+  assert.equal(decision.action, "enqueue");
+  if (decision.action !== "enqueue") {
+    throw new Error("Expected enqueue decision");
+  }
+
+  assert.equal(decision.queueKind, "new_mention");
+  assert.equal(decision.shouldSubscribe, true);
+  assert.equal(decision.alreadySubscribed, false);
+});
+
+test("classifySlackTrigger treats later thread mentions as subscribed follow-ups", () => {
+  const normalized = normalizeSlackEvent(
+    "app_mention",
+    {
+      channel: "C123",
+      thread_ts: "1743931234.56789",
+      ts: "1743931240.00001",
+      text: "<@U_BOT> one more thing",
+      user: "U_WIBUS",
+    },
+    "U_BOT",
+    undefined,
+  );
+
+  assert.ok(normalized);
+  const decision = classifySlackTrigger(
+    normalized,
+    new Set<string>(["C123:1743931234.56789"]),
+  );
+  assert.equal(decision.action, "enqueue");
+  if (decision.action !== "enqueue") {
+    throw new Error("Expected enqueue decision");
+  }
+
+  assert.equal(decision.queueKind, "subscribed");
+  assert.equal(decision.shouldSubscribe, false);
+  assert.equal(decision.alreadySubscribed, true);
+});
+
+test("message-level dedupe blocks the same Slack message across event types", () => {
+  const appMention = normalizeSlackEvent(
+    "app_mention",
+    {
+      channel: "C123",
+      thread_ts: "1743931234.56789",
+      ts: "1743931240.00001",
+      text: "<@U_BOT> one more thing",
+      user: "U_WIBUS",
+    },
+    "U_BOT",
+    "EvMention",
+  );
+  const messageEvent = normalizeSlackEvent(
+    "message",
+    {
+      channel: "C123",
+      thread_ts: "1743931234.56789",
+      ts: "1743931240.00001",
+      text: "<@U_BOT> one more thing",
+      user: "U_WIBUS",
+    },
+    "U_BOT",
+    "EvMessage",
+  );
+
+  assert.ok(appMention);
+  assert.ok(messageEvent);
+
+  const subscriptions = new Set<string>(["C123:1743931234.56789"]);
+  const firstDecision = classifySlackTrigger(appMention, subscriptions);
+  const secondDecision = classifySlackTrigger(messageEvent, subscriptions);
+
+  assert.equal(firstDecision.action, "enqueue");
+  assert.equal(secondDecision.action, "enqueue");
+  if (firstDecision.action !== "enqueue" || secondDecision.action !== "enqueue") {
+    throw new Error("Expected both decisions to enqueue before message dedupe");
+  }
+
+  const seenMessages = new Map<string, number>();
+  assert.equal(hasSeenKey(seenMessages, firstDecision.messageKey, 60_000, 0), false);
+  assert.equal(hasSeenKey(seenMessages, secondDecision.messageKey, 60_000, 1), true);
+});
+
+test("hasSeenKey expires old entries before admitting a new key", () => {
+  const seen = new Map<string, number>();
+
+  assert.equal(hasSeenKey(seen, "C123:1", 10, 0), false);
+  assert.equal(hasSeenKey(seen, "C123:1", 10, 5), true);
+  assert.equal(hasSeenKey(seen, "C123:2", 10, 15), false);
+  assert.deepEqual([...seen.keys()], ["C123:2"]);
 });
