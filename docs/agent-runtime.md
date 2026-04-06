@@ -185,7 +185,7 @@ Errors can come from several layers:
 
 `apps/jar-cli/src/main.ts` catches the final error, writes the message to stderr, and sets a non-zero exit code.
 
-`packages/jar-core/src/prompt-executor.ts` classifies failures into categories (`timeout`, `rate_limit`, `network`, `auth`, `input`, `tool`, `aborted`, `unknown`) and retries retryable failures using exponential backoff.
+`packages/jar-core/src/prompt-executor.ts` classifies failures into categories (`timeout`, `rate_limit`, `network`, `auth`, `input`, `tool`, `aborted`, `unknown`) and retries retryable failures using exponential backoff. Upstream `5xx` responses, including HTML error pages returned by reverse proxies such as Cloudflare, are treated as retryable `network` failures rather than terminal `input` errors.
 
 ## Current Boundaries
 

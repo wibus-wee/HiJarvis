@@ -45,6 +45,25 @@ test("classifyPromptFailure detects retryable and non-retryable categories", () 
   assert.equal(classifyPromptFailure("Something odd happened", false).category, "unknown");
 });
 
+test("classifyPromptFailure treats upstream 5xx responses as retryable network failures", () => {
+  const upstreamHtmlError = `521 <!DOCTYPE html>
+<html>
+  <head><title>Web server is down</title></head>
+  <body>Cloudflare host error</body>
+</html>`;
+
+  assert.deepEqual(classifyPromptFailure(upstreamHtmlError, false), {
+    category: "network",
+    retryable: true,
+    message: upstreamHtmlError,
+  });
+
+  assert.equal(
+    classifyPromptFailure("HTTP 500 internal server error", false).category,
+    "network",
+  );
+});
+
 test("executePromptWithPolicy retries transient failures and then succeeds", async () => {
   let promptCalls = 0;
   const logs: string[] = [];

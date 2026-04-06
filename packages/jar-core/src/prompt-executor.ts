@@ -136,7 +136,12 @@ export const classifyPromptFailure = (
       "service unavailable",
       "gateway timeout",
       "bad gateway",
+      "web server is down",
+      "host error",
+      "origin error",
+      "cloudflare",
     ])
+    || hasRetryableServerStatus(normalized)
   ) {
     return {
       category: "network",
@@ -204,6 +209,10 @@ export const classifyPromptFailure = (
     retryable: true,
     message,
   };
+};
+
+const hasRetryableServerStatus = (normalizedMessage: string): boolean => {
+  return /\b5\d{2}\b/.test(normalizedMessage);
 };
 
 const runPromptAttempt = async (
