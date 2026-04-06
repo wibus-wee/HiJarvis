@@ -23,15 +23,12 @@ importers:
 
   apps/jar-cli:
     dependencies:
-      '@hijarvis/jar-node':
+      '@hijarvis/jar-core':
         specifier: workspace:*
-        version: link:../../packages/jar-node
+        version: link:../../packages/jar-core
       '@hijarvis/jar-repl-ink':
         specifier: workspace:*
         version: link:../../packages/jar-repl-ink
-      '@hijarvis/jar-runtime':
-        specifier: workspace:*
-        version: link:../../packages/jar-runtime
       '@mariozechner/pi-agent-core':
         specifier: ^0.65.2
         version: 0.65.2(ws@8.20.0)(zod@4.3.6)
@@ -42,11 +39,8 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
 
-  packages/jar-node:
+  packages/jar-core:
     dependencies:
-      '@hijarvis/jar-runtime':
-        specifier: workspace:*
-        version: link:../jar-runtime
       '@mariozechner/pi-agent-core':
         specifier: ^0.65.2
         version: 0.65.2(ws@8.20.0)(zod@4.3.6)
@@ -86,15 +80,6 @@ importers:
       wrap-ansi:
         specifier: ^10.0.0
         version: 10.0.0
-
-  packages/jar-runtime:
-    dependencies:
-      '@mariozechner/pi-agent-core':
-        specifier: ^0.65.2
-        version: 0.65.2(ws@8.20.0)(zod@4.3.6)
-      '@mariozechner/pi-ai':
-        specifier: ^0.65.2
-        version: 0.65.2(ws@8.20.0)(zod@4.3.6)
 
 packages:
 

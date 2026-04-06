@@ -7,19 +7,19 @@
 ```bash
 apps/jar-cli/src/main.ts - CLI entrypoint and workspace wiring.
 apps/jar-cli/src/render-agent-event.ts - One-shot stdout/stderr event renderer for the CLI adapter.
-packages/jar-runtime/src/runtime.ts - Agent runtime assembly and model resolution.
-packages/jar-runtime/src/prompt-executor.ts - Shared prompt execution policy (timeout, retry/backoff, and failure classification).
-packages/jar-node/src/config.ts - TOML config loader built on smol-toml + zod.
-packages/jar-node/src/tools.ts - Tool aggregation entrypoint that registers the local tool set.
-packages/jar-node/src/session-store.ts - JSONL transcript + snapshot session persistence.
-packages/jar-node/src/tools/shared.ts - Shared tool option types and workspace path confinement.
-packages/jar-node/src/tools/file-tools.ts - read_file and write_file implementations.
-packages/jar-node/src/tools/patch-tool.ts - apply_patch parser, patch applier, and tool implementation.
-packages/jar-node/src/tools/bash-tool.ts - bash tool implementation.
+packages/jar-core/src/runtime.ts - Agent runtime assembly and model resolution.
+packages/jar-core/src/prompt-executor.ts - Shared prompt execution policy (timeout, retry/backoff, and failure classification).
+packages/jar-core/src/config.ts - TOML config loader built on smol-toml + zod.
+packages/jar-core/src/tools.ts - Tool aggregation entrypoint that registers the local tool set.
+packages/jar-core/src/session-store.ts - JSONL transcript + snapshot session persistence.
+packages/jar-core/src/tools/shared.ts - Shared tool option types and workspace path confinement.
+packages/jar-core/src/tools/file-tools.ts - read_file and write_file implementations.
+packages/jar-core/src/tools/patch-tool.ts - apply_patch parser, patch applier, and tool implementation.
+packages/jar-core/src/tools/bash-tool.ts - bash tool implementation.
 packages/jar-repl-ink/src/repl.tsx - Ink-based interactive REPL/TUI for multi-turn sessions.
 packages/jar-repl-ink/src/tui/format.ts - Width-aware wrapping and truncation helpers for TUI panels.
 packages/jar-repl-ink/src/tui/state.ts - TUI state reducer that normalizes agent events into transcript/tool/diagnostic panels.
-jar.example.toml - Canonical config example. Keep this aligned with packages/jar-node/src/config.ts whenever config fields change.
+jar.example.toml - Canonical config example. Keep this aligned with packages/jar-core/src/config.ts whenever config fields change.
 ```
 
 ## Config Layout
@@ -56,7 +56,7 @@ Notes:
 
 - `agent.provider` selects which `provider.<name>` table is used at runtime.
 - Keep provider-specific fields inside `provider.<name>`, not a flat `[provider]` table.
-- If you change config semantics, update both `jar.example.toml` and `packages/jar-node/src/config.ts` in the same patch.
+- If you change config semantics, update both `jar.example.toml` and `packages/jar-core/src/config.ts` in the same patch.
 
 ## Documentation
 

@@ -1,6 +1,6 @@
 # Tools
 
-This page documents the built-in tools registered in `packages/jar-node/src/tools.ts`.
+This page documents the built-in tools registered in `packages/jar-core/src/tools.ts`.
 
 ## Registration
 
@@ -15,16 +15,16 @@ The tool list is built in `createTools()` and passed into the agent during start
 
 Implementation is now split by responsibility:
 
-- `packages/jar-node/src/tools.ts`: tool aggregation entrypoint
-- `packages/jar-node/src/tools/shared.ts`: shared option types and workspace path confinement
-- `packages/jar-node/src/tools/file-tools.ts`: `read_file` and `write_file`
-- `packages/jar-node/src/tools/patch-tool.ts`: `apply_patch`, patch parsing, and patch application
-- `packages/jar-node/src/tools/bash-tool.ts`: `bash`
+- `packages/jar-core/src/tools.ts`: tool aggregation entrypoint
+- `packages/jar-core/src/tools/shared.ts`: shared option types and workspace path confinement
+- `packages/jar-core/src/tools/file-tools.ts`: `read_file` and `write_file`
+- `packages/jar-core/src/tools/patch-tool.ts`: `apply_patch`, patch parsing, and patch application
+- `packages/jar-core/src/tools/bash-tool.ts`: `bash`
 
 The path confinement and patch parsing helpers also have targeted tests in:
 
-- `packages/jar-node/src/tools/shared.test.ts`
-- `packages/jar-node/src/tools/patch-tool.test.ts`
+- `packages/jar-core/src/tools/shared.test.ts`
+- `packages/jar-core/src/tools/patch-tool.test.ts`
 
 ## Tool Design Notes
 
@@ -216,7 +216,7 @@ Tool details include:
 
 ## Safety Model
 
-`read_file`, `write_file`, and `apply_patch` enforce workspace confinement using the shared helper in `packages/jar-node/src/tools/shared.ts`.
+`read_file`, `write_file`, and `apply_patch` enforce workspace confinement using the shared helper in `packages/jar-core/src/tools/shared.ts`.
 
 Requests are rejected when the resolved path:
 

@@ -16,8 +16,7 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@hijarvis/jar-runtime": ["packages/jar-runtime/src/index.ts"],
-      "@hijarvis/jar-node": ["packages/jar-node/src/index.ts"],
+      "@hijarvis/jar-core": ["packages/jar-core/src/index.ts"],
       "@hijarvis/jar-repl-ink": ["packages/jar-repl-ink/src/index.ts"]
     }
   }

@@ -88,17 +88,17 @@ Inactive provider tables are allowed. They are ignored until selected by `agent.
 
 ## Runtime Notes
 
-- `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-node` and wires it into `@hijarvis/jar-runtime`.
-- `packages/jar-runtime/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
+- `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-core` and wires it into the same core package.
+- `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
-- `packages/jar-runtime/src/runtime.ts` forwards `agent.retry_max_delay_ms` to `Agent.maxRetryDelayMs`.
-- `packages/jar-runtime/src/runtime.ts` passes `provider.<name>.api_key` through `Agent.getApiKey()` for the active provider only.
-- Tool registration is handled in `packages/jar-node/src/tools.ts`.
+- `packages/jar-core/src/runtime.ts` forwards `agent.retry_max_delay_ms` to `Agent.maxRetryDelayMs`.
+- `packages/jar-core/src/runtime.ts` passes `provider.<name>.api_key` through `Agent.getApiKey()` for the active provider only.
+- Tool registration is handled in `packages/jar-core/src/tools.ts`.
 - Built-in tool behavior and restrictions are documented in [Tools](./tools.md).
 
 ## Validation
 
-Config parsing is implemented in `packages/jar-node/src/config.ts` using `smol-toml` for TOML parsing and `zod` for schema validation.
+Config parsing is implemented in `packages/jar-core/src/config.ts` using `smol-toml` for TOML parsing and `zod` for schema validation.
 
 Validation happens in two stages:
 
@@ -119,7 +119,7 @@ Common failure cases:
 
 When config semantics change, update these files in the same patch:
 
-- `packages/jar-node/src/config.ts`
+- `packages/jar-core/src/config.ts`
 - `jar.example.toml`
 - `docs/configuration.md`
 - `docs/README.md` when a new config-related document is added

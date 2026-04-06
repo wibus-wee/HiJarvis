@@ -1,11 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import type {
-  JarRuntimeOptions,
-  PromptExecutionPolicy,
-  RuntimeProviderConfig,
-} from "@hijarvis/jar-runtime";
+import type { PromptExecutionPolicy } from "./prompt-executor.js";
+import type { JarRuntimeOptions, RuntimeProviderConfig } from "./runtime.js";
 import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
 import { parse } from "smol-toml";
 import { z } from "zod";

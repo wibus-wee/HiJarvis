@@ -1,9 +1,8 @@
 import path from "node:path";
 import process from "node:process";
 
-import { createTools, listSessions, loadAgentConfig, openSession } from "@hijarvis/jar-node";
+import { createAgent, createTools, executePromptWithPolicy, listSessions, loadAgentConfig, openSession } from "@hijarvis/jar-core";
 import { runRepl } from "@hijarvis/jar-repl-ink";
-import { createAgent, executePromptWithPolicy } from "@hijarvis/jar-runtime";
 
 import { renderAgentEvent } from "./render-agent-event.js";
 

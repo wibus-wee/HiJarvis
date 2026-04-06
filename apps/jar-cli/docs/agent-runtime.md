@@ -8,13 +8,13 @@ Jar supports both one-shot runs and multi-turn sessions. Each invocation:
 
 1. Parses CLI arguments.
 2. Loads `apps/jar-cli/jar.toml`.
-3. Uses `packages/jar-runtime` to resolve a `pi-ai` model from `agent.provider` and `agent.model`.
+3. Uses `packages/jar-core` to resolve a `pi-ai` model from `agent.provider` and `agent.model`.
 4. Overrides the model `baseUrl` when `provider.<name>.base_url` is configured.
-5. Builds the tool list from `packages/jar-node/src/tools.ts`.
+5. Builds the tool list from `packages/jar-core/src/tools.ts`.
 6. Creates a `pi-agent-core` `Agent`.
-7. Executes prompts via `packages/jar-runtime/src/prompt-executor.ts`.
+7. Executes prompts via `packages/jar-core/src/prompt-executor.ts`.
 8. Either streams assistant text to stdout through the CLI adapter or renders the Ink TUI package (`--repl`).
-9. Optionally persists session transcripts and event logs through `packages/jar-node/src/session-store.ts`.
+9. Optionally persists session transcripts and event logs through `packages/jar-core/src/session-store.ts`.
 
 ## Entrypoint
 
@@ -24,18 +24,17 @@ Responsibilities:
 
 - parse `--config` / `-c`, `--repl`, `--session`, `--list-sessions`
 - read prompt text from argv or stdin
-- load validated config from `packages/jar-node/src/config.ts`
-- create the runtime `Agent` via `packages/jar-runtime/src/runtime.ts`
+- load validated config from `packages/jar-core/src/config.ts`
+- create the runtime `Agent` via `packages/jar-core/src/runtime.ts`
 - subscribe to runtime events
-- execute prompts through `packages/jar-runtime/src/prompt-executor.ts`
+- execute prompts through `packages/jar-core/src/prompt-executor.ts`
 - forward one-shot runtime output via `apps/jar-cli/src/render-agent-event.ts`
 - launch `@hijarvis/jar-repl-ink` when `--repl` is enabled
 - exit non-zero when the run fails
 
 The workspace packages are split as follows:
 
-- `packages/jar-runtime`: runtime assembly, model resolution, prompt execution policy
-- `packages/jar-node`: TOML config loading, tool registration, session persistence
+- `packages/jar-core`: runtime assembly, prompt execution policy, TOML config loading, tool registration, session persistence
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
 
@@ -60,7 +59,7 @@ Rules:
 
 ## Config Loading Flow
 
-`packages/jar-node/src/config.ts` performs two validation stages:
+`packages/jar-core/src/config.ts` performs two validation stages:
 
 1. Parse TOML with `smol-toml`.
 2. Validate structure with `zod`.
@@ -87,12 +86,12 @@ That keeps provider/model metadata aligned with `pi-ai` while still allowing cus
 
 ## Agent Construction
 
-`packages/jar-runtime/src/runtime.ts` currently creates a single `pi-agent-core` `Agent` instance per run with:
+`packages/jar-core/src/runtime.ts` currently creates a single `pi-agent-core` `Agent` instance per run with:
 
 - `systemPrompt`
 - resolved `model`
 - `thinkingLevel`
-- built-in tools from `packages/jar-node/src/tools.ts`
+- built-in tools from `packages/jar-core/src/tools.ts`
 - `maxRetryDelayMs` derived from config
 - `getApiKey()` that only returns the configured API key for the active provider
 
@@ -126,7 +125,7 @@ In `--repl` mode, `packages/jar-repl-ink/src/repl.tsx` subscribes to the same ev
 - persisted transcript history from the restored session
 - streaming assistant text
 - tool execution status and latest partial/result payloads
-- prompt retry/error diagnostics produced by `packages/jar-runtime/src/prompt-executor.ts`
+- prompt retry/error diagnostics produced by `packages/jar-core/src/prompt-executor.ts`
 
 ## Error Behavior
 
@@ -141,7 +140,7 @@ Errors can come from several layers:
 
 `apps/jar-cli/src/main.ts` catches the final error, writes the message to stderr, and sets a non-zero exit code.
 
-`packages/jar-runtime/src/prompt-executor.ts` classifies failures into categories (`timeout`, `rate_limit`, `network`, `auth`, `input`, `tool`, `aborted`, `unknown`) and retries retryable failures using exponential backoff.
+`packages/jar-core/src/prompt-executor.ts` classifies failures into categories (`timeout`, `rate_limit`, `network`, `auth`, `input`, `tool`, `aborted`, `unknown`) and retries retryable failures using exponential backoff.
 
 ## Current Boundaries
 
@@ -154,7 +153,7 @@ Jar is intentionally minimal right now:
 - no prompt compaction or transcript pruning
 - no built-in tools beyond text file IO and shell execution
 
-If any of these behaviors change, update this document together with `apps/jar-cli/src/main.ts`, `packages/jar-runtime/src/runtime.ts`, and any affected adapter package.
+If any of these behaviors change, update this document together with `apps/jar-cli/src/main.ts`, `packages/jar-core/src/runtime.ts`, and any affected adapter package.
 
 ## 会话与 REPL
 
