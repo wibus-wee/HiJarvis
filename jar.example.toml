@@ -22,6 +22,22 @@ api_key = "replace-me"
 # Optional. Useful for OpenAI-compatible gateways, local models, or proxies.
 base_url = "https://api.openai.com/v1"
 
+[platform.slack]
+# Optional. Display name used by the Slack gateway when Chat SDK is initialized.
+bot_name = "jarvis"
+# Optional. Slack bot token. Environment variables may still override this.
+bot_token = "xoxb-replace-me"
+# Optional. Slack signing secret. Environment variables may still override this.
+signing_secret = "replace-me"
+# Optional. Channel lookback window for first-time mentions before Jarvis joins the thread.
+context_lookback_minutes = 15
+# Optional. Maximum number of top-level channel messages included in observed context.
+context_message_limit = 12
+# Optional. HTTP bind host for the Slack webhook server.
+host = "0.0.0.0"
+# Optional. HTTP bind port for the Slack webhook server.
+port = 3000
+
 [tools]
 workspace_root = "."
 max_file_bytes = 32768

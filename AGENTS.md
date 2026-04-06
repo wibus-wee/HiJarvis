@@ -36,6 +36,15 @@ retry_max_delay_ms = 30000
 api_key = "replace-me"
 base_url = "https://api.openai.com/v1"
 
+[platform.slack]
+bot_name = "jarvis"
+bot_token = "xoxb-replace-me"
+signing_secret = "replace-me"
+context_lookback_minutes = 15
+context_message_limit = 12
+host = "0.0.0.0"
+port = 3000
+
 [tools]
 workspace_root = "."
 max_file_bytes = 32768

@@ -21,7 +21,7 @@ echo "Run git status and explain the workspace state." | pnpm dev -- --config ./
 
 ## Config Layout
 
-`jar.toml` uses three top-level tables:
+`jar.toml` uses five top-level tables:
 
 ```toml
 [agent]
@@ -41,6 +41,15 @@ retry_max_delay_ms = 30000
 [provider.openai]
 api_key = "replace-me"
 base_url = "https://api.openai.com/v1"
+
+[platform.slack]
+bot_name = "jarvis"
+bot_token = "xoxb-replace-me"
+signing_secret = "replace-me"
+context_lookback_minutes = 15
+context_message_limit = 12
+host = "0.0.0.0"
+port = 3000
 
 [tools]
 workspace_root = "."
@@ -75,6 +84,28 @@ root_dir = ".jar/sessions"
 
 Inactive provider tables are allowed. They are ignored until selected by `agent.provider`.
 
+### `[platform.slack]`
+
+- `bot_name`: Slack gateway 里传给 Chat SDK 的 bot username。默认：`"jarvis"`。
+- `bot_token`: Slack bot token。用于单 workspace 模式。
+- `signing_secret`: Slack webhook signing secret。
+- `context_lookback_minutes`: 首次 channel mention 时，向前回看顶层消息的时间窗。默认：`15`。
+- `context_message_limit`: 首次 channel mention 时，最多带入多少条顶层消息。默认：`12`。
+- `host`: Slack webhook HTTP 服务监听 host。默认：`"0.0.0.0"`。
+- `port`: Slack webhook HTTP 服务监听端口。默认：`3000`。
+
+Slack gateway 现在默认优先读 `jar.toml` 里的 `[platform.slack]`。
+
+这些环境变量仍然可以覆盖对应配置：
+
+- `SLACK_BOT_TOKEN`
+- `SLACK_SIGNING_SECRET`
+- `JARVIS_SLACK_BOT_NAME`
+- `JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES`
+- `JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT`
+- `HOST`
+- `PORT`
+
 ### `[tools]`
 
 - `workspace_root`: root directory exposed to the file tools and the default starting directory for the shell tool. Relative paths are resolved from the config file directory. Default: `"."`.
@@ -89,6 +120,7 @@ Inactive provider tables are allowed. They are ignored until selected by `agent.
 ## Runtime Notes
 
 - `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-core` and wires it into the same core package.
+- `apps/jar-slack/src/slack-runtime.ts` reads `platform.slack` and only uses environment variables as overrides.
 - `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
 - `packages/jar-core/src/runtime.ts` forwards `agent.retry_max_delay_ms` to `Agent.maxRetryDelayMs`.
@@ -104,6 +136,7 @@ Validation happens in two stages:
 
 1. Validate the top-level TOML shape.
 2. Validate the active provider config selected by `agent.provider`.
+3. Validate optional platform-specific tables such as `[platform.slack]`.
 
 Common failure cases:
 

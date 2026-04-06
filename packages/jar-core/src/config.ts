@@ -34,6 +34,17 @@ const rawConfigSchema = z.object({
     retry_max_delay_ms: z.number().int().positive().optional(),
   }).strict(),
   provider: z.record(z.string(), z.unknown()).default({}),
+  platform: z.object({
+    slack: z.object({
+      bot_name: nonEmptyString.optional(),
+      bot_token: nonEmptyString.optional(),
+      signing_secret: nonEmptyString.optional(),
+      context_lookback_minutes: z.number().int().positive().optional(),
+      context_message_limit: z.number().int().positive().optional(),
+      host: nonEmptyString.optional(),
+      port: z.number().int().positive().optional(),
+    }).strict().default({}),
+  }).strict().default({ slack: {} }),
   sessions: z.object({
     root_dir: nonEmptyString.optional(),
   }).strict().default({}),
@@ -54,6 +65,17 @@ const providerConfigSchema = z.object({
 
 export type LoadedAgentConfig = {
   configFilePath: string;
+  platform: {
+    slack: {
+      botName?: string;
+      botToken?: string;
+      signingSecret?: string;
+      contextLookbackMinutes: number;
+      contextMessageLimit: number;
+      host?: string;
+      port?: number;
+    };
+  };
   runtime: Omit<JarRuntimeOptions, "tools">;
   toolOptions: ToolOptions;
   sessions: {
@@ -81,6 +103,29 @@ export const loadAgentConfig = async (
 
   return {
     configFilePath: absoluteConfigPath,
+    platform: {
+      slack: {
+        ...(parsedConfig.platform.slack.bot_name === undefined
+          ? {}
+          : { botName: parsedConfig.platform.slack.bot_name }),
+        ...(parsedConfig.platform.slack.bot_token === undefined
+          ? {}
+          : { botToken: parsedConfig.platform.slack.bot_token }),
+        ...(parsedConfig.platform.slack.signing_secret === undefined
+          ? {}
+          : { signingSecret: parsedConfig.platform.slack.signing_secret }),
+        contextLookbackMinutes:
+          parsedConfig.platform.slack.context_lookback_minutes ?? 15,
+        contextMessageLimit:
+          parsedConfig.platform.slack.context_message_limit ?? 12,
+        ...(parsedConfig.platform.slack.host === undefined
+          ? {}
+          : { host: parsedConfig.platform.slack.host }),
+        ...(parsedConfig.platform.slack.port === undefined
+          ? {}
+          : { port: parsedConfig.platform.slack.port }),
+      },
+    },
     runtime: {
       provider,
       model,

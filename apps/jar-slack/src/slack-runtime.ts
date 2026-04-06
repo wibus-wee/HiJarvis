@@ -27,6 +27,8 @@ import {
 } from "./slack-prompt.js";
 
 const slackGatewayEnvSchema = z.object({
+  SLACK_BOT_TOKEN: z.string().trim().min(1).optional(),
+  SLACK_SIGNING_SECRET: z.string().trim().min(1).optional(),
   JARVIS_SLACK_BOT_NAME: z.string().trim().min(1).optional(),
   JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES: z.coerce.number().int().positive().optional(),
   JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().positive().optional(),
@@ -61,8 +63,16 @@ export const startSlackGateway = async (
   const config = await loadAgentConfig(options.configPath);
   const env = loadSlackGatewayEnv(process.env);
   const bot = createSlackBot(config, env);
-  const host = options.host ?? env.HOST ?? defaultHost;
-  const port = options.port ?? env.PORT ?? defaultPort;
+  const host =
+    options.host ??
+    env.HOST ??
+    config.platform.slack.host ??
+    defaultHost;
+  const port =
+    options.port ??
+    env.PORT ??
+    config.platform.slack.port ??
+    defaultPort;
 
   const server = createServer(async (request, response) => {
     try {
@@ -112,16 +122,37 @@ export const createSlackBot = (
   const observedContextLimits = {
     lookbackMinutes:
       env.JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES ??
+      config.platform.slack.contextLookbackMinutes ??
       defaultObservedContextLimits.lookbackMinutes,
     maxMessages:
       env.JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT ??
+      config.platform.slack.contextMessageLimit ??
       defaultObservedContextLimits.maxMessages,
   };
 
   const bot = new Chat({
-    userName: env.JARVIS_SLACK_BOT_NAME ?? "jarvis",
+    userName:
+      env.JARVIS_SLACK_BOT_NAME ??
+      config.platform.slack.botName ??
+      "jarvis",
     adapters: {
-      slack: createSlackAdapter() as unknown as Adapter,
+      slack: createSlackAdapter({
+        ...(env.SLACK_BOT_TOKEN !== undefined
+          ? { botToken: env.SLACK_BOT_TOKEN }
+          : config.platform.slack.botToken !== undefined
+            ? { botToken: config.platform.slack.botToken }
+            : {}),
+        ...(env.SLACK_SIGNING_SECRET !== undefined
+          ? { signingSecret: env.SLACK_SIGNING_SECRET }
+          : config.platform.slack.signingSecret !== undefined
+            ? { signingSecret: config.platform.slack.signingSecret }
+            : {}),
+        ...(env.JARVIS_SLACK_BOT_NAME !== undefined
+          ? { userName: env.JARVIS_SLACK_BOT_NAME }
+          : config.platform.slack.botName !== undefined
+            ? { userName: config.platform.slack.botName }
+            : {}),
+      }) as unknown as Adapter,
     },
     state: createMemoryState(),
     concurrency: {

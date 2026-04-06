@@ -55,16 +55,33 @@ pnpm --filter @hijarvis/jar-slack dev -- --config ./jar.toml --port 3100
 curl http://127.0.0.1:3000/healthz
 ```
 
-## 环境变量
+## 配置来源
 
-Slack adapter 依赖 Chat SDK 官方约定的环境变量：
+Slack gateway 现在优先从 `jar.toml` 的 `[platform.slack]` 读取配置。
+
+推荐形态：
+
+```toml
+[platform.slack]
+bot_name = "jarvis"
+bot_token = "xoxb-..."
+signing_secret = "..."
+context_lookback_minutes = 15
+context_message_limit = 12
+host = "0.0.0.0"
+port = 3000
+```
+
+环境变量现在只作为 override。
+
+Slack adapter 兼容的 override：
 
 ```bash
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_SIGNING_SECRET=...
 ```
 
-Jar Slack gateway 额外支持：
+Jar Slack gateway 自己支持的 override：
 
 ```bash
 JARVIS_SLACK_BOT_NAME=jarvis
@@ -76,10 +93,10 @@ PORT=3000
 
 说明：
 
-- `JARVIS_SLACK_BOT_NAME`：传给 Chat SDK 的 bot username。
+- `JARVIS_SLACK_BOT_NAME`：覆盖 `platform.slack.bot_name`。
 - `JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES`：首次 mention 时，回看 channel 顶层消息的时间窗。
 - `JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT`：首次 mention 时，最多带入多少条顶层消息。
-- `HOST` / `PORT`：Webhook HTTP 服务监听地址。
+- `HOST` / `PORT`：覆盖 webhook HTTP 服务监听地址。
 
 ## 交互规则
 

@@ -95,7 +95,16 @@ const printUsage = (): void => {
   process.stdout.write(`Usage: pnpm --filter @hijarvis/jar-slack dev -- --config ./jar.toml
        pnpm --filter @hijarvis/jar-slack dev -- --config ./jar.toml --port 3100
 
-Environment:
+Config-first fields in [platform.slack]:
+  bot_name
+  bot_token
+  signing_secret
+  context_lookback_minutes
+  context_message_limit
+  host
+  port
+
+Environment overrides:
   SLACK_BOT_TOKEN
   SLACK_SIGNING_SECRET
   JARVIS_SLACK_BOT_NAME

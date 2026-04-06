@@ -110,3 +110,37 @@ retry_max_delay_ms = 1000
     await cleanupConfigFile(configPath);
   }
 });
+
+test("loadAgentConfig reads slack platform config from jar.toml", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[platform.slack]
+bot_name = "jarvis"
+bot_token = "xoxb-test"
+signing_secret = "secret-test"
+context_lookback_minutes = 20
+context_message_limit = 18
+host = "127.0.0.1"
+port = 4318
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.platform.slack, {
+      botName: "jarvis",
+      botToken: "xoxb-test",
+      signingSecret: "secret-test",
+      contextLookbackMinutes: 20,
+      contextMessageLimit: 18,
+      host: "127.0.0.1",
+      port: 4318,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
