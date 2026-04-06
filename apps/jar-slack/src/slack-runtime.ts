@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import {
   buildSubscribedThreadPrompt,
+  createSlackReplyPayload,
   createSlackSessionId,
   formatCurrentMessageBlock,
   formatObservedContextBlock,
@@ -836,8 +837,8 @@ const respondInSlackThread = async ({
 
     await client.slackClient.chat.postMessage({
       channel,
-      text: reply,
       thread_ts: threadTs,
+      ...createSlackReplyPayload(reply),
     });
 
     logger.info("slack.reply_posted", {
@@ -857,8 +858,10 @@ const respondInSlackThread = async ({
 
     await client.slackClient.chat.postMessage({
       channel,
-      text: "I ran into an error while processing that request. Please try again in the same thread.",
       thread_ts: threadTs,
+      ...createSlackReplyPayload(
+        "I ran into an error while processing that request. Please try again in the same thread.",
+      ),
     });
   }
 };

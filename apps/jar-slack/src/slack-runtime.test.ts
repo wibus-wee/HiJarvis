@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createSlackSessionId,
   buildSubscribedThreadPrompt,
+  createSlackReplyPayload,
   formatCurrentMessageBlock,
   formatObservedContextBlock,
   formatQueuedMessagesBlock,
@@ -107,6 +108,45 @@ test("buildSubscribedThreadPrompt keeps thread instructions separate from reques
   assert.match(prompt, /You are continuing an existing Slack thread conversation\./);
   assert.match(prompt, /Additional user messages that arrived while you were still processing the previous turn:/);
   assert.match(prompt, /Current user request:/);
+});
+
+test("createSlackReplyPayload preserves markdown and emits markdown blocks", () => {
+  const payload = createSlackReplyPayload("## Title\n**hello**\n*world*\n~~gone~~\n[docs](https://example.com)");
+
+  assert.equal(payload.text, "## Title\n**hello**\n*world*\n~~gone~~\n[docs](https://example.com)");
+  assert.equal(payload.blocks?.length, 1);
+  assert.deepEqual(payload.blocks?.[0], {
+    type: "markdown",
+    text: "## Title\n**hello**\n*world*\n~~gone~~\n[docs](https://example.com)",
+  });
+});
+
+test("createSlackReplyPayload splits markdown blocks on paragraph boundaries", () => {
+  const payload = createSlackReplyPayload([
+    "## First",
+    "",
+    "Second paragraph with `code`.",
+  ].join("\n"));
+
+  assert.equal(payload.blocks?.length, 2);
+  assert.deepEqual(payload.blocks, [
+    {
+      type: "markdown",
+      text: "## First",
+    },
+    {
+      type: "markdown",
+      text: "Second paragraph with `code`.",
+    },
+  ]);
+});
+
+test("createSlackReplyPayload splits long replies across multiple markdown blocks", () => {
+  const payload = createSlackReplyPayload(`${"a".repeat(2_900)}\n${"b".repeat(200)}`);
+
+  assert.equal(payload.blocks?.length, 2);
+  assert.equal(payload.blocks?.[0]?.text.length, 3_000);
+  assert.equal(payload.blocks?.[1]?.text.length, 101);
 });
 
 test("normalizeSlackEvent strips bot mentions and derives stable keys", () => {

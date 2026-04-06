@@ -33,7 +33,8 @@
 3. 先把 Slack transport event 归一化成 canonical message
 4. 在内存里维护线程订阅、event dedupe、message dedupe 与队列状态
 5. 把 Slack message 映射到 Jar session
-6. 输出一层面向开发排障的摘要日志
+6. 在回复发回 Slack 前，把模型原始 Markdown 组织成 Slack `markdown` blocks
+7. 输出一层面向开发排障的摘要日志
 
 ## 运行方式
 
@@ -225,6 +226,18 @@ slack__{channelId}__{threadTs}
 ## 上下文组装
 
 Slack adapter 只负责组装每一轮的 turn prompt，不负责 system prompt。system prompt 的最终文本由 `packages/jar-core/src/prompt-builder.ts` 在 runtime 层统一构造；Slack 通过同一个模块里的 `buildTurnPrompt()` 组装平台上下文。
+
+## 回复格式化
+
+Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标准 Markdown 先转换成 `mrkdwn` 再塞进 `section`。
+
+当前策略是：
+
+- 顶层 `text` 继续保留原始 reply 的截断版本，作为 fallback
+- `blocks` 使用原始 Markdown 内容
+- 发送前按段落分块，避免把整段长回复塞进一个 block
+
+之前“总是 collapse”的直接原因，是我们发的是 `section` block；`section` 在文本较长时，Slack 会显示 `see more`。切到 `markdown` block 后，格式转换交给 Slack 自己处理；但如果整条消息在 Slack 客户端里依然被折叠，那就是 Slack UI 的长消息展示策略，不再是我们这层 `mrkdwn` 适配造成的。
 
 ### 首次 mention
 
