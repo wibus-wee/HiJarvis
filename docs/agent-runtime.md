@@ -38,6 +38,8 @@ The workspace packages are split as follows:
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
 
+For local development, `apps/jar-cli/package.json` runs `tsx` with the workspace-level `tsconfig.workspace.json`. That ensures cross-package source imports such as `packages/jar-repl-ink/src/repl.tsx` are matched by a single `include` set and receive the expected JSX runtime settings.
+
 ## CLI Contract
 
 Supported forms:

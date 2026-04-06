@@ -4,6 +4,8 @@
     "lib": ["ES2024"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
+    "types": ["node", "react"],
     "strict": true,
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
@@ -15,9 +17,5 @@
     "skipLibCheck": true,
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
-    "paths": {
-      "@hijarvis/jar-core": ["packages/jar-core/src/index.ts"],
-      "@hijarvis/jar-repl-ink": ["packages/jar-repl-ink/src/index.ts"]
-    }
   }
 }
