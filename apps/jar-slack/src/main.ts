@@ -37,6 +37,10 @@ const parseCliOptions = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (argument === "--") {
+      continue;
+    }
+
     if (argument === "--help" || argument === "-h") {
       helpRequested = true;
       continue;
@@ -98,6 +102,7 @@ const printUsage = (): void => {
 Config-first fields in [platform.slack]:
   bot_name
   bot_token
+  app_token
   signing_secret
   context_lookback_minutes
   context_message_limit
@@ -106,6 +111,7 @@ Config-first fields in [platform.slack]:
 
 Environment overrides:
   SLACK_BOT_TOKEN
+  SLACK_APP_TOKEN
   SLACK_SIGNING_SECRET
   JARVIS_SLACK_BOT_NAME
   JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES

@@ -38,6 +38,7 @@ const rawConfigSchema = z.object({
     slack: z.object({
       bot_name: nonEmptyString.optional(),
       bot_token: nonEmptyString.optional(),
+      app_token: nonEmptyString.optional(),
       signing_secret: nonEmptyString.optional(),
       context_lookback_minutes: z.number().int().positive().optional(),
       context_message_limit: z.number().int().positive().optional(),
@@ -69,6 +70,7 @@ export type LoadedAgentConfig = {
     slack: {
       botName?: string;
       botToken?: string;
+      appToken?: string;
       signingSecret?: string;
       contextLookbackMinutes: number;
       contextMessageLimit: number;
@@ -111,6 +113,9 @@ export const loadAgentConfig = async (
         ...(parsedConfig.platform.slack.bot_token === undefined
           ? {}
           : { botToken: parsedConfig.platform.slack.bot_token }),
+        ...(parsedConfig.platform.slack.app_token === undefined
+          ? {}
+          : { appToken: parsedConfig.platform.slack.app_token }),
         ...(parsedConfig.platform.slack.signing_secret === undefined
           ? {}
           : { signingSecret: parsedConfig.platform.slack.signing_secret }),

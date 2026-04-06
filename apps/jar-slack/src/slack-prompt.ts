@@ -1,32 +1,36 @@
-import type { Message, MessageContext } from "chat";
+export type SlackMessage = {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  sentAt: Date;
+};
 
 export const createSlackSessionId = (threadId: string): string => {
   return threadId.replaceAll(":", "__").replaceAll("/", "_");
 };
 
-export const formatObservedContextBlock = (messages: Message[]): string => {
+export const formatObservedContextBlock = (messages: SlackMessage[]): string => {
   if (messages.length === 0) {
     return "Observed channel context before the mention:\n- No recent top-level channel messages were captured within the configured lookback window.";
   }
 
   const lines = messages.map((message) => {
-    const author = message.author.fullName || message.author.userName || message.author.userId;
-    const timestamp = message.metadata.dateSent.toISOString();
+    const author = message.authorName || message.authorId;
+    const timestamp = message.sentAt.toISOString();
     return `- [${timestamp}] ${author}: ${message.text}`;
   });
 
   return `Observed channel context before the mention:\n${lines.join("\n")}`;
 };
 
-export const formatQueuedMessagesBlock = (
-  context: MessageContext | undefined,
-): string => {
-  if (!context || context.skipped.length === 0) {
+export const formatQueuedMessagesBlock = (skipped: SlackMessage[]): string => {
+  if (skipped.length === 0) {
     return "";
   }
 
-  const lines = context.skipped.map((message) => {
-    const author = message.author.fullName || message.author.userName || message.author.userId;
+  const lines = skipped.map((message) => {
+    const author = message.authorName || message.authorId;
     return `- ${author}: ${message.text}`;
   });
 
@@ -36,8 +40,8 @@ export const formatQueuedMessagesBlock = (
   ].join("\n");
 };
 
-export const formatCurrentMessageBlock = (message: Message): string => {
-  const author = message.author.fullName || message.author.userName || message.author.userId;
+export const formatCurrentMessageBlock = (message: SlackMessage): string => {
+  const author = message.authorName || message.authorId;
 
   return [
     "Current user request:",
@@ -46,14 +50,14 @@ export const formatCurrentMessageBlock = (message: Message): string => {
 };
 
 export const buildSubscribedThreadPrompt = (
-  message: Message,
-  context: MessageContext | undefined,
+  message: SlackMessage,
+  skipped: SlackMessage[],
 ): string => {
   return [
     "You are continuing an existing Slack thread conversation.",
     "The thread history in your session is the source of truth for prior bot interaction.",
     "",
-    formatQueuedMessagesBlock(context),
+    formatQueuedMessagesBlock(skipped),
     "",
     formatCurrentMessageBlock(message),
   ]

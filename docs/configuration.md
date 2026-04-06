@@ -86,19 +86,21 @@ Inactive provider tables are allowed. They are ignored until selected by `agent.
 
 ### `[platform.slack]`
 
-- `bot_name`: Slack gateway 里传给 Chat SDK 的 bot username。默认：`"jarvis"`。
-- `bot_token`: Slack bot token。用于单 workspace 模式。
-- `signing_secret`: Slack webhook signing secret。
+- `bot_name`: Slack gateway 显示名，占位字段。默认：`"jarvis"`。
+- `bot_token`: Slack bot token。用于 Socket Mode + Web API 调用。
+- `app_token`: Slack app-level token (xapp-...)。Socket Mode 必需。
+- `signing_secret`: Slack signing secret，用于请求校验与 SDK 初始化。
 - `context_lookback_minutes`: 首次 channel mention 时，向前回看顶层消息的时间窗。默认：`15`。
 - `context_message_limit`: 首次 channel mention 时，最多带入多少条顶层消息。默认：`12`。
-- `host`: Slack webhook HTTP 服务监听 host。默认：`"0.0.0.0"`。
-- `port`: Slack webhook HTTP 服务监听端口。默认：`3000`。
+- `host`: 健康检查 HTTP 服务监听 host。默认：`"0.0.0.0"`。
+- `port`: 健康检查 HTTP 服务监听端口。默认：`3000`。
 
 Slack gateway 现在默认优先读 `jar.toml` 里的 `[platform.slack]`。
 
 这些环境变量仍然可以覆盖对应配置：
 
 - `SLACK_BOT_TOKEN`
+- `SLACK_APP_TOKEN`
 - `SLACK_SIGNING_SECRET`
 - `JARVIS_SLACK_BOT_NAME`
 - `JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES`

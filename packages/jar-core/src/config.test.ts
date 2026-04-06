@@ -122,6 +122,7 @@ system_prompt = "You are a test agent."
 [platform.slack]
 bot_name = "jarvis"
 bot_token = "xoxb-test"
+app_token = "xapp-test"
 signing_secret = "secret-test"
 context_lookback_minutes = 20
 context_message_limit = 18
@@ -134,6 +135,7 @@ port = 4318
     assert.deepEqual(config.platform.slack, {
       botName: "jarvis",
       botToken: "xoxb-test",
+      appToken: "xapp-test",
       signingSecret: "secret-test",
       contextLookbackMinutes: 20,
       contextMessageLimit: 18,

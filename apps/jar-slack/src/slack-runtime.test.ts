@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { Message } from "chat";
-
 import {
   createSlackSessionId,
   formatCurrentMessageBlock,
   formatObservedContextBlock,
   formatQueuedMessagesBlock,
+  type SlackMessage,
 } from "./slack-prompt.js";
 
 const createMessage = (input: {
@@ -15,22 +14,14 @@ const createMessage = (input: {
   text: string;
   authorName: string;
   sentAt: string;
-}): Message => {
+}): SlackMessage => {
   return {
     id: input.id,
     text: input.text,
-    author: {
-      fullName: input.authorName,
-      userId: input.authorName,
-      userName: input.authorName,
-      isBot: false,
-      isMe: false,
-    },
-    metadata: {
-      dateSent: new Date(input.sentAt),
-      edited: false,
-    },
-  } as Message;
+    authorId: input.authorName,
+    authorName: input.authorName,
+    sentAt: new Date(input.sentAt),
+  };
 };
 
 test("createSlackSessionId normalizes thread ids into filesystem-safe session ids", () => {
@@ -62,17 +53,14 @@ test("formatObservedContextBlock renders ordered message history", () => {
 });
 
 test("formatQueuedMessagesBlock includes skipped messages when queue mode coalesces them", () => {
-  const block = formatQueuedMessagesBlock({
-    skipped: [
-      createMessage({
-        id: "3",
-        text: "One more thing",
-        authorName: "Wibus",
-        sentAt: "2026-04-06T09:02:00.000Z",
-      }),
-    ],
-    totalSinceLastHandler: 2,
-  });
+  const block = formatQueuedMessagesBlock([
+    createMessage({
+      id: "3",
+      text: "One more thing",
+      authorName: "Wibus",
+      sentAt: "2026-04-06T09:02:00.000Z",
+    }),
+  ]);
 
   assert.match(block, /Additional user messages/);
   assert.match(block, /Wibus: One more thing/);

@@ -125,6 +125,10 @@ const parseCliOptions = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (argument === "--") {
+      continue;
+    }
+
     if (argument === "--help" || argument === "-h") {
       helpRequested = true;
       continue;

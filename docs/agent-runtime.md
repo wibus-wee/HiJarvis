@@ -7,7 +7,7 @@ This page documents how Jar boots inside the workspace, resolves configuration, 
 Jar 现在支持两类 runtime surface：
 
 1. `apps/jar-cli`：one-shot CLI 和 Ink REPL。
-2. `apps/jar-slack`：基于 Chat SDK 的 Slack webhook gateway。
+2. `apps/jar-slack`：基于 Slack Socket Mode 的 Slack gateway。
 
 CLI invocation 仍然保持原有流程：
 
@@ -25,8 +25,8 @@ Slack gateway 的流程不同：
 
 1. Starts an HTTP server in `apps/jar-slack/src/main.ts`.
 2. Loads the same `jar.toml` through `packages/jar-core/src/config.ts`.
-3. Creates a Chat SDK `Chat` instance with the Slack adapter and memory state.
-4. Handles `POST /webhooks/slack`.
+3. Starts a Socket Mode connection using Slack Web API credentials.
+4. Handles `app_mention` and DM message events.
 5. On a new `@mention`, subscribes the Slack thread, collects a bounded window of top-level channel messages before the mention, and composes an observed-context prompt.
 6. On follow-up messages inside a subscribed Slack thread, routes the message into the same Jar session without rebuilding channel history.
 7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
@@ -53,7 +53,7 @@ The workspace packages are split as follows:
 - `packages/jar-core`: runtime assembly, prompt execution policy, TOML config loading, tool registration, session persistence
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
-- `apps/jar-slack`: Slack webhook server, Chat SDK adapter wiring, observed context collection, and thread-first reply behavior
+- `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
 
 For local development, `apps/jar-cli/package.json` runs `tsx` with the workspace-level `tsconfig.workspace.json`. That ensures cross-package source imports such as `packages/jar-repl-ink/src/repl.tsx` are matched by a single `include` set and receive the expected JSX runtime settings.
 
@@ -174,7 +174,7 @@ Errors can come from several layers:
 Jar is intentionally minimal right now:
 
 - default CLI runs a single prompt per process (multi-turn is available in REPL/session mode)
-- Slack transport exists, but only as a dedicated webhook app in `apps/jar-slack`
+- Slack transport exists, but only as a dedicated Socket Mode app in `apps/jar-slack`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven; there is no persisted retry history
 - no prompt compaction or transcript pruning
