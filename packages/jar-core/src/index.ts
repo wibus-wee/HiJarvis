@@ -1,5 +1,13 @@
 export { createAgent, type JarRuntimeOptions, type RuntimeProviderConfig } from "./runtime.js";
 export {
+  createLogger,
+  logLevels,
+  type LogFields,
+  type LogLevel,
+  type Logger,
+  type LoggerOptions,
+} from "./logger.js";
+export {
   classifyPromptFailure,
   executePromptWithPolicy,
   getRetryDelayMs,

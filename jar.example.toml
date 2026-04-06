@@ -40,6 +40,14 @@ host = "0.0.0.0"
 # Optional. HTTP bind port for the Slack health check server.
 port = 3000
 
+[logging]
+# Optional. Summary log verbosity: error, warn, info, or debug.
+level = "info"
+# Optional. Mirror runtime logs to stderr for local development.
+stderr = true
+# Optional. Persist summary logs to a file, relative to this config file.
+file_path = ".jar/logs/runtime.log"
+
 [tools]
 workspace_root = "."
 max_file_bytes = 32768

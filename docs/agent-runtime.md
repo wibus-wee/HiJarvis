@@ -31,6 +31,7 @@ Slack gateway 的流程不同：
 6. On follow-up messages inside a subscribed Slack thread, routes the message into the same Jar session without rebuilding channel history.
 7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
 8. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
+9. Emits summary logs through `packages/jar-core/src/logger.ts` so the request path is readable without replaying raw events.
 
 ## Entrypoint
 
@@ -119,6 +120,7 @@ That keeps provider/model metadata aligned with `pi-ai` while still allowing cus
 - creates a fresh `Agent`
 - restores the persisted Jar session
 - appends runtime events/messages back into the session store
+- emits summary logs for prompt/tool boundaries
 - executes the prompt using the same retry/timeout policy
 - returns the accumulated assistant text for the caller to post back to the platform
 
@@ -146,6 +148,8 @@ Jar does not currently render:
 - tool partial updates
 - structured reasoning blocks
 - persisted transcripts
+
+Slack gateway additionally emits request-level summary logs. These logs intentionally summarize stage boundaries instead of mirroring every streaming delta, which keeps long-running Slack sessions readable at `info` level.
 
 In `--repl` mode, `packages/jar-repl-ink/src/repl.tsx` subscribes to the same event stream but routes it into an Ink state reducer instead of writing directly to stdout/stderr. The TUI currently renders:
 

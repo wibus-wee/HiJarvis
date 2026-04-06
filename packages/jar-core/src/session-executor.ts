@@ -1,5 +1,6 @@
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 
+import type { Logger } from "./logger.js";
 import {
   executePromptWithPolicy,
   type PromptExecutionPolicy,
@@ -24,6 +25,7 @@ export type SessionPromptOptions = {
   thinkingLevel: JarRuntimeOptions["thinkingLevel"];
   toolOptions: ToolOptions;
   providerConfig: JarRuntimeOptions["providerConfig"];
+  logger?: Logger;
   writers?: SessionExecutionWriters;
 };
 
@@ -39,6 +41,7 @@ const defaultWriters: SessionExecutionWriters = {
 export const executePromptInSession = async (
   options: SessionPromptOptions,
 ): Promise<SessionPromptResult> => {
+  const startTime = Date.now();
   const agent = createAgent({
     provider: options.provider,
     model: options.model,
@@ -58,8 +61,18 @@ export const executePromptInSession = async (
 
   agent.sessionId = session.sessionId;
   agent.state.messages = session.messages;
+  const logger = options.logger?.child({
+    sessionId: session.sessionId,
+    provider: options.provider,
+    model: options.model,
+  });
 
   let outputText = "";
+
+  logger?.info("session.prompt_started", {
+    existingMessages: session.messages.length,
+    promptChars: options.prompt.length,
+  });
 
   agent.subscribe(async (event, signal) => {
     if (signal.aborted) {
@@ -83,18 +96,62 @@ export const executePromptInSession = async (
       await session.writeSnapshot(agent.state.messages);
     }
 
+    logAgentEvent(logger, event);
+
     await options.onEvent?.(event);
   });
 
-  await executePromptWithPolicy(
-    agent,
-    options.prompt,
-    options.execution,
-    options.writers ?? defaultWriters,
-  );
+  try {
+    await executePromptWithPolicy(
+      agent,
+      options.prompt,
+      options.execution,
+      options.writers ?? defaultWriters,
+      logger,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger?.error("session.prompt_failed", {
+      durationMs: Date.now() - startTime,
+      message,
+    });
+    throw error;
+  }
+
+  logger?.info("session.prompt_finished", {
+    durationMs: Date.now() - startTime,
+    outputChars: outputText.trim().length,
+  });
 
   return {
     outputText,
     sessionId: session.sessionId,
   };
+};
+
+const logAgentEvent = (logger: Logger | undefined, event: AgentEvent): void => {
+  if (!logger) {
+    return;
+  }
+
+  switch (event.type) {
+    case "tool_execution_start":
+      logger.info("session.tool_started", {
+        toolName: event.toolName,
+        args: event.args,
+      });
+      break;
+    case "tool_execution_end":
+      logger.info("session.tool_finished", {
+        toolName: event.toolName,
+      });
+      break;
+    case "message_end":
+      logger.debug("session.message_recorded", {
+        role: event.message.role,
+      });
+      break;
+    default:
+      break;
+  }
 };

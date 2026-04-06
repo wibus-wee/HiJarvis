@@ -146,3 +146,49 @@ port = 4318
     await cleanupConfigFile(configPath);
   }
 });
+
+test("loadAgentConfig applies default logging config values", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.logging, {
+      level: "info",
+      stderr: true,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads logging config from jar.toml", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[logging]
+level = "debug"
+stderr = false
+file_path = "./runtime.log"
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.logging, {
+      level: "debug",
+      stderr: false,
+      filePath: path.join(path.dirname(configPath), "runtime.log"),
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});

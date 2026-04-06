@@ -21,7 +21,7 @@ echo "Run git status and explain the workspace state." | pnpm dev -- --config ./
 
 ## Config Layout
 
-`jar.toml` uses five top-level tables:
+`jar.toml` uses six top-level tables:
 
 ```toml
 [agent]
@@ -50,6 +50,11 @@ context_lookback_minutes = 15
 context_message_limit = 12
 host = "0.0.0.0"
 port = 3000
+
+[logging]
+level = "info"
+stderr = true
+file_path = ".jar/logs/runtime.log"
 
 [tools]
 workspace_root = "."
@@ -108,6 +113,17 @@ Slack gateway 现在默认优先读 `jar.toml` 里的 `[platform.slack]`。
 - `HOST`
 - `PORT`
 
+### `[logging]`
+
+- `level`: 运行摘要日志级别，可选 `error`、`warn`、`info`、`debug`。默认：`info`。
+- `stderr`: 是否把摘要日志同时输出到 `stderr`。默认：`true`。当前实现基于 `pino-pretty`，面向本地开发可读性。
+- `file_path`: 可选的日志文件路径。相对路径会以配置文件所在目录为基准。当前实现会写入 `pino` JSONL，适合后续 grep 或脚本分析。
+
+这套日志的设计目标不是替代 `.jar/sessions/<sessionId>/events.jsonl`，而是提供一层更适合开发和排障的“链路摘要”：
+
+- `info`：只输出关键阶段边界，例如 Slack 事件接收、队列合并、observed context 抓取、session 执行开始/结束、reply 发回 Slack。
+- `debug`：在 `info` 基础上补充更多低层事件，例如 message 落盘、被忽略或被去重的 Slack 事件。
+
 ### `[tools]`
 
 - `workspace_root`: root directory exposed to the file tools and the default starting directory for the shell tool. Relative paths are resolved from the config file directory. Default: `"."`.
@@ -122,9 +138,10 @@ Slack gateway 现在默认优先读 `jar.toml` 里的 `[platform.slack]`。
 ## Runtime Notes
 
 - `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-core` and wires it into the same core package.
-- `apps/jar-slack/src/slack-runtime.ts` reads `platform.slack` and only uses environment variables as overrides.
+- `apps/jar-slack/src/slack-runtime.ts` reads `platform.slack`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
+- `packages/jar-core/src/session-executor.ts` emits session/tool summary logs without streaming every token delta.
 - `packages/jar-core/src/runtime.ts` forwards `agent.retry_max_delay_ms` to `Agent.maxRetryDelayMs`.
 - `packages/jar-core/src/runtime.ts` passes `provider.<name>.api_key` through `Agent.getApiKey()` for the active provider only.
 - Tool registration is handled in `packages/jar-core/src/tools.ts`.

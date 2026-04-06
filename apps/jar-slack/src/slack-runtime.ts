@@ -4,9 +4,11 @@ import process from "node:process";
 
 import { App, LogLevel } from "@slack/bolt";
 import {
+  createLogger,
   executePromptInSession,
   loadAgentConfig,
   type LoadedAgentConfig,
+  type Logger,
 } from "@hijarvis/jar-core";
 import { z } from "zod";
 
@@ -89,6 +91,7 @@ type SlackGatewayState = {
   identity: SlackGatewayIdentity;
   observedContextLimits: ObservedContextLimits;
   config: LoadedAgentConfig;
+  logger: Logger;
   slackClient: App["client"];
   subscriptions: Set<string>;
   queues: Map<string, ThreadQueueState>;
@@ -111,6 +114,9 @@ export const startSlackGateway = async (
   options: SlackGatewayRuntimeOptions,
 ): Promise<void> => {
   const config = await loadAgentConfig(options.configPath);
+  const logger = createLogger(config.logging).child({
+    component: "slack_gateway",
+  });
   const env = loadSlackGatewayEnv(process.env);
   const tokens = resolveSlackTokens(config, env);
 
@@ -138,12 +144,23 @@ export const startSlackGateway = async (
     identity,
     observedContextLimits,
     config,
+    logger,
     slackClient: app.client,
     subscriptions: new Set<string>(),
     queues: new Map<string, ThreadQueueState>(),
     userCache: new Map<string, string>(),
     seenEvents: new Map<string, number>(),
   };
+
+  logger.info("slack.gateway_initialized", {
+    configPath: path.resolve(options.configPath),
+    botUserId: identity.botUserId,
+    contextLookbackMinutes: observedContextLimits.lookbackMinutes,
+    contextMessageLimit: observedContextLimits.maxMessages,
+    logLevel: config.logging.level,
+    logToStderr: config.logging.stderr,
+    logFilePath: config.logging.filePath,
+  });
 
   registerSlackHandlers(app, state);
 
@@ -159,11 +176,15 @@ export const startSlackGateway = async (
       env.PORT ??
       config.platform.slack.port ??
       defaultPort,
+    logger,
   });
 
   process.stdout.write(
     `Jar Slack gateway running in Socket Mode using ${path.resolve(options.configPath)}\n`,
   );
+  logger.info("slack.gateway_started", {
+    configPath: path.resolve(options.configPath),
+  });
 };
 
 const resolveSlackTokens = (
@@ -222,6 +243,10 @@ const registerSlackHandlers = (app: App, state: SlackGatewayState): void => {
     }
 
     if (isDuplicateEvent(body?.event_id, state)) {
+      state.logger.debug("slack.event_deduplicated", {
+        eventType: "app_mention",
+        eventId: body?.event_id,
+      });
       return;
     }
 
@@ -234,6 +259,17 @@ const registerSlackHandlers = (app: App, state: SlackGatewayState): void => {
     const threadKey = buildThreadKey(event.channel, threadTs);
     const isSubscribed = state.subscriptions.has(threadKey);
     state.subscriptions.add(threadKey);
+
+    state.logger.info("slack.event_received", {
+      eventType: "app_mention",
+      eventId: body?.event_id,
+      threadKey,
+      channel: event.channel,
+      threadTs,
+      isSubscribed,
+      messageTs: normalized.id,
+      textChars: normalized.text.length,
+    });
 
     enqueueMessage(state, threadKey, {
       kind: isSubscribed ? "subscribed" : "new_mention",
@@ -253,6 +289,10 @@ const registerSlackHandlers = (app: App, state: SlackGatewayState): void => {
     }
 
     if (isDuplicateEvent(body?.event_id, state)) {
+      state.logger.debug("slack.event_deduplicated", {
+        eventType: "message",
+        eventId: body?.event_id,
+      });
       return;
     }
 
@@ -269,6 +309,12 @@ const registerSlackHandlers = (app: App, state: SlackGatewayState): void => {
     const threadKey = buildThreadKey(event.channel, threadTs);
 
     if (!isDirectMessage && !state.subscriptions.has(threadKey)) {
+      state.logger.debug("slack.event_ignored", {
+        eventType: "message",
+        reason: "thread_not_subscribed",
+        threadKey,
+        channel: event.channel,
+      });
       return;
     }
 
@@ -280,6 +326,17 @@ const registerSlackHandlers = (app: App, state: SlackGatewayState): void => {
     if (!normalized) {
       return;
     }
+
+    state.logger.info("slack.event_received", {
+      eventType: "message",
+      eventId: body?.event_id,
+      threadKey,
+      channel: event.channel,
+      threadTs,
+      isDirectMessage,
+      messageTs: normalized.id,
+      textChars: normalized.text.length,
+    });
 
     enqueueMessage(state, threadKey, {
       kind: "subscribed",
@@ -307,6 +364,15 @@ const enqueueMessage = (
   if (queue.entries.length > maxQueueSize) {
     queue.entries.splice(0, queue.entries.length - maxQueueSize);
   }
+
+  state.logger.info("slack.queue_enqueued", {
+    threadKey,
+    kind: entry.kind,
+    queueSize: queue.entries.length,
+    channel: entry.channel,
+    threadTs: entry.threadTs,
+    messageTs: entry.message.id,
+  });
 
   if (!queue.running) {
     queue.running = true;
@@ -337,11 +403,21 @@ const drainQueue = async (
       const current = batch[batch.length - 1]!;
       const skipped = batch.slice(0, -1).map((item) => item.message);
 
+      state.logger.info("slack.queue_draining", {
+        threadKey,
+        batchSize: batch.length,
+        skippedCount: skipped.length,
+        currentKind: current.kind,
+      });
+
       try {
         await handleQueueEntry(state, threadKey, current, skipped);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`[slack:error] ${message}\n`);
+        state.logger.error("slack.queue_entry_failed", {
+          threadKey,
+          message,
+        });
       }
     }
   } finally {
@@ -355,10 +431,29 @@ const handleQueueEntry = async (
   entry: QueueEntry,
   skipped: SlackMessageSeed[],
 ): Promise<void> => {
+  const sessionId = createSlackSessionId(`slack:${threadKey}`);
+  const requestLogger = state.logger.child({
+    threadKey,
+    sessionId,
+    channel: entry.channel,
+    threadTs: entry.threadTs,
+    requestKind: entry.kind,
+    messageTs: entry.message.id,
+  });
   const current = await materializeSlackMessage(state, entry.message);
   const skippedMessages = await materializeSkippedMessages(state, skipped);
+  requestLogger.info("slack.request_started", {
+    skippedCount: skippedMessages.length,
+    currentAuthor: current.authorName,
+  });
   const prompt = entry.kind === "new_mention"
-    ? await buildMentionPrompt(state, entry.channel, current, skippedMessages)
+    ? await buildMentionPrompt(
+      state,
+      entry.channel,
+      current,
+      skippedMessages,
+      requestLogger,
+    )
     : buildSubscribedThreadPrompt(current, skippedMessages);
 
   await respondInSlackThread({
@@ -366,8 +461,10 @@ const handleQueueEntry = async (
     channel: entry.channel,
     threadTs: entry.threadTs,
     threadKey,
+    sessionId,
     prompt,
     client: state,
+    logger: requestLogger,
   });
 };
 
@@ -376,12 +473,19 @@ const buildMentionPrompt = async (
   channel: string,
   currentMessage: SlackMessage,
   skipped: SlackMessage[],
+  logger: Logger,
 ): Promise<string> => {
   const observedMessages = await collectObservedChannelMessages(
     state,
     channel,
     currentMessage,
   );
+
+  logger.info("slack.context_collected", {
+    observedCount: observedMessages.length,
+    skippedCount: skipped.length,
+    lookbackMinutes: state.observedContextLimits.lookbackMinutes,
+  });
 
   return [
     "You are replying inside a Slack thread that was created from a channel mention.",
@@ -418,9 +522,11 @@ const collectObservedChannelMessages = async (
       ...(cursor ? { cursor } : {}),
     });
     if (!response.ok) {
-      process.stderr.write(
-        `[slack:error] conversations.history failed: ${response.error ?? "unknown"}\n`,
-      );
+      state.logger.error("slack.history_failed", {
+        channel,
+        messageTs: currentMessage.id,
+        error: response.error ?? "unknown",
+      });
       break;
     }
 
@@ -497,7 +603,10 @@ const resolveUserName = async (
     return name;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[slack:error] users.info failed: ${message}\n`);
+    state.logger.warn("slack.user_lookup_failed", {
+      userId,
+      message,
+    });
     state.userCache.set(userId, userId);
     return userId;
   }
@@ -561,23 +670,32 @@ const respondInSlackThread = async ({
   channel,
   threadTs,
   threadKey,
+  sessionId,
   prompt,
   client,
+  logger,
 }: {
   config: LoadedAgentConfig;
   channel: string;
   threadTs: string;
   threadKey: string;
+  sessionId: string;
   prompt: string;
   client: SlackGatewayState;
+  logger: Logger;
 }): Promise<void> => {
+  const startedAt = Date.now();
   try {
+    logger.info("slack.reply_generation_started", {
+      promptChars: prompt.length,
+    });
     const { outputText } = await executePromptInSession({
       ...config.runtime,
       toolOptions: config.toolOptions,
       sessionsRootDir: config.sessions.rootDir,
-      sessionId: createSlackSessionId(`slack:${threadKey}`),
+      sessionId,
       prompt,
+      logger,
       writers: {
         stderr: process.stderr,
       },
@@ -587,14 +705,26 @@ const respondInSlackThread = async ({
       ? outputText
       : "I finished processing that, but I do not have a textual reply to send.";
 
-  await client.slackClient.chat.postMessage({
-    channel,
-    text: reply,
-    thread_ts: threadTs,
-  });
+    await client.slackClient.chat.postMessage({
+      channel,
+      text: reply,
+      thread_ts: threadTs,
+    });
+
+    logger.info("slack.reply_posted", {
+      durationMs: Date.now() - startedAt,
+      replyChars: reply.length,
+      sessionId,
+      threadKey,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[slack:error] ${message}\n`);
+    logger.error("slack.reply_failed", {
+      durationMs: Date.now() - startedAt,
+      message,
+      sessionId,
+      threadKey,
+    });
 
     await client.slackClient.chat.postMessage({
       channel,
@@ -665,6 +795,7 @@ const loadSlackGatewayEnv = (
 const startHealthServer = (options: {
   host: string;
   port: number;
+  logger?: Logger;
 }): void => {
   const server = createServer((request, response) => {
     if (request.method === "GET" && request.url === "/healthz") {
@@ -679,6 +810,10 @@ const startHealthServer = (options: {
   });
 
   server.listen(options.port, options.host, () => {
+    options.logger?.info("slack.health_server_started", {
+      host: options.host,
+      port: options.port,
+    });
     process.stdout.write(
       `Slack health check listening on http://${options.host}:${options.port}\n`,
     );

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { logLevels, type LogLevel } from "./logger.js";
 import type { PromptExecutionPolicy } from "./prompt-executor.js";
 import type { JarRuntimeOptions, RuntimeProviderConfig } from "./runtime.js";
 import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
@@ -46,6 +47,11 @@ const rawConfigSchema = z.object({
       port: z.number().int().positive().optional(),
     }).strict().default({}),
   }).strict().default({ slack: {} }),
+  logging: z.object({
+    level: z.enum(logLevels).optional(),
+    stderr: z.boolean().optional(),
+    file_path: nonEmptyString.optional(),
+  }).strict().default({}),
   sessions: z.object({
     root_dir: nonEmptyString.optional(),
   }).strict().default({}),
@@ -66,6 +72,11 @@ const providerConfigSchema = z.object({
 
 export type LoadedAgentConfig = {
   configFilePath: string;
+  logging: {
+    level: LogLevel;
+    stderr: boolean;
+    filePath?: string;
+  };
   platform: {
     slack: {
       botName?: string;
@@ -105,6 +116,13 @@ export const loadAgentConfig = async (
 
   return {
     configFilePath: absoluteConfigPath,
+    logging: {
+      level: parsedConfig.logging.level ?? "info",
+      stderr: parsedConfig.logging.stderr ?? true,
+      ...(parsedConfig.logging.file_path === undefined
+        ? {}
+        : { filePath: path.resolve(configDirectory, parsedConfig.logging.file_path) }),
+    },
     platform: {
       slack: {
         ...(parsedConfig.platform.slack.bot_name === undefined

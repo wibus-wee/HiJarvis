@@ -32,6 +32,7 @@
 2. 启动 Slack Socket Mode 连接
 3. 维护线程订阅与队列的内存状态
 4. 把 Slack message 映射到 Jar session
+5. 输出一层面向开发排障的摘要日志
 
 ## 运行方式
 
@@ -52,6 +53,8 @@ pnpm --filter @hijarvis/jar-slack dev -- --config ./jar.toml --port 3100
 ```bash
 curl http://127.0.0.1:3000/healthz
 ```
+
+如果你已经在 `jar.toml` 里配置了 `[logging].file_path`，开发时建议直接 `tail -f` 这个文件，而不是只盯着 Slack thread 本身。当前默认是 `stderr` 走 `pino-pretty`，文件走 `pino` JSONL。
 
 ## 配置来源
 
@@ -81,6 +84,11 @@ context_lookback_minutes = 15
 context_message_limit = 12
 host = "0.0.0.0"
 port = 3000
+
+[logging]
+level = "info"
+stderr = true
+file_path = ".jar/logs/runtime.log"
 ```
 
 环境变量现在只作为 override。
@@ -110,6 +118,29 @@ PORT=3000
 - `JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT`：首次 mention 时，最多带入多少条顶层消息。
 - `HOST` / `PORT`：覆盖健康检查 HTTP 服务监听地址。
 - `SLACK_APP_TOKEN` 对应的是 app-level token，不是 bot token；创建时需要勾选 `connections:write`。
+
+## 运行日志
+
+Slack gateway 现在会输出一层摘要型运行日志，用于回答“这条请求现在跑到哪一步了”。
+
+推荐把这层日志理解成开发排障视图，而不是最终审计真相：
+
+- 审计真相：`.jar/sessions/<sessionId>/events.jsonl`
+- 开发视图：`[logging].file_path` 对应的 runtime log
+
+默认 `info` 级会覆盖这些关键阶段：
+
+- `slack.event_received`
+- `slack.queue_enqueued`
+- `slack.queue_draining`
+- `slack.context_collected`
+- `session.prompt_started`
+- `session.tool_started`
+- `session.tool_finished`
+- `session.prompt_finished`
+- `slack.reply_posted`
+
+`debug` 会额外输出一些低层事件，例如被忽略或被去重的 Slack event。它适合排查边缘问题，但不建议长期常开。
 
 ## 交互规则
 

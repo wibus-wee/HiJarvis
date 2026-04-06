@@ -1,5 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
+import type { Logger } from "./logger.js";
+
 export type PromptErrorCategory =
   | "timeout"
   | "rate_limit"
@@ -41,6 +43,7 @@ export const executePromptWithPolicy = async (
   prompt: string,
   policy: PromptExecutionPolicy,
   writers: PromptExecutionWriters,
+  logger?: Logger,
 ): Promise<void> => {
   const totalAttempts = policy.retryAttempts + 1;
 
@@ -51,9 +54,18 @@ export const executePromptWithPolicy = async (
       return;
     }
 
-    writers.stderr.write(
-      `[prompt:error] attempt=${attemptNumber}/${totalAttempts} category=${failure.category} retryable=${failure.retryable} message=${failure.message}\n`,
-    );
+    if (!logger) {
+      writers.stderr.write(
+        `[prompt:error] attempt=${attemptNumber}/${totalAttempts} category=${failure.category} retryable=${failure.retryable} message=${failure.message}\n`,
+      );
+    }
+    logger?.warn("prompt.attempt_failed", {
+      attempt: attemptNumber,
+      totalAttempts,
+      category: failure.category,
+      retryable: failure.retryable,
+      message: failure.message,
+    });
 
     const hasRetryBudget = attemptNumber < totalAttempts;
     if (!failure.retryable || !hasRetryBudget) {
@@ -62,9 +74,17 @@ export const executePromptWithPolicy = async (
 
     const delayMs = getRetryDelayMs(policy, attemptIndex);
     const nextAttempt = attemptNumber + 1;
-    writers.stderr.write(
-      `[prompt:retry] waiting=${delayMs}ms next_attempt=${nextAttempt}/${totalAttempts}\n`,
-    );
+    if (!logger) {
+      writers.stderr.write(
+        `[prompt:retry] waiting=${delayMs}ms next_attempt=${nextAttempt}/${totalAttempts}\n`,
+      );
+    }
+    logger?.info("prompt.retry_scheduled", {
+      delayMs,
+      nextAttempt,
+      totalAttempts,
+      category: failure.category,
+    });
     await sleep(delayMs);
   }
 
