@@ -19,6 +19,15 @@ You can also pipe the prompt through stdin:
 echo "Run git status and explain the workspace state." | pnpm dev -- --config ./apps/jar-cli/jar.toml
 ```
 
+For long-running adapters, the workspace uses the same source-first model during development:
+
+```bash
+pnpm dev:slack
+pnpm --filter @hijarvis/jar-telegram dev -- --config ../../jar.toml
+```
+
+Both commands run via `tsx`, and internal packages such as `@hijarvis/jar-core` are consumed from source without a separate build step.
+
 ## Config Layout
 
 `jar.toml` uses six top-level tables:

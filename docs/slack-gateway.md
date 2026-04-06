@@ -30,9 +30,10 @@
 
 1. 读取 `jar.toml`
 2. 启动 Slack Socket Mode 连接
-3. 维护线程订阅与队列的内存状态
-4. 把 Slack message 映射到 Jar session
-5. 输出一层面向开发排障的摘要日志
+3. 先把 Slack transport event 归一化成 canonical message
+4. 在内存里维护线程订阅、event dedupe、message dedupe 与队列状态
+5. 把 Slack message 映射到 Jar session
+6. 输出一层面向开发排障的摘要日志
 
 ## 运行方式
 
@@ -144,6 +145,20 @@ Slack gateway 现在会输出一层摘要型运行日志，用于回答“这条
 
 ## 交互规则
 
+Slack gateway 现在明确把输入处理拆成三层：
+
+1. transport event
+2. canonical message
+3. conversation trigger
+
+原因是：Slack 可能会针对同一条用户消息同时发出 `app_mention` 和 `message.*`。如果直接把 transport event 当成用户请求，就会把同一条消息执行两次。
+
+当前 intake 规则：
+
+- `event_id` dedupe：只负责挡住 Slack 对同一个事件的重投
+- `channel + ts` message dedupe：保证同一条 Slack 消息只进入业务处理一次
+- trigger classifier：统一判断这条 canonical message 是 `new_mention`、`subscribed` 还是 `ignore`
+
 ### 1. 新的 channel mention
 
 当用户在一个**尚未订阅**的 Slack 线程上下文中 `@mention` Jarvis：
@@ -157,6 +172,11 @@ Slack gateway 现在会输出一层摘要型运行日志，用于回答“这条
 
 这里的 observed context 是**临时上下文**，不是长期记忆真相。
 
+补充说明：
+
+- 这里的“首次 mention”是业务语义，不是 transport event 语义。
+- 如果同一条消息同时以 `app_mention` 和 `message.channels` 到达，最终也只会被接受一次。
+
 ### 2. 已订阅 thread 中的后续消息
 
 当用户继续在同一个 Slack thread 里说话：
@@ -167,6 +187,11 @@ Slack gateway 现在会输出一层摘要型运行日志，用于回答“这条
 4. 在同一个 thread 中回复
 
 这个阶段的长期记忆真相来自 Jar session，而不是 Slack channel 历史。
+
+补充规则：
+
+- 已订阅 thread 里的消息统一按 follow-up 处理。
+- 即使这条 follow-up 再次 `@mention` Jarvis，也不会额外触发第二条并行处理路径。
 
 ### 3. 直接消息
 
@@ -198,6 +223,8 @@ slack__{channelId}__{threadTs}
 - 保证“一个 Slack thread = 一个 Jar session”
 
 ## 上下文组装
+
+Slack adapter 只负责组装每一轮的 turn prompt，不负责 system prompt。system prompt 的最终文本由 `packages/jar-core/src/prompt-builder.ts` 在 runtime 层统一构造；Slack 通过同一个模块里的 `buildTurnPrompt()` 组装平台上下文。
 
 ### 首次 mention
 

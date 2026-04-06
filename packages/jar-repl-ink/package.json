@@ -3,20 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "types": "./dist/index.d.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
+    ".": "./src/index.ts"
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "test": "tsx --test src/*.test.ts src/**/*.test.ts",
-    "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json"
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",

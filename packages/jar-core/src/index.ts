@@ -16,6 +16,13 @@ export {
   type PromptExecutionPolicy,
 } from "./prompt-executor.js";
 export { loadAgentConfig, type LoadedAgentConfig } from "./config.js";
+export {
+  buildSystemPrompt,
+  buildTurnPrompt,
+  type PromptSection,
+  type SystemPromptInput,
+  type TurnPromptInput,
+} from "./prompt-builder.js";
 export { listSessions, openSession } from "./session-store.js";
 export {
   executePromptInSession,

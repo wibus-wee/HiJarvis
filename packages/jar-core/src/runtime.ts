@@ -1,6 +1,7 @@
 import { Agent, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModels, type KnownProvider, type Model } from "@mariozechner/pi-ai";
 
+import { buildSystemPrompt } from "./prompt-builder.js";
 import type { PromptExecutionPolicy } from "./prompt-executor.js";
 
 export type RuntimeProviderConfig = {
@@ -23,7 +24,9 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
 
   return new Agent({
     initialState: {
-      systemPrompt: config.systemPrompt,
+      systemPrompt: buildSystemPrompt({
+        basePrompt: config.systemPrompt,
+      }),
       model,
       thinkingLevel: config.thinkingLevel,
       tools: config.tools,

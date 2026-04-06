@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   createSlackSessionId,
+  buildSubscribedThreadPrompt,
   formatCurrentMessageBlock,
   formatObservedContextBlock,
   formatQueuedMessagesBlock,
@@ -83,6 +84,29 @@ test("formatCurrentMessageBlock renders the active request", () => {
 
   assert.match(block, /Current user request:/);
   assert.match(block, /Wibus: Summarize what I said above\./);
+});
+
+test("buildSubscribedThreadPrompt keeps thread instructions separate from request content", () => {
+  const prompt = buildSubscribedThreadPrompt(
+    createMessage({
+      id: "5",
+      text: "Summarize the thread.",
+      authorName: "Wibus",
+      sentAt: "2026-04-06T09:04:00.000Z",
+    }),
+    [
+      createMessage({
+        id: "6",
+        text: "Also mention the deadline.",
+        authorName: "Wibus",
+        sentAt: "2026-04-06T09:05:00.000Z",
+      }),
+    ],
+  );
+
+  assert.match(prompt, /You are continuing an existing Slack thread conversation\./);
+  assert.match(prompt, /Additional user messages that arrived while you were still processing the previous turn:/);
+  assert.match(prompt, /Current user request:/);
 });
 
 test("normalizeSlackEvent strips bot mentions and derives stable keys", () => {

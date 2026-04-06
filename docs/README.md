@@ -1,7 +1,7 @@
 # Jar Documentation Index
 
 - [Configuration](./configuration.md): `jar.toml` layout, provider selection, and runtime behavior.
-- [Agent Runtime](./agent-runtime.md): workspace startup flow, package boundaries, model resolution, and event handling.
+- [Agent Runtime](./agent-runtime.md): workspace startup flow, source-first package boundaries, model resolution, and event handling.
 - [Slack Gateway](./slack-gateway.md): Slack Socket Mode gateway, thread/session mapping, and observed channel context rules.
 - [Telegram Gateway](./telegram-gateway.md): Telegram long polling gateway, trigger rules, chat/session mapping, and streaming reply behavior.
 - [TUI](./tui.md): Ink-based `--repl` package, layout, keyboard behavior, and rendering boundaries.

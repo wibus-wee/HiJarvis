@@ -4,6 +4,7 @@ import process from "node:process";
 
 import { App, LogLevel } from "@slack/bolt";
 import {
+  buildTurnPrompt,
   createLogger,
   executePromptInSession,
   loadAgentConfig,
@@ -523,19 +524,18 @@ const buildMentionPrompt = async (
     lookbackMinutes: state.observedContextLimits.lookbackMinutes,
   });
 
-  return [
-    "You are replying inside a Slack thread that was created from a channel mention.",
-    "Use the observed channel context to understand what happened immediately before the mention.",
-    "Do not claim to remember channel history beyond the observed context provided below.",
-    "",
-    formatObservedContextBlock(observedMessages),
-    "",
-    formatQueuedMessagesBlock(skipped),
-    "",
-    formatCurrentMessageBlock(currentMessage),
-  ]
-    .filter((segment) => segment.trim().length > 0)
-    .join("\n");
+  return buildTurnPrompt({
+    lead: [
+      "You are replying inside a Slack thread that was created from a channel mention.",
+      "Use the observed channel context to understand what happened immediately before the mention.",
+      "Do not claim to remember channel history beyond the observed context provided below.",
+    ],
+    sections: [
+      { body: formatObservedContextBlock(observedMessages) },
+      { body: formatQueuedMessagesBlock(skipped) },
+      { body: formatCurrentMessageBlock(currentMessage) },
+    ],
+  });
 };
 
 const collectObservedChannelMessages = async (

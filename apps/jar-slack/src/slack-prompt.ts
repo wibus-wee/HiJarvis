@@ -1,3 +1,5 @@
+import { buildTurnPrompt } from "@hijarvis/jar-core";
+
 export type SlackMessage = {
   id: string;
   text: string;
@@ -53,14 +55,14 @@ export const buildSubscribedThreadPrompt = (
   message: SlackMessage,
   skipped: SlackMessage[],
 ): string => {
-  return [
-    "You are continuing an existing Slack thread conversation.",
-    "The thread history in your session is the source of truth for prior bot interaction.",
-    "",
-    formatQueuedMessagesBlock(skipped),
-    "",
-    formatCurrentMessageBlock(message),
-  ]
-    .filter((segment) => segment.trim().length > 0)
-    .join("\n");
+  return buildTurnPrompt({
+    lead: [
+      "You are continuing an existing Slack thread conversation.",
+      "The thread history in your session is the source of truth for prior bot interaction.",
+    ],
+    sections: [
+      { body: formatQueuedMessagesBlock(skipped) },
+      { body: formatCurrentMessageBlock(message) },
+    ],
+  });
 };

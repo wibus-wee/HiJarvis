@@ -70,7 +70,11 @@ The workspace packages are split as follows:
 - `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
 - `apps/jar-telegram`: grammY-based Telegram gateway, trigger filtering, queue coalescing, and streaming replies
 
-For local development, `apps/jar-cli/package.json` runs `tsx` with the workspace-level `tsconfig.workspace.json`. That ensures cross-package source imports such as `packages/jar-repl-ink/src/repl.tsx` are matched by a single `include` set and receive the expected JSX runtime settings.
+The workspace now uses a source-first runtime model:
+
+- `packages/jar-core` and `packages/jar-repl-ink` export `src/index.ts` directly.
+- `apps/jar-cli`, `apps/jar-slack`, and `apps/jar-telegram` execute through `tsx`.
+- local development does not require a prebuild step for internal workspace packages before starting an app.
 
 ## CLI Contract
 
@@ -122,12 +126,17 @@ That keeps provider/model metadata aligned with `pi-ai` while still allowing cus
 
 `packages/jar-core/src/runtime.ts` currently creates a single `pi-agent-core` `Agent` instance per run with:
 
-- `systemPrompt`
+- `systemPrompt`, assembled through `packages/jar-core/src/prompt-builder.ts`
 - resolved `model`
 - `thinkingLevel`
 - built-in tools from `packages/jar-core/src/tools.ts`
 - `maxRetryDelayMs` derived from config
 - `getApiKey()` that only returns the configured API key for the active provider
+
+Prompt assembly is now split into two layers:
+
+- `buildSystemPrompt()`: owns the final system prompt text handed to `pi-agent-core`. Right now it wraps the configured base prompt, but it is the single seam for future overlays such as platform policy, memory summaries, or execution constraints.
+- `buildTurnPrompt()`: owns adapter-level per-turn text assembly. Adapters such as Slack use it to compose observed context, queued follow-up messages, and the current user request without mutating the system prompt.
 
 `packages/jar-core/src/session-executor.ts` is the shared session-bound execution seam for non-CLI adapters. It:
 
@@ -197,6 +206,7 @@ Jar is intentionally minimal right now:
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven; there is no persisted retry history
 - no prompt compaction or transcript pruning
+- no dynamic system prompt overlays yet, even though the assembly seam now exists
 - no built-in tools beyond text file IO and shell execution
 
 If any of these behaviors change, update this document together with `apps/jar-cli/src/main.ts`, `packages/jar-core/src/runtime.ts`, and any affected adapter package.
