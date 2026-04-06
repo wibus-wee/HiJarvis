@@ -7,7 +7,10 @@
 ```bash
 .
 ├── apps
-│   └── jar-cli
+│   ├── jar-cli
+│   └── jar-slack
+├── packages
+│   └── jar-core
 ```
 
 ## Config Layout

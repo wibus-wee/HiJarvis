@@ -7,7 +7,8 @@
     "build": "pnpm -r --if-present build",
     "check": "pnpm -r --if-present check",
     "test": "pnpm -r --if-present test",
-    "dev": "pnpm --filter @hijarvis/jar-cli dev --config ../../jar.toml"
+    "dev": "pnpm --filter @hijarvis/jar-cli dev --config ../../jar.toml",
+    "dev:slack": "pnpm --filter @hijarvis/jar-slack dev -- --config ../../jar.toml"
   },
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {

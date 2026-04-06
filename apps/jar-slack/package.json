@@ -1,0 +1,24 @@
+{
+  "name": "@hijarvis/jar-slack",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "jar-slack": "./dist/main.js"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "check": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@chat-adapter/slack": "^4.23.0",
+    "@chat-adapter/state-memory": "^4.23.0",
+    "@hijarvis/jar-core": "workspace:*",
+    "chat": "^4.23.0",
+    "tsx": "^4.21.0",
+    "zod": "^4.3.6"
+  }
+}
