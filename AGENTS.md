@@ -9,7 +9,8 @@
 ├── apps
 │   ├── jar-cli
 │   ├── jar-slack
-│   └── jar-telegram
+│   ├── jar-telegram
+│   └── jar-wechat
 ├── packages
 │   └── jar-core
 ```
@@ -45,6 +46,12 @@ context_lookback_minutes = 15
 context_message_limit = 12
 host = "0.0.0.0"
 port = 3000
+
+[platform.wechat]
+base_url = "https://api-bot.hzxww.net"
+token_path = ".jar/wechat/credentials.json"
+host = "0.0.0.0"
+port = 3002
 
 [tools]
 workspace_root = "."

@@ -9,6 +9,7 @@ Jar 现在支持两类 runtime surface：
 1. `apps/jar-cli`：one-shot CLI 和 Ink REPL。
 2. `apps/jar-slack`：基于 Slack Socket Mode 的 Slack gateway。
 3. `apps/jar-telegram`：基于 grammY long polling 的 Telegram gateway。
+4. `apps/jar-wechat`：基于 `@pinixai/weixin-bot` long polling 的 WeChat gateway。
 
 CLI invocation 仍然保持原有流程：
 
@@ -46,6 +47,18 @@ Telegram gateway 则是：
 8. Streams assistant text back to Telegram through `@grammyjs/stream`.
 9. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
 
+WeChat gateway 则是：
+
+1. Starts an HTTP health server in `apps/jar-wechat/src/main.ts`.
+2. Loads the same `jar.toml` through `packages/jar-core/src/config.ts`.
+3. Starts a `WeixinBot`, performs QR login when needed, then enters SDK-managed long polling.
+4. Handles inbound WeChat direct messages from `bot.onMessage()`.
+5. Coalesces rapid follow-up messages per user in memory so long-running LLM turns do not interleave.
+6. Builds a WeChat prompt from the current message and any skipped messages.
+7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
+8. Posts the final assistant text back through `bot.reply()`, with typing indicators around the LLM turn.
+9. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
+
 ## Entrypoint
 
 `apps/jar-cli/src/main.ts` is the CLI entrypoint.
@@ -69,11 +82,12 @@ The workspace packages are split as follows:
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
 - `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
 - `apps/jar-telegram`: grammY-based Telegram gateway, trigger filtering, queue coalescing, and streaming replies
+- `apps/jar-wechat`: Weixin bot gateway, per-user queue coalescing, and final-text replies
 
 The workspace now uses a source-first runtime model:
 
 - `packages/jar-core` and `packages/jar-repl-ink` export `src/index.ts` directly.
-- `apps/jar-cli`, `apps/jar-slack`, and `apps/jar-telegram` execute through `tsx`.
+- `apps/jar-cli`, `apps/jar-slack`, `apps/jar-telegram`, and `apps/jar-wechat` execute through `tsx`.
 - local development does not require a prebuild step for internal workspace packages before starting an app.
 
 ## CLI Contract
@@ -114,6 +128,7 @@ Adapter-specific tables are validated when each adapter starts:
 
 - Slack: `apps/jar-slack/src/slack-config.ts`
 - Telegram: `apps/jar-telegram/src/telegram-config.ts`
+- WeChat: `apps/jar-wechat/src/wechat-config.ts`
 
 ## Model Resolution
 
@@ -208,6 +223,7 @@ Jar is intentionally minimal right now:
 - default CLI runs a single prompt per process (multi-turn is available in REPL/session mode)
 - Slack transport exists, but only as a dedicated Socket Mode app in `apps/jar-slack`
 - Telegram transport exists as a dedicated grammY long-polling app in `apps/jar-telegram`
+- WeChat transport exists as a dedicated `@pinixai/weixin-bot` long-polling app in `apps/jar-wechat`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven; there is no persisted retry history
 - prompt compaction is applied via `agent.compaction` to keep long sessions within context limits

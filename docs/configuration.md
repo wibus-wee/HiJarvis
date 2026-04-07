@@ -24,6 +24,7 @@ For long-running adapters, the workspace uses the same source-first model during
 ```bash
 pnpm dev:slack
 pnpm --filter @hijarvis/jar-telegram dev -- --config ../../jar.toml
+pnpm --filter @hijarvis/jar-wechat dev -- --config ../../jar.toml
 ```
 
 Both commands run via `tsx`, and internal packages such as `@hijarvis/jar-core` are consumed from source without a separate build step.
@@ -72,6 +73,12 @@ allowed_chat_ids = [123456789]
 allowed_usernames = ["wibus"]
 host = "0.0.0.0"
 port = 3001
+
+[platform.wechat]
+base_url = "https://api-bot.hzxww.net"
+token_path = ".jar/wechat/credentials.json"
+host = "0.0.0.0"
+port = 3002
 
 [logging]
 level = "info"
@@ -162,6 +169,22 @@ Telegram gateway 默认使用 long polling，而不是 webhook。
 - `JARVIS_TELEGRAM_HOST`
 - `JARVIS_TELEGRAM_PORT`
 
+### `[platform.wechat]`
+
+- `base_url`: 可选 iLink API base URL 覆盖项。
+- `token_path`: 可选 credentials 文件路径；相对路径以当前工作目录解析，由 `@pinixai/weixin-bot` 持久化二维码登录态。
+- `host`: WeChat health check HTTP 服务监听 host。默认：`"0.0.0.0"`。
+- `port`: WeChat health check HTTP 服务监听端口。默认：`3002`。
+
+WeChat gateway 通过 `@pinixai/weixin-bot` 做二维码登录和长轮询。
+
+这些环境变量可以覆盖对应配置：
+
+- `JARVIS_WECHAT_BASE_URL`
+- `JARVIS_WECHAT_TOKEN_PATH`
+- `JARVIS_WECHAT_HOST`
+- `JARVIS_WECHAT_PORT`
+
 ### `[logging]`
 
 - `level`: 运行摘要日志级别，可选 `error`、`warn`、`info`、`debug`。默认：`info`。
@@ -189,6 +212,7 @@ Telegram gateway 默认使用 long polling，而不是 webhook。
 - `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-core` and wires it into the same core package.
 - `apps/jar-slack/src/slack-runtime.ts` reads `platform.slack`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `apps/jar-telegram/src/telegram-runtime.ts` reads `platform.telegram`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
+- `apps/jar-wechat/src/wechat-runtime.ts` reads `platform.wechat`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
 - `packages/jar-core/src/session-executor.ts` emits session/tool summary logs without streaming every token delta.
@@ -210,6 +234,7 @@ Platform-specific tables are validated when the adapter starts:
 
 - Slack: `apps/jar-slack/src/slack-config.ts`
 - Telegram: `apps/jar-telegram/src/telegram-config.ts`
+- WeChat: `apps/jar-wechat/src/wechat-config.ts`
 
 Common failure cases:
 
@@ -228,6 +253,7 @@ When config semantics change, update these files in the same patch:
 - `packages/jar-core/src/config.ts`
 - `apps/jar-slack/src/slack-config.ts`
 - `apps/jar-telegram/src/telegram-config.ts`
+- `apps/jar-wechat/src/wechat-config.ts`
 - `jar.example.toml`
 - `docs/configuration.md`
 - `docs/README.md` when a new config-related document is added

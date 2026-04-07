@@ -1,0 +1,836 @@
+diff --git a/dist/api.d.ts b/dist/api.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..70d1635fa107922624f1894c3f2e6c69bdbc5001
+--- /dev/null
++++ b/dist/api.d.ts
+@@ -0,0 +1,35 @@
++import { type GetConfigResp, type GetUpdatesResp, type SendMessageReq, type SendTypingReq } from './types.js';
++export declare const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
++export declare const CHANNEL_VERSION = "1.0.0";
++export interface QrCodeResponse {
++    qrcode: string;
++    qrcode_img_content: string;
++}
++export interface QrStatusResponse {
++    status: 'wait' | 'scaned' | 'confirmed' | 'expired';
++    bot_token?: string;
++    ilink_bot_id?: string;
++    ilink_user_id?: string;
++    baseurl?: string;
++}
++export declare class ApiError extends Error {
++    readonly status: number;
++    readonly code?: number;
++    readonly payload?: unknown;
++    constructor(message: string, options: {
++        status: number;
++        code?: number;
++        payload?: unknown;
++    });
++}
++export declare function randomWechatUin(): string;
++export declare function buildHeaders(token: string): Record<string, string>;
++export declare function apiFetch<T>(baseUrl: string, endpoint: string, body: unknown, token: string, timeoutMs?: number, signal?: AbortSignal): Promise<T>;
++export declare function apiGet<T>(baseUrl: string, path: string, headers?: Record<string, string>): Promise<T>;
++export declare function getUpdates(baseUrl: string, token: string, buf: string, signal?: AbortSignal): Promise<GetUpdatesResp>;
++export declare function sendMessage(baseUrl: string, token: string, msg: SendMessageReq['msg']): Promise<Record<string, unknown>>;
++export declare function getConfig(baseUrl: string, token: string, userId: string, contextToken: string): Promise<GetConfigResp>;
++export declare function sendTyping(baseUrl: string, token: string, userId: string, ticket: string, status: SendTypingReq['status']): Promise<Record<string, unknown>>;
++export declare function fetchQrCode(baseUrl: string): Promise<QrCodeResponse>;
++export declare function pollQrStatus(baseUrl: string, qrcode: string): Promise<QrStatusResponse>;
++export declare function buildTextMessage(userId: string, contextToken: string, text: string): SendMessageReq['msg'];
+diff --git a/dist/api.js b/dist/api.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..dd151914146d7b4aa66649d516d49adf89f3b352
+--- /dev/null
++++ b/dist/api.js
+@@ -0,0 +1,129 @@
++import { randomBytes, randomUUID } from 'node:crypto';
++import { MessageState, MessageType, MessageItemType, } from './types.js';
++export const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com';
++export const CHANNEL_VERSION = '1.0.0';
++export class ApiError extends Error {
++    status;
++    code;
++    payload;
++    constructor(message, options) {
++        super(message);
++        this.name = 'ApiError';
++        this.status = options.status;
++        this.code = options.code;
++        this.payload = options.payload;
++    }
++}
++function normalizeBaseUrl(baseUrl) {
++    return baseUrl.replace(/\/+$/, '');
++}
++function buildBaseInfo() {
++    return { channel_version: CHANNEL_VERSION };
++}
++async function parseJsonResponse(response, label) {
++    const text = await response.text();
++    const payload = text ? JSON.parse(text) : {};
++    if (!response.ok) {
++        const message = payload?.errmsg ?? `${label} failed with HTTP ${response.status}`;
++        throw new ApiError(message, {
++            status: response.status,
++            code: payload?.errcode,
++            payload,
++        });
++    }
++    if (typeof payload?.ret === 'number' && payload.ret !== 0) {
++        const body = payload;
++        throw new ApiError(body.errmsg ?? `${label} failed`, {
++            status: response.status,
++            code: body.errcode ?? body.ret,
++            payload,
++        });
++    }
++    return payload;
++}
++export function randomWechatUin() {
++    const value = randomBytes(4).readUInt32BE(0);
++    return Buffer.from(String(value), 'utf8').toString('base64');
++}
++export function buildHeaders(token) {
++    return {
++        'Content-Type': 'application/json',
++        AuthorizationType: 'ilink_bot_token',
++        Authorization: `Bearer ${token}`,
++        'X-WECHAT-UIN': randomWechatUin(),
++    };
++}
++export async function apiFetch(baseUrl, endpoint, body, token, timeoutMs = 40_000, signal) {
++    const url = new URL(endpoint, `${normalizeBaseUrl(baseUrl)}/`);
++    const timeoutSignal = AbortSignal.timeout(timeoutMs);
++    const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
++    const response = await fetch(url, {
++        method: 'POST',
++        headers: buildHeaders(token),
++        body: JSON.stringify(body),
++        signal: requestSignal,
++    });
++    return parseJsonResponse(response, endpoint);
++}
++export async function apiGet(baseUrl, path, headers = {}) {
++    const url = new URL(path, `${normalizeBaseUrl(baseUrl)}/`);
++    const response = await fetch(url, {
++        method: 'GET',
++        headers,
++    });
++    return parseJsonResponse(response, path);
++}
++export async function getUpdates(baseUrl, token, buf, signal) {
++    const body = {
++        get_updates_buf: buf,
++        base_info: buildBaseInfo(),
++    };
++    return apiFetch(baseUrl, '/ilink/bot/getupdates', body, token, 40_000, signal);
++}
++export async function sendMessage(baseUrl, token, msg) {
++    return apiFetch(baseUrl, '/ilink/bot/sendmessage', {
++        msg,
++        base_info: buildBaseInfo(),
++    }, token, 15_000);
++}
++export async function getConfig(baseUrl, token, userId, contextToken) {
++    return apiFetch(baseUrl, '/ilink/bot/getconfig', {
++        ilink_user_id: userId,
++        context_token: contextToken,
++        base_info: buildBaseInfo(),
++    }, token, 15_000);
++}
++export async function sendTyping(baseUrl, token, userId, ticket, status) {
++    const body = {
++        ilink_user_id: userId,
++        typing_ticket: ticket,
++        status,
++        base_info: buildBaseInfo(),
++    };
++    return apiFetch(baseUrl, '/ilink/bot/sendtyping', body, token, 15_000);
++}
++export async function fetchQrCode(baseUrl) {
++    return apiGet(baseUrl, '/ilink/bot/get_bot_qrcode?bot_type=3');
++}
++export async function pollQrStatus(baseUrl, qrcode) {
++    return apiGet(baseUrl, `/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(qrcode)}`, {
++        'iLink-App-ClientVersion': '1',
++    });
++}
++export function buildTextMessage(userId, contextToken, text) {
++    return {
++        from_user_id: '',
++        to_user_id: userId,
++        client_id: randomUUID(),
++        message_type: MessageType.BOT,
++        message_state: MessageState.FINISH,
++        context_token: contextToken,
++        item_list: [
++            {
++                type: MessageItemType.TEXT,
++                text_item: { text },
++            },
++        ],
++    };
++}
++//# sourceMappingURL=api.js.map
+\ No newline at end of file
+diff --git a/dist/api.js.map b/dist/api.js.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..56ca6ae518ea07bb76420d39150420d81c2d76c0
+--- /dev/null
++++ b/dist/api.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"api.js","sourceRoot":"","sources":["../src/api.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/dist/auth.d.ts b/dist/auth.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..9e08b6567336df16cff0b89db0db2ee2f14dd8a4
+--- /dev/null
++++ b/dist/auth.d.ts
+@@ -0,0 +1,16 @@
++declare const DEFAULT_TOKEN_PATH: string;
++export interface Credentials {
++    token: string;
++    baseUrl: string;
++    accountId: string;
++    userId: string;
++}
++export interface LoginOptions {
++    baseUrl?: string;
++    tokenPath?: string;
++    force?: boolean;
++}
++export declare function loadCredentials(tokenPath?: string): Promise<Credentials | undefined>;
++export declare function clearCredentials(tokenPath?: string): Promise<void>;
++export declare function login(options?: LoginOptions): Promise<Credentials>;
++export { DEFAULT_TOKEN_PATH };
+diff --git a/dist/auth.js b/dist/auth.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..d93d6e4f74839766d596b4231e20ba248deb72ff
+--- /dev/null
++++ b/dist/auth.js
+@@ -0,0 +1,102 @@
++import { mkdir, readFile, rm, writeFile, chmod } from 'node:fs/promises';
++import os from 'node:os';
++import path from 'node:path';
++import { setTimeout as delay } from 'node:timers/promises';
++import { DEFAULT_BASE_URL, fetchQrCode, pollQrStatus } from './api.js';
++const DEFAULT_TOKEN_DIR = path.join(os.homedir(), '.weixin-bot');
++const DEFAULT_TOKEN_PATH = path.join(DEFAULT_TOKEN_DIR, 'credentials.json');
++const QR_POLL_INTERVAL_MS = 2_000;
++function resolveTokenPath(tokenPath) {
++    return tokenPath ?? DEFAULT_TOKEN_PATH;
++}
++function log(message) {
++    process.stderr.write(`[weixin-bot] ${message}\n`);
++}
++async function saveCredentials(credentials, tokenPath) {
++    const targetPath = resolveTokenPath(tokenPath);
++    await mkdir(path.dirname(targetPath), { recursive: true, mode: 0o700 });
++    await writeFile(targetPath, `${JSON.stringify(credentials, null, 2)}\n`, { mode: 0o600 });
++    await chmod(targetPath, 0o600);
++}
++function isCredentials(value) {
++    if (!value || typeof value !== 'object') {
++        return false;
++    }
++    const candidate = value;
++    return typeof candidate.token === 'string'
++        && typeof candidate.baseUrl === 'string'
++        && typeof candidate.accountId === 'string'
++        && typeof candidate.userId === 'string';
++}
++async function printQrInstructions(url) {
++    log('在微信中打开以下链接完成登录:');
++    process.stderr.write(`${url}\n`);
++}
++export async function loadCredentials(tokenPath) {
++    const targetPath = resolveTokenPath(tokenPath);
++    try {
++        const raw = await readFile(targetPath, 'utf8');
++        const parsed = JSON.parse(raw);
++        if (!isCredentials(parsed)) {
++            throw new Error(`Invalid credentials format in ${targetPath}`);
++        }
++        return parsed;
++    }
++    catch (error) {
++        if (error.code === 'ENOENT') {
++            return undefined;
++        }
++        throw error;
++    }
++}
++export async function clearCredentials(tokenPath) {
++    await rm(resolveTokenPath(tokenPath), { force: true });
++}
++export async function login(options = {}) {
++    const baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
++    if (!options.force) {
++        const existing = await loadCredentials(options.tokenPath);
++        if (existing) {
++            return existing;
++        }
++    }
++    for (;;) {
++        const qr = await fetchQrCode(baseUrl);
++        await printQrInstructions(qr.qrcode_img_content);
++        let lastStatus;
++        for (;;) {
++            const status = await pollQrStatus(baseUrl, qr.qrcode);
++            if (status.status !== lastStatus) {
++                if (status.status === 'scaned') {
++                    log('QR code scanned. Confirm the login inside WeChat.');
++                }
++                else if (status.status === 'confirmed') {
++                    log('Login confirmed.');
++                }
++                else if (status.status === 'expired') {
++                    log('QR code expired. Requesting a new one...');
++                }
++                lastStatus = status.status;
++            }
++            if (status.status === 'confirmed') {
++                if (!status.bot_token || !status.ilink_bot_id || !status.ilink_user_id) {
++                    throw new Error('QR login confirmed, but the API did not return bot credentials');
++                }
++                const credentials = {
++                    token: status.bot_token,
++                    baseUrl: status.baseurl ?? baseUrl,
++                    accountId: status.ilink_bot_id,
++                    userId: status.ilink_user_id,
++                };
++                await saveCredentials(credentials, options.tokenPath);
++                return credentials;
++            }
++            if (status.status === 'expired') {
++                break;
++            }
++            await delay(QR_POLL_INTERVAL_MS);
++        }
++    }
++}
++export { DEFAULT_TOKEN_PATH };
++//# sourceMappingURL=auth.js.map
+\ No newline at end of file
+diff --git a/dist/auth.js.map b/dist/auth.js.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..17d0db72af658a9466d35fd6208e00c00192bc60
+--- /dev/null
++++ b/dist/auth.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"auth.js","sourceRoot":"","sources":["../src/auth.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/dist/client.d.ts b/dist/client.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..66da4dcffe9a11fa5a28e38b506767477900496b
+--- /dev/null
++++ b/dist/client.d.ts
+@@ -0,0 +1,41 @@
++import { type Credentials } from './auth.js';
++import { type IncomingMessage } from './types.js';
++type MessageHandler = (msg: IncomingMessage) => void | Promise<void>;
++export interface WeixinBotOptions {
++    baseUrl?: string;
++    tokenPath?: string;
++    onError?: (error: unknown) => void;
++}
++export declare class WeixinBot {
++    private baseUrl;
++    private readonly tokenPath?;
++    private readonly onErrorCallback?;
++    private readonly handlers;
++    private readonly contextTokens;
++    private credentials?;
++    private cursor;
++    private stopped;
++    private currentPollController;
++    private runPromise;
++    constructor(options?: WeixinBotOptions);
++    login(options?: {
++        force?: boolean;
++    }): Promise<Credentials>;
++    onMessage(handler: MessageHandler): this;
++    on(event: 'message', handler: MessageHandler): this;
++    reply(message: IncomingMessage, text: string): Promise<void>;
++    sendTyping(userId: string): Promise<void>;
++    stopTyping(userId: string): Promise<void>;
++    send(userId: string, text: string): Promise<void>;
++    run(): Promise<void>;
++    stop(): void;
++    private runLoop;
++    private ensureCredentials;
++    private sendText;
++    private dispatchMessage;
++    private rememberContext;
++    private toIncomingMessage;
++    private reportError;
++    private log;
++}
++export {};
+diff --git a/dist/client.js b/dist/client.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..3c74dbe1f0e2e1c82ffb01ded563b8417fc59e5c
+--- /dev/null
++++ b/dist/client.js
+@@ -0,0 +1,260 @@
++import { setTimeout as delay } from 'node:timers/promises';
++import { ApiError, DEFAULT_BASE_URL, buildTextMessage, getUpdates, sendMessage, getConfig, sendTyping as apiSendTyping } from './api.js';
++import { clearCredentials, loadCredentials, login } from './auth.js';
++import { MessageItemType, MessageType, } from './types.js';
++export class WeixinBot {
++    baseUrl;
++    tokenPath;
++    onErrorCallback;
++    handlers = [];
++    contextTokens = new Map();
++    credentials;
++    cursor = '';
++    stopped = false;
++    currentPollController = null;
++    runPromise = null;
++    constructor(options = {}) {
++        this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
++        this.tokenPath = options.tokenPath;
++        this.onErrorCallback = options.onError;
++    }
++    async login(options = {}) {
++        const previousToken = this.credentials?.token;
++        const credentials = await login({
++            baseUrl: this.baseUrl,
++            tokenPath: this.tokenPath,
++            force: options.force,
++        });
++        this.credentials = credentials;
++        this.baseUrl = credentials.baseUrl;
++        if (previousToken && previousToken !== credentials.token) {
++            this.cursor = '';
++            this.contextTokens.clear();
++        }
++        this.log(`Logged in as ${credentials.userId}`);
++        return credentials;
++    }
++    onMessage(handler) {
++        this.handlers.push(handler);
++        return this;
++    }
++    on(event, handler) {
++        if (event !== 'message') {
++            throw new Error(`Unsupported event: ${event}`);
++        }
++        return this.onMessage(handler);
++    }
++    async reply(message, text) {
++        this.contextTokens.set(message.userId, message._contextToken);
++        await this.sendText(message.userId, text, message._contextToken);
++        // Auto-cancel typing indicator after reply
++        this.stopTyping(message.userId).catch(() => { });
++    }
++    async sendTyping(userId) {
++        const contextToken = this.contextTokens.get(userId);
++        if (!contextToken) {
++            throw new Error(`No cached context token for user ${userId}. Reply to an incoming message first.`);
++        }
++        const credentials = await this.ensureCredentials();
++        const config = await getConfig(this.baseUrl, credentials.token, userId, contextToken);
++        if (!config.typing_ticket) {
++            this.log('sendTyping: no typing_ticket returned by getconfig');
++            return;
++        }
++        await apiSendTyping(this.baseUrl, credentials.token, userId, config.typing_ticket, 1);
++    }
++    async stopTyping(userId) {
++        const contextToken = this.contextTokens.get(userId);
++        if (!contextToken)
++            return;
++        const credentials = await this.ensureCredentials();
++        const config = await getConfig(this.baseUrl, credentials.token, userId, contextToken);
++        if (!config.typing_ticket)
++            return;
++        await apiSendTyping(this.baseUrl, credentials.token, userId, config.typing_ticket, 2);
++    }
++    async send(userId, text) {
++        const contextToken = this.contextTokens.get(userId);
++        if (!contextToken) {
++            throw new Error(`No cached context token for user ${userId}. Reply to an incoming message first.`);
++        }
++        await this.sendText(userId, text, contextToken);
++    }
++    async run() {
++        if (this.runPromise) {
++            return this.runPromise;
++        }
++        this.stopped = false;
++        this.runPromise = this.runLoop();
++        try {
++            await this.runPromise;
++        }
++        finally {
++            this.runPromise = null;
++            this.currentPollController = null;
++        }
++    }
++    stop() {
++        this.stopped = true;
++        this.currentPollController?.abort();
++    }
++    async runLoop() {
++        await this.ensureCredentials();
++        this.log('Long-poll loop started.');
++        let retryDelayMs = 1_000;
++        while (!this.stopped) {
++            try {
++                const credentials = await this.ensureCredentials();
++                this.currentPollController = new AbortController();
++                const updates = await getUpdates(this.baseUrl, credentials.token, this.cursor, this.currentPollController.signal);
++                this.currentPollController = null;
++                this.cursor = updates.get_updates_buf || this.cursor;
++                retryDelayMs = 1_000;
++                for (const raw of updates.msgs ?? []) {
++                    this.rememberContext(raw);
++                    const incoming = this.toIncomingMessage(raw);
++                    if (!incoming) {
++                        continue;
++                    }
++                    await this.dispatchMessage(incoming);
++                }
++            }
++            catch (error) {
++                this.currentPollController = null;
++                if (this.stopped && isAbortError(error)) {
++                    break;
++                }
++                if (isSessionExpired(error)) {
++                    this.log('Session expired. Waiting for a fresh QR login...');
++                    this.credentials = undefined;
++                    this.cursor = '';
++                    this.contextTokens.clear();
++                    try {
++                        await clearCredentials(this.tokenPath);
++                        await this.login({ force: true });
++                        retryDelayMs = 1_000;
++                        continue;
++                    }
++                    catch (loginError) {
++                        this.reportError(loginError);
++                    }
++                }
++                else {
++                    this.reportError(error);
++                }
++                await delay(retryDelayMs);
++                retryDelayMs = Math.min(retryDelayMs * 2, 10_000);
++            }
++        }
++        this.log('Long-poll loop stopped.');
++    }
++    async ensureCredentials() {
++        if (this.credentials) {
++            return this.credentials;
++        }
++        const stored = await loadCredentials(this.tokenPath);
++        if (stored) {
++            this.credentials = stored;
++            this.baseUrl = stored.baseUrl;
++            return stored;
++        }
++        return this.login();
++    }
++    async sendText(userId, text, contextToken) {
++        if (text.length === 0) {
++            throw new Error('Message text cannot be empty.');
++        }
++        const credentials = await this.ensureCredentials();
++        for (const chunk of chunkText(text, 2_000)) {
++            await sendMessage(this.baseUrl, credentials.token, buildTextMessage(userId, contextToken, chunk));
++        }
++    }
++    async dispatchMessage(message) {
++        if (this.handlers.length === 0) {
++            return;
++        }
++        const results = await Promise.allSettled(this.handlers.map(async (handler) => handler(message)));
++        for (const result of results) {
++            if (result.status === 'rejected') {
++                this.reportError(result.reason);
++            }
++        }
++    }
++    rememberContext(message) {
++        const userId = message.message_type === MessageType.USER ? message.from_user_id : message.to_user_id;
++        if (userId && message.context_token) {
++            this.contextTokens.set(userId, message.context_token);
++        }
++    }
++    toIncomingMessage(message) {
++        if (message.message_type !== MessageType.USER) {
++            return null;
++        }
++        return {
++            userId: message.from_user_id,
++            text: extractText(message.item_list),
++            type: detectType(message.item_list),
++            raw: message,
++            _contextToken: message.context_token,
++            timestamp: new Date(message.create_time_ms),
++        };
++    }
++    reportError(error) {
++        this.log(error instanceof Error ? error.message : String(error));
++        this.onErrorCallback?.(error);
++    }
++    log(message) {
++        process.stderr.write(`[weixin-bot] ${message}\n`);
++    }
++}
++function detectType(items) {
++    const first = items[0];
++    switch (first?.type) {
++        case MessageItemType.IMAGE:
++            return 'image';
++        case MessageItemType.VOICE:
++            return 'voice';
++        case MessageItemType.FILE:
++            return 'file';
++        case MessageItemType.VIDEO:
++            return 'video';
++        default:
++            return 'text';
++    }
++}
++function extractText(items) {
++    const parts = items
++        .map((item) => {
++        switch (item.type) {
++            case MessageItemType.TEXT:
++                return item.text_item?.text ?? '';
++            case MessageItemType.IMAGE:
++                return item.image_item?.url ?? '[image]';
++            case MessageItemType.VOICE:
++                return item.voice_item?.text ?? '[voice]';
++            case MessageItemType.FILE:
++                return item.file_item?.file_name ?? '[file]';
++            case MessageItemType.VIDEO:
++                return '[video]';
++            default:
++                return '';
++        }
++    })
++        .filter(Boolean);
++    return parts.join('\n');
++}
++function chunkText(text, limit) {
++    const chars = Array.from(text);
++    const chunks = [];
++    for (let index = 0; index < chars.length; index += limit) {
++        chunks.push(chars.slice(index, index + limit).join(''));
++    }
++    return chunks.length > 0 ? chunks : [''];
++}
++function isAbortError(error) {
++    return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
++}
++function isSessionExpired(error) {
++    return error instanceof ApiError && error.code === -14;
++}
++//# sourceMappingURL=client.js.map
+\ No newline at end of file
+diff --git a/dist/client.js.map b/dist/client.js.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..f8ecce341a79f3482acd56ab41422bf2772a6196
+--- /dev/null
++++ b/dist/client.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"client.js","sourceRoot":"","sources":["../src/client.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..47f06a0f80c04efc4068ffada6ca92c3b5479bd8
+--- /dev/null
++++ b/dist/index.d.ts
+@@ -0,0 +1,2 @@
++export { WeixinBot } from './client.js';
++export * from './types.js';
+diff --git a/dist/index.js b/dist/index.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..6993ce2e4bef8b007c55e7051092ed960a983833
+--- /dev/null
++++ b/dist/index.js
+@@ -0,0 +1,3 @@
++export { WeixinBot } from './client.js';
++export * from './types.js';
++//# sourceMappingURL=index.js.map
+\ No newline at end of file
+diff --git a/dist/index.js.map b/dist/index.js.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..60ba2559a6f15315c09f4e23063821c686a8784a
+--- /dev/null
++++ b/dist/index.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"index.js","sourceRoot":"","sources":["../src/index.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,SAAS,EAAE,MAAM,aAAa,CAAA;AACvC,cAAc,YAAY,CAAA"}
+\ No newline at end of file
+diff --git a/dist/types.d.ts b/dist/types.d.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..d6b7df3e4c4f5e4ffc721b6ee01644fcfebf4ae6
+--- /dev/null
++++ b/dist/types.d.ts
+@@ -0,0 +1,124 @@
++export interface BaseInfo {
++    channel_version: string;
++}
++export declare enum MessageType {
++    USER = 1,
++    BOT = 2
++}
++export declare enum MessageState {
++    NEW = 0,
++    GENERATING = 1,
++    FINISH = 2
++}
++export declare enum MessageItemType {
++    TEXT = 1,
++    IMAGE = 2,
++    VOICE = 3,
++    FILE = 4,
++    VIDEO = 5
++}
++export interface CDNMedia {
++    encrypt_query_param: string;
++    aes_key: string;
++    encrypt_type?: 0 | 1;
++}
++export interface TextItem {
++    text: string;
++}
++export interface ImageItem {
++    media: CDNMedia;
++    aeskey?: string;
++    url?: string;
++    mid_size?: string | number;
++    thumb_size?: string | number;
++    thumb_height?: number;
++    thumb_width?: number;
++    hd_size?: string | number;
++}
++export interface VoiceItem {
++    media: CDNMedia;
++    encode_type?: number;
++    text?: string;
++    playtime?: number;
++}
++export interface FileItem {
++    media: CDNMedia;
++    file_name?: string;
++    md5?: string;
++    len?: string;
++}
++export interface VideoItem {
++    media: CDNMedia;
++    video_size?: string | number;
++    play_length?: number;
++    thumb_media?: CDNMedia;
++}
++export interface RefMessage {
++    title?: string;
++    message_item?: MessageItem;
++}
++export interface MessageItem {
++    type: MessageItemType;
++    text_item?: TextItem;
++    image_item?: ImageItem;
++    voice_item?: VoiceItem;
++    file_item?: FileItem;
++    video_item?: VideoItem;
++    ref_msg?: RefMessage;
++}
++export interface WeixinMessage {
++    message_id: number;
++    from_user_id: string;
++    to_user_id: string;
++    client_id: string;
++    create_time_ms: number;
++    message_type: MessageType;
++    message_state: MessageState;
++    context_token: string;
++    item_list: MessageItem[];
++}
++export interface GetUpdatesReq {
++    get_updates_buf: string;
++    base_info: BaseInfo;
++}
++export interface GetUpdatesResp {
++    ret: number;
++    msgs: WeixinMessage[];
++    get_updates_buf: string;
++    longpolling_timeout_ms?: number;
++    errcode?: number;
++    errmsg?: string;
++}
++export interface SendMessageReq {
++    msg: {
++        from_user_id: string;
++        to_user_id: string;
++        client_id: string;
++        message_type: MessageType;
++        message_state: MessageState;
++        context_token: string;
++        item_list: MessageItem[];
++    };
++    base_info: BaseInfo;
++}
++export interface SendTypingReq {
++    ilink_user_id: string;
++    typing_ticket: string;
++    status: 1 | 2;
++    base_info: BaseInfo;
++}
++export interface GetConfigResp {
++    typing_ticket?: string;
++    ret?: number;
++    errcode?: number;
++    errmsg?: string;
++}
++export interface IncomingMessage {
++    userId: string;
++    text: string;
++    type: 'text' | 'image' | 'voice' | 'file' | 'video';
++    raw: WeixinMessage;
++    /** context_token, managed internally */
++    _contextToken: string;
++    timestamp: Date;
++}
+diff --git a/dist/types.js b/dist/types.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..0c84fa4d122d577627c10a36ea9a5d77c4e14a26
+--- /dev/null
++++ b/dist/types.js
+@@ -0,0 +1,20 @@
++export var MessageType;
++(function (MessageType) {
++    MessageType[MessageType["USER"] = 1] = "USER";
++    MessageType[MessageType["BOT"] = 2] = "BOT";
++})(MessageType || (MessageType = {}));
++export var MessageState;
++(function (MessageState) {
++    MessageState[MessageState["NEW"] = 0] = "NEW";
++    MessageState[MessageState["GENERATING"] = 1] = "GENERATING";
++    MessageState[MessageState["FINISH"] = 2] = "FINISH";
++})(MessageState || (MessageState = {}));
++export var MessageItemType;
++(function (MessageItemType) {
++    MessageItemType[MessageItemType["TEXT"] = 1] = "TEXT";
++    MessageItemType[MessageItemType["IMAGE"] = 2] = "IMAGE";
++    MessageItemType[MessageItemType["VOICE"] = 3] = "VOICE";
++    MessageItemType[MessageItemType["FILE"] = 4] = "FILE";
++    MessageItemType[MessageItemType["VIDEO"] = 5] = "VIDEO";
++})(MessageItemType || (MessageItemType = {}));
++//# sourceMappingURL=types.js.map
+\ No newline at end of file
+diff --git a/dist/types.js.map b/dist/types.js.map
+new file mode 100644
+index 0000000000000000000000000000000000000000..6a82e186780bcc086ba29b191de64b589db5feab
+--- /dev/null
++++ b/dist/types.js.map
+@@ -0,0 +1 @@
++{"version":3,"file":"types.js","sourceRoot":"","sources":["../src/types.ts"],"names":[],"mappings":"AAIA,MAAM,CAAN,IAAY,WAGX;AAHD,WAAY,WAAW;IACrB,6CAAQ,CAAA;IACR,2CAAO,CAAA;AACT,CAAC,EAHW,WAAW,KAAX,WAAW,QAGtB;AAED,MAAM,CAAN,IAAY,YAIX;AAJD,WAAY,YAAY;IACtB,6CAAO,CAAA;IACP,2DAAc,CAAA;IACd,mDAAU,CAAA;AACZ,CAAC,EAJW,YAAY,KAAZ,YAAY,QAIvB;AAED,MAAM,CAAN,IAAY,eAMX;AAND,WAAY,eAAe;IACzB,qDAAQ,CAAA;IACR,uDAAS,CAAA;IACT,uDAAS,CAAA;IACT,qDAAQ,CAAA;IACR,uDAAS,CAAA;AACX,CAAC,EANW,eAAe,KAAf,eAAe,QAM1B"}
