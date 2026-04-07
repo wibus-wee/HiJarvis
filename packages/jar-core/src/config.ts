@@ -35,25 +35,7 @@ const rawConfigSchema = z.object({
     retry_max_delay_ms: z.number().int().positive().optional(),
   }).strict(),
   provider: z.record(z.string(), z.unknown()).default({}),
-  platform: z.object({
-    slack: z.object({
-      bot_name: nonEmptyString.optional(),
-      bot_token: nonEmptyString.optional(),
-      app_token: nonEmptyString.optional(),
-      signing_secret: nonEmptyString.optional(),
-      context_lookback_minutes: z.number().int().positive().optional(),
-      context_message_limit: z.number().int().positive().optional(),
-      host: nonEmptyString.optional(),
-      port: z.number().int().positive().optional(),
-    }).strict().default({}),
-    telegram: z.object({
-      bot_token: nonEmptyString.optional(),
-      allowed_chat_ids: z.array(z.union([z.number().int(), nonEmptyString])).optional(),
-      allowed_usernames: z.array(nonEmptyString).optional(),
-      host: nonEmptyString.optional(),
-      port: z.number().int().positive().optional(),
-    }).strict().default({}),
-  }).strict().default({ slack: {}, telegram: {} }),
+  platform: z.record(z.string(), z.unknown()).default({}),
   logging: z.object({
     level: z.enum(logLevels).optional(),
     stderr: z.boolean().optional(),
@@ -77,42 +59,24 @@ const providerConfigSchema = z.object({
   base_url: z.string().trim().url().optional(),
 }).strict();
 
-export type LoadedAgentConfig = {
+export type LoadedRuntimeConfig = {
   configFilePath: string;
   logging: {
     level: LogLevel;
     stderr: boolean;
     filePath?: string;
   };
-  platform: {
-    slack: {
-      botName?: string;
-      botToken?: string;
-      appToken?: string;
-      signingSecret?: string;
-      contextLookbackMinutes: number;
-      contextMessageLimit: number;
-      host?: string;
-      port?: number;
-    };
-    telegram: {
-      botToken?: string;
-      allowedChatIds?: string[];
-      allowedUsernames?: string[];
-      host?: string;
-      port?: number;
-    };
-  };
   runtime: Omit<JarRuntimeOptions, "tools">;
   toolOptions: ToolOptions;
   sessions: {
     rootDir: string;
   };
+  platform: Record<string, unknown>;
 };
 
-export const loadAgentConfig = async (
+export const loadRuntimeConfig = async (
   configFilePath: string,
-): Promise<LoadedAgentConfig> => {
+): Promise<LoadedRuntimeConfig> => {
   const absoluteConfigPath = path.resolve(configFilePath);
   const configFileContent = await readFile(absoluteConfigPath, "utf8");
   const parsedToml = parse(configFileContent) as Record<string, unknown>;
@@ -137,57 +101,6 @@ export const loadAgentConfig = async (
         ? {}
         : { filePath: path.resolve(configDirectory, parsedConfig.logging.file_path) }),
     },
-    platform: {
-      slack: {
-        ...(parsedConfig.platform.slack.bot_name === undefined
-          ? {}
-          : { botName: parsedConfig.platform.slack.bot_name }),
-        ...(parsedConfig.platform.slack.bot_token === undefined
-          ? {}
-          : { botToken: parsedConfig.platform.slack.bot_token }),
-        ...(parsedConfig.platform.slack.app_token === undefined
-          ? {}
-          : { appToken: parsedConfig.platform.slack.app_token }),
-        ...(parsedConfig.platform.slack.signing_secret === undefined
-          ? {}
-          : { signingSecret: parsedConfig.platform.slack.signing_secret }),
-        contextLookbackMinutes:
-          parsedConfig.platform.slack.context_lookback_minutes ?? 15,
-        contextMessageLimit:
-          parsedConfig.platform.slack.context_message_limit ?? 12,
-        ...(parsedConfig.platform.slack.host === undefined
-          ? {}
-          : { host: parsedConfig.platform.slack.host }),
-        ...(parsedConfig.platform.slack.port === undefined
-          ? {}
-          : { port: parsedConfig.platform.slack.port }),
-      },
-      telegram: {
-        ...(parsedConfig.platform.telegram.bot_token === undefined
-          ? {}
-          : { botToken: parsedConfig.platform.telegram.bot_token }),
-        ...(parsedConfig.platform.telegram.allowed_chat_ids === undefined
-          ? {}
-          : {
-            allowedChatIds: parsedConfig.platform.telegram.allowed_chat_ids.map((value) =>
-              String(value)
-            ),
-          }),
-        ...(parsedConfig.platform.telegram.allowed_usernames === undefined
-          ? {}
-          : {
-            allowedUsernames: parsedConfig.platform.telegram.allowed_usernames.map((value) =>
-              value.replace(/^@/, "").toLowerCase()
-            ),
-          }),
-        ...(parsedConfig.platform.telegram.host === undefined
-          ? {}
-          : { host: parsedConfig.platform.telegram.host }),
-        ...(parsedConfig.platform.telegram.port === undefined
-          ? {}
-          : { port: parsedConfig.platform.telegram.port }),
-      },
-    },
     runtime: {
       provider,
       model,
@@ -209,8 +122,13 @@ export const loadAgentConfig = async (
     sessions: {
       rootDir: sessionRoot,
     },
+    platform: parsedConfig.platform,
   };
 };
+
+export type LoadedAgentConfig = LoadedRuntimeConfig;
+
+export const loadAgentConfig = loadRuntimeConfig;
 
 const parseRawConfig = (input: Record<string, unknown>): RawConfig => {
   const result = rawConfigSchema.safeParse(input);

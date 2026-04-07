@@ -18,7 +18,7 @@ CLI invocation 仍然保持原有流程：
 4. Overrides the model `baseUrl` when `provider.<name>.base_url` is configured.
 5. Builds the tool list from `packages/jar-core/src/tools.ts`.
 6. Creates a `pi-agent-core` `Agent`.
-7. Executes prompts via `packages/jar-core/src/prompt-executor.ts`.
+7. Executes prompts via `packages/jar-core/src/prompt-executor.ts` for one-shot runs, or `packages/jar-core/src/session-executor.ts` when `--session` is used.
 8. Either streams assistant text to stdout through the CLI adapter or renders the Ink TUI package (`--repl`).
 9. Optionally persists session transcripts and event logs through `packages/jar-core/src/session-store.ts`.
 
@@ -97,7 +97,7 @@ Rules:
 
 ## Config Loading Flow
 
-`packages/jar-core/src/config.ts` performs two validation stages:
+`packages/jar-core/src/config.ts` performs two validation stages for the core runtime:
 
 1. Parse TOML with `smol-toml`.
 2. Validate structure with `zod`.
@@ -109,6 +109,11 @@ After schema validation, runtime-specific checks happen:
 - only the selected provider config under `provider.<name>` is validated for provider-specific fields
 - tool limits such as `max_file_bytes` and `command_timeout_ms` must be positive integers
 - retry and timeout values must satisfy policy constraints (for example, `retry_max_delay_ms >= retry_initial_delay_ms`)
+
+Adapter-specific tables are validated when each adapter starts:
+
+- Slack: `apps/jar-slack/src/slack-config.ts`
+- Telegram: `apps/jar-telegram/src/telegram-config.ts`
 
 ## Model Resolution
 

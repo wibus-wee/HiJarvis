@@ -184,13 +184,17 @@ Telegram gateway 默认使用 long polling，而不是 webhook。
 
 ## Validation
 
-Config parsing is implemented in `packages/jar-core/src/config.ts` using `smol-toml` for TOML parsing and `zod` for schema validation.
+Core runtime parsing lives in `packages/jar-core/src/config.ts`, using `smol-toml` for TOML parsing and `zod` for schema validation. Adapter-specific validation is handled by the adapters themselves.
 
-Validation happens in two stages:
+Core validation happens in two stages:
 
 1. Validate the top-level TOML shape.
 2. Validate the active provider config selected by `agent.provider`.
-3. Validate optional platform-specific tables such as `[platform.slack]` and `[platform.telegram]`.
+
+Platform-specific tables are validated when the adapter starts:
+
+- Slack: `apps/jar-slack/src/slack-config.ts`
+- Telegram: `apps/jar-telegram/src/telegram-config.ts`
 
 Common failure cases:
 
@@ -207,6 +211,8 @@ Common failure cases:
 When config semantics change, update these files in the same patch:
 
 - `packages/jar-core/src/config.ts`
+- `apps/jar-slack/src/slack-config.ts`
+- `apps/jar-telegram/src/telegram-config.ts`
 - `jar.example.toml`
 - `docs/configuration.md`
 - `docs/README.md` when a new config-related document is added

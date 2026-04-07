@@ -8,8 +8,8 @@ import { stream, type StreamFlavor } from "@grammyjs/stream";
 import {
   createLogger,
   executePromptInSession,
-  loadAgentConfig,
-  type LoadedAgentConfig,
+  loadRuntimeConfig,
+  type LoadedRuntimeConfig,
   type Logger,
 } from "@hijarvis/jar-core";
 import {
@@ -26,6 +26,10 @@ import {
   type TelegramMessage,
   type TelegramReplyContext,
 } from "./telegram-prompt.js";
+import {
+  parseTelegramPlatformConfig,
+  type TelegramPlatformConfig,
+} from "./telegram-config.js";
 
 const telegramGatewayEnvSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().trim().min(1).optional(),
@@ -92,7 +96,8 @@ type ConversationQueueState = {
 };
 
 type TelegramGatewayState = {
-  config: LoadedAgentConfig;
+  runtime: LoadedRuntimeConfig;
+  telegramConfig: TelegramPlatformConfig;
   logger: Logger;
   identity: TelegramIdentity;
   allowedChatIds?: Set<string>;
@@ -113,22 +118,24 @@ const maxQueueSize = 20;
 export const startTelegramGateway = async (
   options: TelegramGatewayRuntimeOptions,
 ): Promise<void> => {
-  const config = await loadAgentConfig(options.configPath);
-  const logger = createLogger(config.logging).child({
+  const runtimeConfig = await loadRuntimeConfig(options.configPath);
+  const telegramConfig = parseTelegramPlatformConfig(runtimeConfig.platform);
+  const logger = createLogger(runtimeConfig.logging).child({
     component: "telegram_gateway",
   });
   const env = loadTelegramGatewayEnv(process.env);
-  const botToken = resolveTelegramBotToken(config, env);
+  const botToken = resolveTelegramBotToken(telegramConfig, env);
 
   const bot = new Bot<TelegramGatewayContext>(botToken);
   bot.api.config.use(autoRetry());
   bot.use(stream());
 
   const me = await bot.api.getMe();
-  const allowedChatIds = resolveAllowedChatIds(config, env);
-  const allowedUsernames = resolveAllowedUsernames(config, env);
+  const allowedChatIds = resolveAllowedChatIds(telegramConfig, env);
+  const allowedUsernames = resolveAllowedUsernames(telegramConfig, env);
   const state: TelegramGatewayState = {
-    config,
+    runtime: runtimeConfig,
+    telegramConfig,
     logger,
     identity: {
       botId: me.id,
@@ -145,9 +152,9 @@ export const startTelegramGateway = async (
     botUsername: me.username,
     allowedChatCount: allowedChatIds?.size ?? 0,
     allowedUsernameCount: allowedUsernames?.size ?? 0,
-    logLevel: config.logging.level,
-    logToStderr: config.logging.stderr,
-    logFilePath: config.logging.filePath,
+    logLevel: runtimeConfig.logging.level,
+    logToStderr: runtimeConfig.logging.stderr,
+    logFilePath: runtimeConfig.logging.filePath,
   });
 
   registerTelegramHandlers(bot, state);
@@ -158,12 +165,12 @@ export const startTelegramGateway = async (
     host:
       options.host ??
       env.JARVIS_TELEGRAM_HOST ??
-      config.platform.telegram.host ??
+      telegramConfig.host ??
       defaultHost,
     port:
       options.port ??
       env.JARVIS_TELEGRAM_PORT ??
-      config.platform.telegram.port ??
+      telegramConfig.port ??
       defaultPort,
     logger,
   });
@@ -286,11 +293,11 @@ const registerTelegramHandlers = (
 };
 
 const resolveTelegramBotToken = (
-  config: LoadedAgentConfig,
+  telegramConfig: TelegramPlatformConfig,
   env: TelegramGatewayEnv,
 ): string => {
   const botToken =
-    env.TELEGRAM_BOT_TOKEN ?? config.platform.telegram.botToken ?? "";
+    env.TELEGRAM_BOT_TOKEN ?? telegramConfig.botToken ?? "";
 
   if (!botToken) {
     throw new Error("Missing Telegram credentials: TELEGRAM_BOT_TOKEN");
@@ -300,7 +307,7 @@ const resolveTelegramBotToken = (
 };
 
 const resolveAllowedChatIds = (
-  config: LoadedAgentConfig,
+  telegramConfig: TelegramPlatformConfig,
   env: TelegramGatewayEnv,
 ): Set<string> | undefined => {
   if (env.JARVIS_TELEGRAM_ALLOWED_CHAT_IDS) {
@@ -312,7 +319,7 @@ const resolveAllowedChatIds = (
     return values.length > 0 ? new Set(values) : undefined;
   }
 
-  const configured = config.platform.telegram.allowedChatIds;
+  const configured = telegramConfig.allowedChatIds;
   if (!configured || configured.length === 0) {
     return undefined;
   }
@@ -321,7 +328,7 @@ const resolveAllowedChatIds = (
 };
 
 const resolveAllowedUsernames = (
-  config: LoadedAgentConfig,
+  telegramConfig: TelegramPlatformConfig,
   env: TelegramGatewayEnv,
 ): Set<string> | undefined => {
   if (env.JARVIS_TELEGRAM_ALLOWED_USERNAMES) {
@@ -333,7 +340,7 @@ const resolveAllowedUsernames = (
     return values.length > 0 ? new Set(values) : undefined;
   }
 
-  const configured = config.platform.telegram.allowedUsernames;
+  const configured = telegramConfig.allowedUsernames;
   if (!configured || configured.length === 0) {
     return undefined;
   }
@@ -603,7 +610,7 @@ const handleQueueEntry = async (
   });
 
   await respondInTelegramConversation({
-    config: state.config,
+    runtime: state.runtime,
     context: entry.context,
     conversationKey,
     sessionId,
@@ -627,7 +634,7 @@ const materializeTelegramMessage = (
 };
 
 const respondInTelegramConversation = async (options: {
-  config: LoadedAgentConfig;
+  runtime: LoadedRuntimeConfig;
   context: TelegramMessageContext;
   conversationKey: string;
   sessionId: string;
@@ -639,9 +646,9 @@ const respondInTelegramConversation = async (options: {
   let emittedText = false;
 
   const responseTask = executePromptInSession({
-    ...options.config.runtime,
-    toolOptions: options.config.toolOptions,
-    sessionsRootDir: options.config.sessions.rootDir,
+    ...options.runtime.runtime,
+    toolOptions: options.runtime.toolOptions,
+    sessionsRootDir: options.runtime.sessions.rootDir,
     sessionId: options.sessionId,
     prompt: options.prompt,
     logger: options.logger,

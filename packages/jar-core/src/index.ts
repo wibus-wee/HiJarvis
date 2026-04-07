@@ -15,7 +15,12 @@ export {
   type PromptErrorCategory,
   type PromptExecutionPolicy,
 } from "./prompt-executor.js";
-export { loadAgentConfig, type LoadedAgentConfig } from "./config.js";
+export {
+  loadAgentConfig,
+  loadRuntimeConfig,
+  type LoadedAgentConfig,
+  type LoadedRuntimeConfig,
+} from "./config.js";
 export {
   buildSystemPrompt,
   buildTurnPrompt,

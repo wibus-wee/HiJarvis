@@ -1,7 +1,15 @@
 import path from "node:path";
 import process from "node:process";
 
-import { createAgent, createTools, executePromptWithPolicy, listSessions, loadAgentConfig, openSession } from "@hijarvis/jar-core";
+import {
+  createAgent,
+  createTools,
+  executePromptInSession,
+  executePromptWithPolicy,
+  listSessions,
+  loadRuntimeConfig,
+  openSession,
+} from "@hijarvis/jar-core";
 import { runRepl } from "@hijarvis/jar-repl-ink";
 
 import { renderAgentEvent } from "./render-agent-event.js";
@@ -27,7 +35,7 @@ const main = async (): Promise<void> => {
     throw new Error("REPL mode requires a TTY stdin.");
   }
 
-  const config = await loadAgentConfig(cliOptions.configPath);
+  const config = await loadRuntimeConfig(cliOptions.configPath);
   if (cliOptions.listSessions) {
     const sessions = await listSessions(config.sessions.rootDir);
     if (sessions.length === 0) {
@@ -45,24 +53,20 @@ const main = async (): Promise<void> => {
     }
     return;
   }
-  const agent = createAgent({
-    ...config.runtime,
-    tools: createTools(config.toolOptions),
-  });
-
-  const shouldUseSession = cliOptions.repl || cliOptions.sessionId !== undefined;
-  const session = shouldUseSession
-    ? await openSession({
+  if (cliOptions.repl) {
+    const agent = createAgent({
+      ...config.runtime,
+      tools: createTools(config.toolOptions),
+    });
+    const session = await openSession({
       rootDir: config.sessions.rootDir,
       provider: config.runtime.provider,
       model: config.runtime.model,
       ...(cliOptions.sessionId !== undefined
         ? { sessionId: cliOptions.sessionId }
         : {}),
-    })
-    : undefined;
+    });
 
-  if (session) {
     agent.sessionId = session.sessionId;
     agent.state.messages = session.messages;
     agent.subscribe(async (event, signal) => {
@@ -77,9 +81,7 @@ const main = async (): Promise<void> => {
         await session.writeSnapshot(agent.state.messages);
       }
     });
-  }
 
-  if (cliOptions.repl) {
     const prompt = await readPrompt(cliOptions.prompt);
     await runRepl({
       agent,
@@ -93,19 +95,38 @@ const main = async (): Promise<void> => {
     return;
   }
 
-  agent.subscribe((event) => {
-    renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
-  });
-
   const prompt = await readPrompt(cliOptions.prompt);
   if (prompt === undefined) {
     printUsage();
     throw new Error("Missing prompt. Pass text as an argument or pipe it through stdin.");
   }
 
-  await executePromptWithPolicy(agent, prompt, config.runtime.execution, {
-    stderr: process.stderr,
-  });
+  if (cliOptions.sessionId !== undefined) {
+    await executePromptInSession({
+      ...config.runtime,
+      toolOptions: config.toolOptions,
+      sessionsRootDir: config.sessions.rootDir,
+      sessionId: cliOptions.sessionId,
+      prompt,
+      writers: {
+        stderr: process.stderr,
+      },
+      onEvent: (event) => {
+        renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
+      },
+    });
+  } else {
+    const agent = createAgent({
+      ...config.runtime,
+      tools: createTools(config.toolOptions),
+    });
+    agent.subscribe((event) => {
+      renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
+    });
+    await executePromptWithPolicy(agent, prompt, config.runtime.execution, {
+      stderr: process.stderr,
+    });
+  }
   if (!process.stdout.write("\n")) {
     await onceDrain();
   }

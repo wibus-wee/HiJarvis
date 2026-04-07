@@ -7,8 +7,8 @@ import {
   buildTurnPrompt,
   createLogger,
   executePromptInSession,
-  loadAgentConfig,
-  type LoadedAgentConfig,
+  loadRuntimeConfig,
+  type LoadedRuntimeConfig,
   type Logger,
 } from "@hijarvis/jar-core";
 import { z } from "zod";
@@ -22,6 +22,7 @@ import {
   formatQueuedMessagesBlock,
   type SlackMessage,
 } from "./slack-prompt.js";
+import { parseSlackPlatformConfig, type SlackPlatformConfig } from "./slack-config.js";
 
 const slackGatewayEnvSchema = z.object({
   SLACK_BOT_TOKEN: z.string().trim().min(1).optional(),
@@ -141,7 +142,8 @@ type ThreadQueueState = {
 type SlackGatewayState = {
   identity: SlackGatewayIdentity;
   observedContextLimits: ObservedContextLimits;
-  config: LoadedAgentConfig;
+  runtime: LoadedRuntimeConfig;
+  slackConfig: SlackPlatformConfig;
   logger: Logger;
   slackClient: App["client"];
   subscriptions: Set<string>;
@@ -150,11 +152,6 @@ type SlackGatewayState = {
   userCache: Map<string, string>;
   seenEvents: Map<string, number>;
   seenMessages: Map<string, number>;
-};
-
-const defaultObservedContextLimits: ObservedContextLimits = {
-  lookbackMinutes: 15,
-  maxMessages: 12,
 };
 
 const defaultHost = "0.0.0.0";
@@ -167,22 +164,21 @@ const seenMessageTtlMs = 5 * 60_000;
 export const startSlackGateway = async (
   options: SlackGatewayRuntimeOptions,
 ): Promise<void> => {
-  const config = await loadAgentConfig(options.configPath);
-  const logger = createLogger(config.logging).child({
+  const runtimeConfig = await loadRuntimeConfig(options.configPath);
+  const slackConfig = parseSlackPlatformConfig(runtimeConfig.platform);
+  const logger = createLogger(runtimeConfig.logging).child({
     component: "slack_gateway",
   });
   const env = loadSlackGatewayEnv(process.env);
-  const tokens = resolveSlackTokens(config, env);
+  const tokens = resolveSlackTokens(slackConfig, env);
 
   const observedContextLimits = {
     lookbackMinutes:
       env.JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES ??
-      config.platform.slack.contextLookbackMinutes ??
-      defaultObservedContextLimits.lookbackMinutes,
+      slackConfig.contextLookbackMinutes,
     maxMessages:
       env.JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT ??
-      config.platform.slack.contextMessageLimit ??
-      defaultObservedContextLimits.maxMessages,
+      slackConfig.contextMessageLimit,
   };
 
   const app = new App({
@@ -197,7 +193,8 @@ export const startSlackGateway = async (
   const state: SlackGatewayState = {
     identity,
     observedContextLimits,
-    config,
+    runtime: runtimeConfig,
+    slackConfig,
     logger,
     slackClient: app.client,
     subscriptions: new Set<string>(),
@@ -213,9 +210,9 @@ export const startSlackGateway = async (
     botUserId: identity.botUserId,
     contextLookbackMinutes: observedContextLimits.lookbackMinutes,
     contextMessageLimit: observedContextLimits.maxMessages,
-    logLevel: config.logging.level,
-    logToStderr: config.logging.stderr,
-    logFilePath: config.logging.filePath,
+    logLevel: runtimeConfig.logging.level,
+    logToStderr: runtimeConfig.logging.stderr,
+    logFilePath: runtimeConfig.logging.filePath,
   });
 
   registerSlackHandlers(app, state);
@@ -225,12 +222,12 @@ export const startSlackGateway = async (
     host:
       options.host ??
       env.HOST ??
-      config.platform.slack.host ??
+      slackConfig.host ??
       defaultHost,
     port:
       options.port ??
       env.PORT ??
-      config.platform.slack.port ??
+      slackConfig.port ??
       defaultPort,
     logger,
   });
@@ -244,15 +241,15 @@ export const startSlackGateway = async (
 };
 
 const resolveSlackTokens = (
-  config: LoadedAgentConfig,
+  slackConfig: SlackPlatformConfig,
   env: SlackGatewayEnv,
 ): SlackGatewayTokens => {
   const botToken =
-    env.SLACK_BOT_TOKEN ?? config.platform.slack.botToken ?? "";
+    env.SLACK_BOT_TOKEN ?? slackConfig.botToken ?? "";
   const appToken =
-    env.SLACK_APP_TOKEN ?? config.platform.slack.appToken ?? "";
+    env.SLACK_APP_TOKEN ?? slackConfig.appToken ?? "";
   const signingSecret =
-    env.SLACK_SIGNING_SECRET ?? config.platform.slack.signingSecret ?? "";
+    env.SLACK_SIGNING_SECRET ?? slackConfig.signingSecret ?? "";
 
   const missing: string[] = [];
   if (!botToken) {
@@ -514,7 +511,7 @@ const handleQueueEntry = async (
     : buildSubscribedThreadPrompt(current, skippedMessages);
 
   await respondInSlackThread({
-    config: state.config,
+    runtime: state.runtime,
     channel: entry.channel,
     threadTs: entry.threadTs,
     scopeKey,
@@ -880,7 +877,7 @@ const includesBotMention = (text: string, botUserId: string): boolean => {
 };
 
 const respondInSlackThread = async ({
-  config,
+  runtime,
   channel,
   threadTs,
   scopeKey,
@@ -889,7 +886,7 @@ const respondInSlackThread = async ({
   client,
   logger,
 }: {
-  config: LoadedAgentConfig;
+  runtime: LoadedRuntimeConfig;
   channel: string;
   threadTs: string;
   scopeKey: string;
@@ -904,9 +901,9 @@ const respondInSlackThread = async ({
       promptChars: prompt.length,
     });
     const { outputText } = await executePromptInSession({
-      ...config.runtime,
-      toolOptions: config.toolOptions,
-      sessionsRootDir: config.sessions.rootDir,
+      ...runtime.runtime,
+      toolOptions: runtime.toolOptions,
+      sessionsRootDir: runtime.sessions.rootDir,
       sessionId,
       prompt,
       logger,
