@@ -43,6 +43,7 @@ WeChat gateway 优先从 `jar.toml` 的 `[platform.wechat]` 读取配置。
 [platform.wechat]
 base_url = "https://api-bot.hzxww.net"
 token_path = ".jar/wechat/credentials.json"
+coalesce_window_ms = 2500
 host = "0.0.0.0"
 port = 3002
 ```
@@ -51,6 +52,7 @@ port = 3002
 
 - `base_url`: 可选 iLink API base URL 覆盖项。
 - `token_path`: 可选 credentials 文件路径。
+- `coalesce_window_ms`: 聚合同一用户连续消息的窗口。默认 `2500` ms。
 - `host`: health check 服务监听地址。默认 `0.0.0.0`。
 - `port`: health check 服务监听端口。默认 `3002`。
 
@@ -66,11 +68,12 @@ port = 3002
 WeChat adapter 的主路径如下：
 
 1. 启动时加载 `jar.toml`，初始化 `WeixinBot`，然后执行 `bot.login()`。
-2. `bot.onMessage()` 收到入站消息后，提取 text payload；非文本消息会退化成类似 `[image message]` 的占位文本。
-3. 同一 `userId` 的消息进入同一个内存队列，避免前一轮 LLM 还没结束时新消息并发写进同一 session。
-4. 如果短时间内连续来了多条消息，adapter 会丢弃较旧的待处理项，只保留最新一条作为当前问题，并把中间消息合并进 prompt。
-5. `executePromptInSession()` 使用 `wechat:{userId}` 生成稳定 session id，并复用 `packages/jar-core` 的 session 存储。
-6. 生成回复后，通过 `bot.reply()` 回发到原消息上下文。
+2. `bot.onMessage()` 收到入站消息后，会解析 message items，保留文本内容和图片 URL。
+3. 同一 `userId` 的消息进入同一个内存队列，并等待一个短暂的 coalesce window，把“先发图，再补一句文字”合并成同一个 Jar turn。
+4. 如果当前模型支持 image input，adapter 会下载聚合窗口里的图片，并把它们作为真正的 image block 附加到当前 user message；文字部分会保留图片引用顺序。
+5. 如果窗口结束后只有图片没有文字，adapter 不会立刻触发 LLM，而是回一条 follow-up 提示，让用户补一句“你想让我看什么”。
+6. `executePromptInSession()` 使用 `wechat:{userId}` 生成稳定 session id，并复用 `packages/jar-core` 的 session 存储。
+7. 生成回复后，通过 `bot.reply()` 回发到原消息上下文。
 
 ## Session Mapping
 
@@ -91,6 +94,7 @@ wechat__{userId}
 - 同一用户的多轮对话会持续复用同一个 Jar session
 - 当前实现不区分子线程或群聊上下文
 - 会话历史仍以 `.jar/sessions/<sessionId>` 目录结构持久化
+- session 里只保留文本轨迹和图片引用，不保留原始 base64 图片内容
 
 ## Health Check
 
@@ -119,6 +123,7 @@ adapter 会额外起一个简单 HTTP server：
 - 当前只处理 `bot.onMessage()` 暴露的 direct message 模型
 - 回复回传是整段文本，不做 token streaming
 - typing indicator 会在 LLM 执行前后尝试开启/关闭，但不影响主流程成功与否
+- 图片下载目前只抓取 URL 可访问的 image item，单轮最多附带 4 张图
 - SDK 登录态与轮询细节由 `@pinixai/weixin-bot` 内部管理
 
 如果以后要支持群聊、消息引用上下文或更细粒度的消息类型，应同步更新本页和 `apps/jar-wechat/src/wechat-runtime.ts`。
