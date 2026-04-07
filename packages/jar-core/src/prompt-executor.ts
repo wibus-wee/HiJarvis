@@ -1,6 +1,10 @@
 import { setTimeout as sleep } from "node:timers/promises";
 
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+
 import type { Logger } from "./logger.js";
+
+export type PromptInput = string | AgentMessage | AgentMessage[];
 
 export type PromptErrorCategory =
   | "timeout"
@@ -21,7 +25,10 @@ export type PromptExecutionPolicy = {
 };
 
 export type PromptAgent = {
-  prompt: (input: string) => Promise<void>;
+  prompt: {
+    (input: string): Promise<void>;
+    (input: AgentMessage | AgentMessage[]): Promise<void>;
+  };
   abort: () => void;
   state: {
     errorMessage?: string;
@@ -40,7 +47,7 @@ type PromptExecutionWriters = {
 
 export const executePromptWithPolicy = async (
   agent: PromptAgent,
-  prompt: string,
+  prompt: PromptInput,
   policy: PromptExecutionPolicy,
   writers: PromptExecutionWriters,
   logger?: Logger,
@@ -217,7 +224,7 @@ const hasRetryableServerStatus = (normalizedMessage: string): boolean => {
 
 const runPromptAttempt = async (
   agent: PromptAgent,
-  prompt: string,
+  prompt: PromptInput,
   requestTimeoutMs: number,
 ): Promise<PromptFailure | null> => {
   let timeoutTriggered = false;
@@ -230,7 +237,11 @@ const runPromptAttempt = async (
   timeoutHandle.unref?.();
 
   try {
-    await agent.prompt(prompt);
+    if (typeof prompt === "string") {
+      await agent.prompt(prompt);
+    } else {
+      await agent.prompt(prompt);
+    }
   } catch (error) {
     thrownError = error;
   } finally {

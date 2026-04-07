@@ -8,6 +8,7 @@ test("parseWeChatPlatformConfig maps toml fields into runtime config", () => {
     wechat: {
       base_url: "http://127.0.0.1:8080",
       token_path: ".jar/wechat-credentials.json",
+      coalesce_window_ms: 2800,
       host: "127.0.0.1",
       port: 3102,
     },
@@ -16,6 +17,7 @@ test("parseWeChatPlatformConfig maps toml fields into runtime config", () => {
   assert.deepEqual(config, {
     baseUrl: "http://127.0.0.1:8080",
     tokenPath: ".jar/wechat-credentials.json",
+    coalesceWindowMs: 2800,
     host: "127.0.0.1",
     port: 3102,
   });

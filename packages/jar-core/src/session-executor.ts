@@ -1,8 +1,9 @@
-import type { AgentEvent } from "@mariozechner/pi-agent-core";
+import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
 import type { Logger } from "./logger.js";
 import {
   executePromptWithPolicy,
+  type PromptInput,
   type PromptExecutionPolicy,
 } from "./prompt-executor.js";
 import { createAgent, type JarRuntimeOptions } from "./runtime.js";
@@ -18,7 +19,7 @@ export type SessionPromptOptions = {
   onEvent?: (event: AgentEvent) => Promise<void> | void;
   provider: JarRuntimeOptions["provider"];
   model: JarRuntimeOptions["model"];
-  prompt: string;
+  prompt: PromptInput;
   sessionId: string;
   sessionsRootDir: string;
   systemPrompt: JarRuntimeOptions["systemPrompt"];
@@ -27,6 +28,7 @@ export type SessionPromptOptions = {
   toolOptions: ToolOptions;
   providerConfig: JarRuntimeOptions["providerConfig"];
   logger?: Logger;
+  serializeMessage?: (message: AgentMessage) => AgentMessage;
   writers?: SessionExecutionWriters;
 };
 
@@ -72,12 +74,14 @@ export const executePromptInSession = async (
     provider: options.provider,
     model: options.model,
   });
+  const serializeMessage = options.serializeMessage ?? identityMessage;
 
   let outputText = "";
 
   logger?.info("session.prompt_started", {
     existingMessages: session.messages.length,
-    promptChars: options.prompt.length,
+    promptChars: estimatePromptChars(options.prompt),
+    promptMessageCount: countPromptMessages(options.prompt),
   });
 
   agent.subscribe(async (event, signal) => {
@@ -95,11 +99,11 @@ export const executePromptInSession = async (
     }
 
     if (event.type === "message_end") {
-      await session.appendMessage(event.message);
+      await session.appendMessage(serializeMessage(event.message));
     }
 
     if (event.type === "agent_end") {
-      await session.writeSnapshot(agent.state.messages);
+      await session.writeSnapshot(agent.state.messages.map(serializeMessage));
     }
 
     logAgentEvent(logger, event);
@@ -133,6 +137,83 @@ export const executePromptInSession = async (
     outputText,
     sessionId: session.sessionId,
   };
+};
+
+const identityMessage = (message: AgentMessage): AgentMessage => message;
+
+const countPromptMessages = (prompt: PromptInput): number => {
+  if (typeof prompt === "string") {
+    return 1;
+  }
+
+  return Array.isArray(prompt) ? prompt.length : 1;
+};
+
+const estimatePromptChars = (prompt: PromptInput): number => {
+  if (typeof prompt === "string") {
+    return prompt.length;
+  }
+
+  const messages = Array.isArray(prompt) ? prompt : [prompt];
+  return messages.reduce((sum, message) => sum + estimateMessageChars(message), 0);
+};
+
+const estimateMessageChars = (message: AgentMessage): number => {
+  if (!("role" in message)) {
+    return 0;
+  }
+
+  if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return message.content.length;
+    }
+
+    return message.content.reduce((sum, item) => {
+      if (item.type === "text") {
+        return sum + item.text.length;
+      }
+
+      if (item.type === "image") {
+        return sum + item.data.length;
+      }
+
+      return sum;
+    }, 0);
+  }
+
+  if (message.role === "assistant") {
+    return message.content.reduce((sum, item) => {
+      if (item.type === "text") {
+        return sum + item.text.length;
+      }
+
+      if (item.type === "thinking") {
+        return sum + item.thinking.length;
+      }
+
+      if (item.type === "toolCall") {
+        return sum + item.name.length + JSON.stringify(item.arguments ?? {}).length;
+      }
+
+      return sum;
+    }, 0);
+  }
+
+  if (message.role === "toolResult") {
+    return message.content.reduce((sum, item) => {
+      if (item.type === "text") {
+        return sum + item.text.length;
+      }
+
+      if (item.type === "image") {
+        return sum + item.data.length;
+      }
+
+      return sum;
+    }, 0);
+  }
+
+  return 0;
 };
 
 const logAgentEvent = (logger: Logger | undefined, event: AgentEvent): void => {

@@ -1,4 +1,9 @@
-export { createAgent, type JarRuntimeOptions, type RuntimeProviderConfig } from "./runtime.js";
+export {
+  createAgent,
+  supportsModelInput,
+  type JarRuntimeOptions,
+  type RuntimeProviderConfig,
+} from "./runtime.js";
 export {
   createLogger,
   logLevels,
@@ -35,3 +40,5 @@ export {
   type SessionPromptResult,
 } from "./session-executor.js";
 export { createTools, type ToolOptions } from "./tools.js";
+export type { AgentMessage } from "@mariozechner/pi-agent-core";
+export type { ImageContent, UserMessage } from "@mariozechner/pi-ai";

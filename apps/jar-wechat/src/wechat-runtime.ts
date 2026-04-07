@@ -1,21 +1,35 @@
 import { createServer } from "node:http";
 import path from "node:path";
 import process from "node:process";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   createLogger,
   executePromptInSession,
   loadRuntimeConfig,
+  supportsModelInput,
+  type ImageContent,
   type LoadedRuntimeConfig,
   type Logger,
+  type UserMessage,
 } from "@hijarvis/jar-core";
-import { WeixinBot } from "@pinixai/weixin-bot";
+import {
+  MessageItemType,
+  WeixinBot,
+  type IncomingMessage,
+  type MessageItem,
+} from "@pinixai/weixin-bot";
 import { z } from "zod";
 
 import {
   buildWeChatPrompt,
   createWeChatSessionId,
+  hasMeaningfulWeChatText,
+  hasWeChatImageAttachments,
+  sanitizePersistedConversationMessage,
+  type WeChatAttachment,
   type WeChatMessage,
+  type WeChatPromptAsset,
 } from "./wechat-prompt.js";
 import {
   parseWeChatPlatformConfig,
@@ -36,13 +50,9 @@ type WeChatGatewayRuntimeOptions = {
 };
 
 type WeChatGatewayEnv = z.infer<typeof wechatGatewayEnvSchema>;
-type WeChatInboundMessage = Parameters<
-  Parameters<WeixinBot["onMessage"]>[0]
->[0];
-
 type QueueEntry = {
   message: WeChatMessage;
-  rawMessage: WeChatInboundMessage;
+  rawMessage: IncomingMessage;
   receivedAt: number;
 };
 
@@ -56,13 +66,24 @@ type WeChatGatewayState = {
   wechatConfig: WeChatPlatformConfig;
   logger: Logger;
   bot: WeixinBot;
+  imageInputEnabled: boolean;
   queues: Map<string, ConversationQueueState>;
+};
+
+type PreparedPromptImage = {
+  reference: string;
+  messageId: string;
+  url?: string;
+  content: ImageContent;
 };
 
 const defaultHost = "0.0.0.0";
 const defaultPort = 3002;
+const defaultCoalesceWindowMs = 2_500;
 const queueEntryTtlMs = 60_000;
 const maxQueueSize = 20;
+const maxImagesPerTurn = 4;
+const maxImageBytes = 10 * 1024 * 1024;
 
 export const startWeChatGateway = async (
   options: WeChatGatewayRuntimeOptions,
@@ -74,6 +95,10 @@ export const startWeChatGateway = async (
   });
   const env = loadWeChatGatewayEnv(process.env);
   const bot = createWeChatBot(wechatConfig, env, logger);
+  const imageInputEnabled = supportsImageInput(
+    runtimeConfig.runtime.provider,
+    runtimeConfig.runtime.model,
+  );
 
   await bot.login();
 
@@ -82,6 +107,7 @@ export const startWeChatGateway = async (
     wechatConfig,
     logger,
     bot,
+    imageInputEnabled,
     queues: new Map<string, ConversationQueueState>(),
   };
 
@@ -89,6 +115,8 @@ export const startWeChatGateway = async (
     configPath: path.resolve(options.configPath),
     baseUrl: resolveBaseUrl(wechatConfig, env),
     tokenPath: resolveTokenPath(wechatConfig, env),
+    imageInputEnabled,
+    coalesceWindowMs: resolveCoalesceWindowMs(wechatConfig),
     logLevel: runtimeConfig.logging.level,
     logToStderr: runtimeConfig.logging.stderr,
     logFilePath: runtimeConfig.logging.filePath,
@@ -150,7 +178,8 @@ const registerWeChatHandlers = (state: WeChatGatewayState): void => {
       conversationKey,
       userId: normalized.userId,
       messageType: normalized.type,
-      textChars: normalized.text.length,
+      textChars: normalized.text?.length ?? 0,
+      imageCount: normalized.attachments.length,
     });
 
     enqueueMessage(state, conversationKey, {
@@ -162,40 +191,103 @@ const registerWeChatHandlers = (state: WeChatGatewayState): void => {
 };
 
 const normalizeWeChatMessage = (
-  message: WeChatInboundMessage,
+  message: IncomingMessage,
 ): WeChatMessage | null => {
-  const text = readWeChatMessageText(message);
-  if (!text) {
+  const messageId = createWeChatMessageId(message);
+  const { text, attachments, transcriptText } = extractWeChatContent(message, messageId);
+
+  if (transcriptText.trim().length === 0) {
     return null;
   }
 
   return {
-    id: createWeChatMessageId(message),
+    id: messageId,
     userId: message.userId,
-    text,
+    ...(text === undefined ? {} : { text }),
+    attachments,
+    transcriptText,
     type: message.type,
     sentAt: message.timestamp,
   };
 };
 
-const readWeChatMessageText = (
-  message: WeChatInboundMessage,
-): string | null => {
-  const normalized = message.text.trim();
-  if (normalized.length > 0) {
-    return normalized;
+const extractWeChatContent = (
+  message: IncomingMessage,
+  messageId: string,
+): {
+  text?: string;
+  attachments: WeChatAttachment[];
+  transcriptText: string;
+} => {
+  const textParts: string[] = [];
+  const attachments: WeChatAttachment[] = [];
+
+  for (const [index, item] of message.raw.item_list.entries()) {
+    collectMessageItemContent(item, messageId, index, textParts, attachments);
   }
 
-  if (message.type !== "text") {
-    return `[${message.type} message]`;
+  let text = textParts
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .join("\n");
+
+  if (!text && message.type === "text") {
+    text = message.text.trim();
   }
 
-  return null;
+  const transcriptParts = [
+    ...(text ? [text] : []),
+    ...attachments.map((attachment) => attachment.transcriptText),
+  ];
+
+  if (transcriptParts.length === 0) {
+    const fallback = message.text.trim();
+    if (fallback.length > 0) {
+      transcriptParts.push(fallback);
+    } else if (message.type !== "text") {
+      transcriptParts.push(`[${message.type} message]`);
+    }
+  }
+
+  return {
+    ...(text ? { text } : {}),
+    attachments,
+    transcriptText: transcriptParts.join("\n"),
+  };
 };
 
-const createWeChatMessageId = (message: WeChatInboundMessage): string => {
-  const rawMessage = message.raw as { id?: string; msgid?: string | number };
-  const explicitId = rawMessage.id ?? rawMessage.msgid;
+const collectMessageItemContent = (
+  item: MessageItem,
+  messageId: string,
+  index: number,
+  textParts: string[],
+  attachments: WeChatAttachment[],
+): void => {
+  switch (item.type) {
+    case MessageItemType.TEXT: {
+      const text = item.text_item?.text?.trim();
+      if (text) {
+        textParts.push(text);
+      }
+      return;
+    }
+    case MessageItemType.IMAGE: {
+      const url = item.image_item?.url?.trim();
+      attachments.push({
+        id: `${messageId}#${index + 1}`,
+        kind: "image",
+        ...(url ? { url } : {}),
+        transcriptText: url ? `[image] ${url}` : "[image]",
+      });
+      return;
+    }
+    default:
+      return;
+  }
+};
+
+const createWeChatMessageId = (message: IncomingMessage): string => {
+  const explicitId = message.raw.message_id;
 
   if (explicitId !== undefined) {
     return String(explicitId);
@@ -241,6 +333,8 @@ const drainQueue = async (
 ): Promise<void> => {
   try {
     while (queue.entries.length > 0) {
+      await waitForQuietWindow(queue, resolveCoalesceWindowMs(state.wechatConfig));
+
       const now = Date.now();
       queue.entries = queue.entries.filter(
         (queued) => now - queued.receivedAt <= queueEntryTtlMs,
@@ -255,17 +349,17 @@ const drainQueue = async (
         continue;
       }
 
-      const current = batch[batch.length - 1]!;
-      const skipped = batch.slice(0, -1).map((item) => item.message);
-
       state.logger.info("wechat.queue_draining", {
         conversationKey,
         batchSize: batch.length,
-        skippedCount: skipped.length,
+        imageCount: batch.reduce(
+          (sum, entry) => sum + entry.message.attachments.length,
+          0,
+        ),
       });
 
       try {
-        await handleQueueEntry(state, conversationKey, current, skipped);
+        await handleQueueBatch(state, conversationKey, batch);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         state.logger.error("wechat.queue_entry_failed", {
@@ -279,34 +373,77 @@ const drainQueue = async (
   }
 };
 
-const handleQueueEntry = async (
+const waitForQuietWindow = async (
+  queue: ConversationQueueState,
+  coalesceWindowMs: number,
+): Promise<void> => {
+  while (true) {
+    const latestEntry = queue.entries[queue.entries.length - 1];
+    if (!latestEntry) {
+      return;
+    }
+
+    const remainingMs = latestEntry.receivedAt + coalesceWindowMs - Date.now();
+    if (remainingMs <= 0) {
+      return;
+    }
+
+    await sleep(remainingMs);
+  }
+};
+
+const handleQueueBatch = async (
   state: WeChatGatewayState,
   conversationKey: string,
-  entry: QueueEntry,
-  skipped: WeChatMessage[],
+  batch: QueueEntry[],
 ): Promise<void> => {
-  const sessionId = createWeChatSessionId(`wechat:${entry.message.userId}`);
+  const latestEntry = batch[batch.length - 1]!;
+  const messages = batch.map((entry) => entry.message);
+  const sessionId = createWeChatSessionId(`wechat:${latestEntry.message.userId}`);
   const requestLogger = state.logger.child({
     conversationKey,
     sessionId,
-    userId: entry.message.userId,
-    messageId: entry.message.id,
-    messageType: entry.message.type,
-  });
-  const prompt = buildWeChatPrompt({
-    message: entry.message,
-    skipped,
+    userId: latestEntry.message.userId,
+    messageId: latestEntry.message.id,
+    batchSize: batch.length,
   });
 
+  if (hasWeChatImageAttachments(messages) && !hasMeaningfulWeChatText(messages)) {
+    const replyText = [
+      "I received your image.",
+      "Send one short follow-up message telling me what to focus on, and I will analyze it together with the image.",
+    ].join(" ");
+
+    await state.bot.reply(latestEntry.rawMessage, replyText);
+    requestLogger.info("wechat.reply_requested_follow_up", {
+      reason: "image_without_text",
+      imageCount: messages.reduce(
+        (sum, message) => sum + message.attachments.length,
+        0,
+      ),
+    });
+    return;
+  }
+
+  const prompt = await createWeChatPromptMessage(state, messages, requestLogger);
+  const promptContent = Array.isArray(prompt.content) ? prompt.content : [];
+
   requestLogger.info("wechat.request_started", {
-    skippedCount: skipped.length,
-    promptChars: prompt.length,
+    promptChars: promptContent
+      .filter(
+        (
+          item,
+        ): item is Extract<NonNullable<UserMessage["content"]>[number], { type: "text" }> =>
+          item.type === "text",
+      )
+      .reduce((sum, item) => sum + item.text.length, 0),
+    promptContentBlocks: promptContent.length,
   });
 
   await respondInWeChatConversation({
     runtime: state.runtime,
     bot: state.bot,
-    rawMessage: entry.rawMessage,
+    rawMessage: latestEntry.rawMessage,
     conversationKey,
     sessionId,
     prompt,
@@ -314,13 +451,153 @@ const handleQueueEntry = async (
   });
 };
 
+const createWeChatPromptMessage = async (
+  state: WeChatGatewayState,
+  messages: WeChatMessage[],
+  logger: Logger,
+): Promise<UserMessage> => {
+  const images = await preparePromptImages(messages, state.imageInputEnabled, logger);
+  const assets = buildPromptAssets(messages, images);
+  const content: UserMessage["content"] = [{
+    type: "text",
+    text: buildWeChatPrompt({
+      messages,
+      assets,
+      imageInputEnabled: state.imageInputEnabled,
+    }),
+  }];
+
+  for (const image of images) {
+    content.push({
+      type: "text",
+      text: [
+        `Attached WeChat image ${image.reference} for message ${image.messageId}.`,
+        image.url ? `Source URL: ${image.url}` : "Source URL unavailable.",
+      ].join(" "),
+    });
+    content.push(image.content);
+  }
+
+  return {
+    role: "user",
+    content,
+    timestamp: messages[messages.length - 1]?.sentAt.getTime() ?? Date.now(),
+  };
+};
+
+const preparePromptImages = async (
+  messages: WeChatMessage[],
+  imageInputEnabled: boolean,
+  logger: Logger,
+): Promise<PreparedPromptImage[]> => {
+  if (!imageInputEnabled) {
+    return [];
+  }
+
+  const attachments = messages.flatMap((message) => {
+    return message.attachments.map((attachment) => ({
+      messageId: message.id,
+      attachment,
+    }));
+  });
+
+  const selected = attachments.slice(0, maxImagesPerTurn);
+  const prepared: PreparedPromptImage[] = [];
+
+  for (const [index, asset] of selected.entries()) {
+    if (!asset.attachment.url) {
+      logger.debug("wechat.image_skipped", {
+        messageId: asset.messageId,
+        attachmentId: asset.attachment.id,
+        reason: "missing_url",
+      });
+      continue;
+    }
+
+    try {
+      const image = await fetchImageContent(asset.attachment.url);
+      prepared.push({
+        reference: `IMG-${index + 1}`,
+        messageId: asset.messageId,
+        url: asset.attachment.url,
+        content: image,
+      });
+    } catch (error) {
+      logger.warn("wechat.image_fetch_failed", {
+        messageId: asset.messageId,
+        attachmentId: asset.attachment.id,
+        url: asset.attachment.url,
+        message: toError(error).message,
+      });
+    }
+  }
+
+  return prepared;
+};
+
+const buildPromptAssets = (
+  messages: WeChatMessage[],
+  preparedImages: PreparedPromptImage[],
+): WeChatPromptAsset[] => {
+  const preparedByAttachmentKey = new Map(
+    preparedImages.map((image) => [toAttachmentKey(image.messageId, image.url), image]),
+  );
+  const assets: WeChatPromptAsset[] = [];
+  const attachments = messages.flatMap((message) => {
+    return message.attachments.map((attachment) => ({
+      messageId: message.id,
+      attachment,
+    }));
+  });
+
+  for (const [index, entry] of attachments.entries()) {
+    const reference = `IMG-${index + 1}`;
+    const prepared = preparedByAttachmentKey.get(
+      toAttachmentKey(entry.messageId, entry.attachment.url),
+    );
+
+    if (prepared) {
+      assets.push({
+        reference: prepared.reference,
+        messageId: entry.messageId,
+        included: true,
+        ...(entry.attachment.url === undefined ? {} : { url: entry.attachment.url }),
+      });
+      continue;
+    }
+
+    const issue = index >= maxImagesPerTurn
+      ? `exceeds the ${maxImagesPerTurn}-image limit for one turn`
+      : entry.attachment.url
+        ? "download failed or source was unavailable"
+        : "missing image URL";
+
+    assets.push({
+      reference,
+      messageId: entry.messageId,
+      included: false,
+      issue,
+      ...(entry.attachment.url === undefined ? {} : { url: entry.attachment.url }),
+    });
+  }
+
+  return assets;
+};
+
+const toAttachmentKey = (
+  messageId: string,
+  url: string | undefined,
+): string => {
+  return `${messageId}:${url ?? "(missing-url)"}`;
+};
+
 const respondInWeChatConversation = async (options: {
   runtime: LoadedRuntimeConfig;
   bot: WeixinBot;
-  rawMessage: WeChatInboundMessage;
+  rawMessage: IncomingMessage;
   conversationKey: string;
   sessionId: string;
-  prompt: string;
+  prompt: UserMessage;
   logger: Logger;
 }): Promise<void> => {
   const startedAt = Date.now();
@@ -341,6 +618,7 @@ const respondInWeChatConversation = async (options: {
       sessionId: options.sessionId,
       prompt: options.prompt,
       logger: options.logger,
+      serializeMessage: sanitizePersistedConversationMessage,
       writers: {
         stderr: process.stderr,
       },
@@ -376,6 +654,60 @@ const respondInWeChatConversation = async (options: {
   }
 };
 
+const fetchImageContent = async (url: string): Promise<ImageContent> => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Image fetch failed with HTTP ${response.status}`);
+  }
+
+  const contentLength = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(contentLength) && contentLength > maxImageBytes) {
+    throw new Error(`Image exceeds ${maxImageBytes} bytes`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  if (arrayBuffer.byteLength > maxImageBytes) {
+    throw new Error(`Image exceeds ${maxImageBytes} bytes`);
+  }
+
+  const mimeType = resolveImageMimeType(
+    response.headers.get("content-type"),
+    url,
+  );
+
+  return {
+    type: "image",
+    data: Buffer.from(arrayBuffer).toString("base64"),
+    mimeType,
+  };
+};
+
+const resolveImageMimeType = (
+  contentTypeHeader: string | null,
+  url: string,
+): string => {
+  const normalizedHeader = contentTypeHeader?.split(";")[0]?.trim().toLowerCase();
+  if (normalizedHeader?.startsWith("image/")) {
+    return normalizedHeader;
+  }
+
+  const pathname = new URL(url).pathname.toLowerCase();
+  if (pathname.endsWith(".png")) {
+    return "image/png";
+  }
+  if (pathname.endsWith(".gif")) {
+    return "image/gif";
+  }
+  if (pathname.endsWith(".webp")) {
+    return "image/webp";
+  }
+  if (pathname.endsWith(".bmp")) {
+    return "image/bmp";
+  }
+
+  return "image/jpeg";
+};
+
 const getConversationQueue = (
   state: WeChatGatewayState,
   conversationKey: string,
@@ -405,6 +737,19 @@ const resolveTokenPath = (
   env: WeChatGatewayEnv,
 ): string | undefined => {
   return env.JARVIS_WECHAT_TOKEN_PATH ?? wechatConfig.tokenPath;
+};
+
+const resolveCoalesceWindowMs = (
+  wechatConfig: WeChatPlatformConfig,
+): number => {
+  return wechatConfig.coalesceWindowMs ?? defaultCoalesceWindowMs;
+};
+
+const supportsImageInput = (
+  provider: LoadedRuntimeConfig["runtime"]["provider"],
+  modelId: string,
+): boolean => {
+  return supportsModelInput(provider, modelId, "image");
 };
 
 const loadWeChatGatewayEnv = (rawEnv: NodeJS.ProcessEnv): WeChatGatewayEnv => {
