@@ -6,13 +6,14 @@
 
 第一版 Slack 接入只解决一件事：
 
-- 在 Slack channel 中 `@mention` Jarvis，或直接给 Jarvis 发 DM 时，把请求导入 Jar runtime；
+- 在 Slack channel 中 `@mention` Jarvis 时，把请求导入 Jar runtime；
 - 所有回复统一进入 Slack thread；
-- 一个 Slack thread 对应一个 Jar session。
+- 顶层 channel mention 和 thread follow-up 各自映射到独立的 Jar session。
 
 这意味着第一版明确**不做**：
 
 - 频道内短答直回
+- Slack DM 支持
 - Discord / Telegram 之类的其他平台
 - 持久化的 Slack gateway state backend
 - 跨 thread / 跨 channel 的共享记忆
@@ -31,8 +32,8 @@
 1. 读取 `jar.toml`
 2. 启动 Slack Socket Mode 连接
 3. 先把 Slack transport event 归一化成 canonical message
-4. 在内存里维护线程订阅、event dedupe、message dedupe 与队列状态
-5. 把 Slack message 映射到 Jar session
+4. 在内存里维护线程订阅、scope reply timestamp、event dedupe、message dedupe 与队列状态
+5. 把 Slack scope 映射到 Jar session
 6. 在回复发回 Slack 前，把模型原始 Markdown 组织成 Slack `markdown` blocks
 7. 输出一层面向开发排障的摘要日志
 
@@ -116,8 +117,8 @@ PORT=3000
 说明：
 
 - `JARVIS_SLACK_BOT_NAME`：覆盖 `platform.slack.bot_name`。
-- `JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES`：首次 mention 时，回看 channel 顶层消息的时间窗。
-- `JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT`：首次 mention 时，最多带入多少条顶层消息。
+- `JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES`：当 channel scope 里还没有 Jarvis 上一轮回复时，bootstrap fallback 的回看时间窗。
+- `JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT`：每轮 channel-scope prompt 最多带入多少条顶层消息。
 - `HOST` / `PORT`：覆盖健康检查 HTTP 服务监听地址。
 - `SLACK_APP_TOKEN` 对应的是 app-level token，不是 bot token；创建时需要勾选 `connections:write`。
 
@@ -160,22 +161,21 @@ Slack gateway 现在明确把输入处理拆成三层：
 - `channel + ts` message dedupe：保证同一条 Slack 消息只进入业务处理一次
 - trigger classifier：统一判断这条 canonical message 是 `new_mention`、`subscribed` 还是 `ignore`
 
-### 1. 新的 channel mention
+### 1. 顶层 channel mention
 
-当用户在一个**尚未订阅**的 Slack 线程上下文中 `@mention` Jarvis：
+当用户在频道顶层 `@mention` Jarvis：
 
 1. 收到 `app_mention` 事件
-2. 订阅当前 thread
-3. Jarvis 从当前 channel 拉取 mention 之前的一小段顶层消息
-4. 用这些消息构造 observed context prompt
-5. 通过 `packages/jar-core/src/session-executor.ts` 执行一次 session-bound prompt
-6. 把结果发回当前 Slack thread
-
-这里的 observed context 是**临时上下文**，不是长期记忆真相。
+2. 把当前频道顶层主线视为一个独立 scope
+3. 如果 Jarvis 之前已经在这个 channel scope 里回复过，就只拉取“上次 Jarvis 回复之后，到这次 mention 之前”的顶层 channel 消息
+4. 如果这是这个 channel scope 的第一次回复，才退回一个很小的 bootstrap window
+5. 用这些顶层消息构造 prompt
+6. 通过 `packages/jar-core/src/session-executor.ts` 执行一次 session-bound prompt
+7. 把结果发回当前 Slack thread，并订阅这个 thread 的后续消息
 
 补充说明：
 
-- 这里的“首次 mention”是业务语义，不是 transport event 语义。
+- 顶层 channel scope 的 Jar session id 按 `channel:{channelId}` 生成。
 - 如果同一条消息同时以 `app_mention` 和 `message.channels` 到达，最终也只会被接受一次。
 
 ### 2. 已订阅 thread 中的后续消息
@@ -184,44 +184,46 @@ Slack gateway 现在明确把输入处理拆成三层：
 
 1. 收到 thread 内的后续消息
 2. 不再重新拉取 channel 顶层历史
-3. 直接把当前消息导入该 thread 对应的 Jar session
-4. 在同一个 thread 中回复
-
-这个阶段的长期记忆真相来自 Jar session，而不是 Slack channel 历史。
+3. 只把“Jarvis 上次在该 thread 回复之后新增的 thread 消息”送进这一轮 prompt
+4. 直接把这些消息写入该 thread 对应的 Jar session
+5. 在同一个 thread 中回复
 
 补充规则：
 
 - 已订阅 thread 里的消息统一按 follow-up 处理。
 - 即使这条 follow-up 再次 `@mention` Jarvis，也不会额外触发第二条并行处理路径。
+- 如果 Jarvis 是第一次在一个已经存在的 thread 中被 `@mention`，当前实现不会回补更早的 thread replies；这一轮只能从当前 mention 开始建立 thread 上下文。
 
 ### 3. 直接消息
 
-当用户直接给 Jarvis 发 DM：
-
-1. 收到 DM message
-2. 该 DM thread 会被订阅
-3. 不回看 channel 顶层历史
-4. 直接进入 Jar session，并在同一个 DM thread 里回复
+当前实现直接忽略 Slack DM。只有 channel 顶层 mention 和已订阅 thread 内的后续消息会进入 Jar runtime。
 
 ## Session 映射
 
-Slack thread id 统一编码成：
+顶层 channel scope 统一编码成：
 
 ```text
-slack:{channelId}:{threadTs}
+slack:channel:{channelId}
 ```
 
-第一版会把它转换成 Jar session id：
+thread scope 统一编码成：
 
 ```text
-slack__{channelId}__{threadTs}
+slack:thread:{channelId}:{threadTs}
+```
+
+最终会转换成 Jar session id，例如：
+
+```text
+slack__channel__{channelId}
+slack__thread__{channelId}__{threadTs}
 ```
 
 这样做的目的：
 
 - 保持可读性
 - 避免直接把 `/` 之类的平台分隔符带入本地文件路径
-- 保证“一个 Slack thread = 一个 Jar session”
+- 保证“一个 Slack scope = 一个 Jar session”
 
 ## 上下文组装
 
@@ -239,31 +241,32 @@ Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标
 
 之前“总是 collapse”的直接原因，是我们发的是 `section` block；`section` 在文本较长时，Slack 会显示 `see more`。切到 `markdown` block 后，格式转换交给 Slack 自己处理；但如果整条消息在 Slack 客户端里依然被折叠，那就是 Slack UI 的长消息展示策略，不再是我们这层 `mrkdwn` 适配造成的。
 
-### 首次 mention
+### 顶层 channel mention
 
-首次 mention 的 prompt 由三部分组成：
+顶层 mention 的 prompt 由三部分组成：
 
 1. 平台说明
-2. observed channel context
+2. 与本轮相关的顶层 channel 消息
 3. 当前用户请求
 
-如果在上一轮处理期间，同一个 thread 又来了多条消息，gateway 会把中间消息作为 `skipped` 上下文附加到 prompt 中。
+如果在上一轮处理期间，同一个 channel scope 又来了多条顶层 mention，gateway 会把中间消息作为 `skipped` 上下文附加到 prompt 中。
 
 ### 后续 thread 消息
 
 后续 thread 消息的 prompt 更简单：
 
 1. 说明“你正在继续一个已有 thread 对话”
-2. 附加 `skipped`
+2. 附加 processing 期间积累的 `skipped`
 3. 附加当前用户消息
 
 不再重复注入 channel 顶层历史。
 
-## 为什么 state 先用 memory
+## 为什么 state 先用内存
 
 第一版的 gateway state 只承担：
 
 - thread subscription
+- scope 最近一次回复时间
 - queue / lock
 - 本地缓存
 
@@ -280,7 +283,7 @@ Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标
 - 进程重启后，thread subscription 会丢失
 - 但 Jar session 文件仍然保留在 `.jar/sessions`
 
-如果后续需要多实例部署或重启后保留 subscriptions，再切到 Redis / PostgreSQL。
+如果后续需要多实例部署或重启后保留 subscriptions / scope reply timestamp，再切到 Redis / PostgreSQL。
 
 ## 验证建议
 
@@ -289,14 +292,15 @@ Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标
 1. 启动 `apps/jar-slack`
 2. 在 Slack App 中启用 Socket Mode，并配置 `SLACK_APP_TOKEN`
 3. 在一个 channel 中连续发几条顶层消息
-4. `@mention` Jarvis，确认它在 thread 中回复，并能引用 mention 前的内容
-5. 继续在该 thread 中追问，确认它沿用同一个 session
+4. `@mention` Jarvis，确认它在 thread 中回复，并能引用上一次 Jarvis channel 回复之后的顶层消息
+5. 继续在该 thread 中追问，确认它沿用同一个 thread session
 6. 重启服务后重新 mention，确认新的 thread 仍然可用
 
 ## 已知限制
 
 - 只支持 Slack
 - 所有回复统一进入 thread
-- observed context 只看 channel 顶层消息，不看其他 thread
-- 内存态不会跨进程持久化 thread subscriptions
+- 顶层 channel scope 只看频道顶层消息，不看其他 thread
+- 第一次在一个既有 thread 中被 `@mention` 时，不会回补更早的 thread replies
+- 内存态不会跨进程持久化 thread subscriptions 或最近回复时间
 - 还没有做 streaming reply、cards、modals 或 slash commands

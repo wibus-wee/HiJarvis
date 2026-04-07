@@ -111,8 +111,8 @@ Inactive provider tables are allowed. They are ignored until selected by `agent.
 - `bot_token`: Slack bot token。用于 Socket Mode + Web API 调用。
 - `app_token`: Slack app-level token (xapp-...)。Socket Mode 必需。
 - `signing_secret`: Slack signing secret，用于请求校验与 SDK 初始化。
-- `context_lookback_minutes`: 首次 channel mention 时，向前回看顶层消息的时间窗。默认：`15`。
-- `context_message_limit`: 首次 channel mention 时，最多带入多少条顶层消息。默认：`12`。
+- `context_lookback_minutes`: 当某个 channel scope 里还没有 Jarvis 的上一轮回复时，bootstrap fallback 向前回看顶层消息的时间窗。默认：`15`。
+- `context_message_limit`: 每一轮 channel-scope prompt 里，最多带入多少条顶层 channel 消息。默认：`12`。
 - `host`: 健康检查 HTTP 服务监听 host。默认：`"0.0.0.0"`。
 - `port`: 健康检查 HTTP 服务监听端口。默认：`3000`。
 
@@ -155,7 +155,7 @@ Telegram gateway 默认使用 long polling，而不是 webhook。
 
 这套日志的设计目标不是替代 `.jar/sessions/<sessionId>/events.jsonl`，而是提供一层更适合开发和排障的“链路摘要”：
 
-- `info`：只输出关键阶段边界，例如 Slack 事件接收、队列合并、observed context 抓取、session 执行开始/结束、reply 发回 Slack。
+- `info`：只输出关键阶段边界，例如 Slack 事件接收、队列合并、channel delta 抓取、session 执行开始/结束、reply 发回 Slack。
 - `debug`：在 `info` 基础上补充更多低层事件，例如 message 落盘、被忽略或被去重的 Slack 事件。
 
 ### `[tools]`

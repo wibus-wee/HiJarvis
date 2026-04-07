@@ -6,7 +6,7 @@ import {
   buildSubscribedThreadPrompt,
   createSlackReplyPayload,
   formatCurrentMessageBlock,
-  formatObservedContextBlock,
+  formatChannelContextBlock,
   formatQueuedMessagesBlock,
   type SlackMessage,
 } from "./slack-prompt.js";
@@ -38,8 +38,8 @@ test("createSlackSessionId normalizes thread ids into filesystem-safe session id
   );
 });
 
-test("formatObservedContextBlock renders ordered message history", () => {
-  const block = formatObservedContextBlock([
+test("formatChannelContextBlock renders ordered channel delta history", () => {
+  const block = formatChannelContextBlock([
     createMessage({
       id: "1",
       text: "We should ship on Friday.",
@@ -52,11 +52,18 @@ test("formatObservedContextBlock renders ordered message history", () => {
       authorName: "Wibus",
       sentAt: "2026-04-06T09:01:00.000Z",
     }),
-  ]);
+  ], "delta");
 
-  assert.match(block, /Observed channel context before the mention:/);
+  assert.match(block, /Top-level channel messages since your last reply in this channel:/);
   assert.match(block, /Wibus: We should ship on Friday\./);
   assert.match(block, /Wibus: We still need the Slack bot\./);
+});
+
+test("formatChannelContextBlock renders bootstrap fallback text when no prior channel reply exists", () => {
+  const block = formatChannelContextBlock([], "bootstrap");
+
+  assert.match(block, /before Jarvis joined this channel conversation/i);
+  assert.match(block, /bootstrap window/i);
 });
 
 test("formatQueuedMessagesBlock includes skipped messages when queue mode coalesces them", () => {
@@ -106,6 +113,7 @@ test("buildSubscribedThreadPrompt keeps thread instructions separate from reques
   );
 
   assert.match(prompt, /You are continuing an existing Slack thread conversation\./);
+  assert.match(prompt, /new thread messages since your last reply/i);
   assert.match(prompt, /Additional user messages that arrived while you were still processing the previous turn:/);
   assert.match(prompt, /Current user request:/);
 });
@@ -165,6 +173,8 @@ test("normalizeSlackEvent strips bot mentions and derives stable keys", () => {
   assert.ok(normalized);
   assert.equal(normalized.text, "summarize this thread");
   assert.equal(normalized.hasBotMention, true);
+  assert.equal(normalized.scopeKind, "channel");
+  assert.equal(normalized.scopeKey, "channel:C123");
   assert.equal(normalized.threadKey, "C123:1743931234.56789");
   assert.equal(normalized.messageKey, "C123:1743931234.56789");
   assert.equal(normalized.eventId, "Ev123");
@@ -191,6 +201,8 @@ test("classifySlackTrigger opens a new subscription for an unsubscribed mention"
   }
 
   assert.equal(decision.queueKind, "new_mention");
+  assert.equal(decision.scopeKind, "channel");
+  assert.equal(decision.scopeKey, "channel:C123");
   assert.equal(decision.shouldSubscribe, true);
   assert.equal(decision.alreadySubscribed, false);
 });
@@ -210,6 +222,8 @@ test("classifySlackTrigger treats later thread mentions as subscribed follow-ups
   );
 
   assert.ok(normalized);
+  assert.equal(normalized.scopeKind, "thread");
+  assert.equal(normalized.scopeKey, "thread:C123:1743931234.56789");
   const decision = classifySlackTrigger(
     normalized,
     new Set<string>(["C123:1743931234.56789"]),
@@ -220,8 +234,34 @@ test("classifySlackTrigger treats later thread mentions as subscribed follow-ups
   }
 
   assert.equal(decision.queueKind, "subscribed");
+  assert.equal(decision.scopeKind, "thread");
   assert.equal(decision.shouldSubscribe, false);
   assert.equal(decision.alreadySubscribed, true);
+});
+
+test("classifySlackTrigger ignores direct messages because DM support is disabled", () => {
+  const normalized = normalizeSlackEvent(
+    "message",
+    {
+      channel: "D123",
+      channel_type: "im",
+      ts: "1743931300.00001",
+      text: "hello",
+      user: "U_WIBUS",
+    },
+    "U_BOT",
+    undefined,
+  );
+
+  assert.ok(normalized);
+  const decision = classifySlackTrigger(normalized, new Set<string>());
+  assert.equal(decision.action, "ignore");
+  if (decision.action !== "ignore") {
+    throw new Error("Expected ignore decision");
+  }
+
+  assert.equal(decision.reason, "direct_message_not_supported");
+  assert.equal(decision.scopeKey, "channel:D123");
 });
 
 test("message-level dedupe blocks the same Slack message across event types", () => {

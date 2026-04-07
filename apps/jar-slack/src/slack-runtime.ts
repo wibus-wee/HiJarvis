@@ -18,7 +18,7 @@ import {
   createSlackReplyPayload,
   createSlackSessionId,
   formatCurrentMessageBlock,
-  formatObservedContextBlock,
+  formatChannelContextBlock,
   formatQueuedMessagesBlock,
   type SlackMessage,
 } from "./slack-prompt.js";
@@ -83,6 +83,8 @@ type NormalizedSlackEvent = {
   eventId: string | undefined;
   channel: string;
   channelType: string | undefined;
+  scopeKind: "channel" | "thread";
+  scopeKey: string;
   threadTs: string;
   threadKey: string;
   messageKey: string;
@@ -97,7 +99,8 @@ type NormalizedSlackEvent = {
 type SlackTriggerDecision =
   | {
     action: "ignore";
-    reason: "thread_not_subscribed";
+    reason: "thread_not_subscribed" | "direct_message_not_supported";
+    scopeKey: string;
     threadKey: string;
     threadTs: string;
     channel: string;
@@ -108,6 +111,8 @@ type SlackTriggerDecision =
   | {
     action: "enqueue";
     queueKind: QueueEntry["kind"];
+    scopeKind: "channel" | "thread";
+    scopeKey: string;
     threadKey: string;
     threadTs: string;
     channel: string;
@@ -121,6 +126,7 @@ type SlackTriggerDecision =
 
 type QueueEntry = {
   kind: "new_mention" | "subscribed";
+  scopeKind: "channel" | "thread";
   channel: string;
   threadTs: string;
   message: SlackMessageSeed;
@@ -140,6 +146,7 @@ type SlackGatewayState = {
   slackClient: App["client"];
   subscriptions: Set<string>;
   queues: Map<string, ThreadQueueState>;
+  lastReplyTsByScope: Map<string, string>;
   userCache: Map<string, string>;
   seenEvents: Map<string, number>;
   seenMessages: Map<string, number>;
@@ -195,6 +202,7 @@ export const startSlackGateway = async (
     slackClient: app.client,
     subscriptions: new Set<string>(),
     queues: new Map<string, ThreadQueueState>(),
+    lastReplyTsByScope: new Map<string, string>(),
     userCache: new Map<string, string>(),
     seenEvents: new Map<string, number>(),
     seenMessages: new Map<string, number>(),
@@ -335,6 +343,7 @@ const processSlackEvent = async ({
       eventType: normalized.eventType,
       eventId: normalized.eventId,
       reason: decision.reason,
+      scopeKey: decision.scopeKey,
       threadKey: decision.threadKey,
       channel: decision.channel,
       threadTs: decision.threadTs,
@@ -349,6 +358,7 @@ const processSlackEvent = async ({
     state.logger.debug("slack.message_deduplicated", {
       eventType: normalized.eventType,
       eventId: normalized.eventId,
+      scopeKey: decision.scopeKey,
       threadKey: decision.threadKey,
       channel: decision.channel,
       threadTs: decision.threadTs,
@@ -366,6 +376,8 @@ const processSlackEvent = async ({
     eventType: normalized.eventType,
     eventId: normalized.eventId,
     trigger: decision.queueKind,
+    scopeKind: decision.scopeKind,
+    scopeKey: decision.scopeKey,
     threadKey: decision.threadKey,
     channel: decision.channel,
     threadTs: decision.threadTs,
@@ -377,8 +389,9 @@ const processSlackEvent = async ({
     textChars: normalized.message.text.length,
   });
 
-  enqueueMessage(state, decision.threadKey, {
+  enqueueMessage(state, decision.scopeKey, {
     kind: decision.queueKind,
+    scopeKind: decision.scopeKind,
     channel: decision.channel,
     threadTs: decision.threadTs,
     message: decision.message,
@@ -388,10 +401,10 @@ const processSlackEvent = async ({
 
 const enqueueMessage = (
   state: SlackGatewayState,
-  threadKey: string,
+  scopeKey: string,
   entry: QueueEntry,
 ): void => {
-  const queue = getThreadQueue(state, threadKey);
+  const queue = getThreadQueue(state, scopeKey);
   const now = Date.now();
 
   queue.entries = queue.entries.filter(
@@ -404,7 +417,8 @@ const enqueueMessage = (
   }
 
   state.logger.info("slack.queue_enqueued", {
-    threadKey,
+    scopeKey,
+    scopeKind: entry.scopeKind,
     kind: entry.kind,
     queueSize: queue.entries.length,
     channel: entry.channel,
@@ -414,13 +428,13 @@ const enqueueMessage = (
 
   if (!queue.running) {
     queue.running = true;
-    void drainQueue(state, threadKey, queue);
+    void drainQueue(state, scopeKey, queue);
   }
 };
 
 const drainQueue = async (
   state: SlackGatewayState,
-  threadKey: string,
+  scopeKey: string,
   queue: ThreadQueueState,
 ): Promise<void> => {
   try {
@@ -434,26 +448,28 @@ const drainQueue = async (
         break;
       }
 
-      const batch = queue.entries.splice(0, queue.entries.length);
-      if (batch.length === 0) {
+      const current = queue.entries.shift();
+      if (!current) {
         continue;
       }
-      const current = batch[batch.length - 1]!;
-      const skipped = batch.slice(0, -1).map((item) => item.message);
+      const skipped = current.scopeKind === "thread"
+        ? queue.entries.splice(0, queue.entries.length).map((item) => item.message)
+        : [];
 
       state.logger.info("slack.queue_draining", {
-        threadKey,
-        batchSize: batch.length,
+        scopeKey,
+        batchSize: skipped.length + 1,
         skippedCount: skipped.length,
+        scopeKind: current.scopeKind,
         currentKind: current.kind,
       });
 
       try {
-        await handleQueueEntry(state, threadKey, current, skipped);
+        await handleQueueEntry(state, scopeKey, current, skipped);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         state.logger.error("slack.queue_entry_failed", {
-          threadKey,
+          scopeKey,
           message,
         });
       }
@@ -465,13 +481,14 @@ const drainQueue = async (
 
 const handleQueueEntry = async (
   state: SlackGatewayState,
-  threadKey: string,
+  scopeKey: string,
   entry: QueueEntry,
   skipped: SlackMessageSeed[],
 ): Promise<void> => {
-  const sessionId = createSlackSessionId(`slack:${threadKey}`);
+  const sessionId = createSlackSessionId(`slack:${scopeKey}`);
   const requestLogger = state.logger.child({
-    threadKey,
+    scopeKey,
+    scopeKind: entry.scopeKind,
     sessionId,
     channel: entry.channel,
     threadTs: entry.threadTs,
@@ -487,6 +504,8 @@ const handleQueueEntry = async (
   const prompt = entry.kind === "new_mention"
     ? await buildMentionPrompt(
       state,
+      scopeKey,
+      entry.scopeKind,
       entry.channel,
       current,
       skippedMessages,
@@ -498,7 +517,7 @@ const handleQueueEntry = async (
     config: state.config,
     channel: entry.channel,
     threadTs: entry.threadTs,
-    threadKey,
+    scopeKey,
     sessionId,
     prompt,
     client: state,
@@ -508,31 +527,46 @@ const handleQueueEntry = async (
 
 const buildMentionPrompt = async (
   state: SlackGatewayState,
+  scopeKey: string,
+  scopeKind: "channel" | "thread",
   channel: string,
   currentMessage: SlackMessage,
   skipped: SlackMessage[],
   logger: Logger,
 ): Promise<string> => {
+  if (scopeKind === "thread") {
+    return buildSubscribedThreadPrompt(currentMessage, skipped);
+  }
+
+  const lastReplyTs = state.lastReplyTsByScope.get(scopeKey);
   const observedMessages = await collectObservedChannelMessages(
     state,
     channel,
     currentMessage,
+    lastReplyTs,
   );
+  const contextMode = lastReplyTs ? "delta" : "bootstrap";
 
   logger.info("slack.context_collected", {
     observedCount: observedMessages.length,
     skippedCount: skipped.length,
-    lookbackMinutes: state.observedContextLimits.lookbackMinutes,
+    contextMode,
+    lookbackMinutes: lastReplyTs
+      ? undefined
+      : state.observedContextLimits.lookbackMinutes,
+    lastReplyTs,
   });
 
   return buildTurnPrompt({
     lead: [
       "You are replying inside a Slack thread that was created from a channel mention.",
-      "Use the observed channel context to understand what happened immediately before the mention.",
-      "Do not claim to remember channel history beyond the observed context provided below.",
+      lastReplyTs
+        ? "Use the top-level channel messages below to understand what happened in this channel since your last reply there."
+        : "Jarvis has not replied in this channel scope yet, so you only have a small bootstrap window of recent top-level channel messages.",
+      "Do not claim to remember Slack history beyond the context provided below.",
     ],
     sections: [
-      { body: formatObservedContextBlock(observedMessages) },
+      { body: formatChannelContextBlock(observedMessages, contextMode) },
       { body: formatQueuedMessagesBlock(skipped) },
       { body: formatCurrentMessageBlock(currentMessage) },
     ],
@@ -543,7 +577,9 @@ const collectObservedChannelMessages = async (
   state: SlackGatewayState,
   channel: string,
   currentMessage: SlackMessage,
+  lastReplyTs: string | undefined,
 ): Promise<SlackMessage[]> => {
+  const lastReplyMs = lastReplyTs ? Number(lastReplyTs) * 1000 : undefined;
   const cutoffTime =
     currentMessage.sentAt.getTime() -
     state.observedContextLimits.lookbackMinutes * 60_000;
@@ -590,7 +626,15 @@ const collectObservedChannelMessages = async (
         continue;
       }
 
-      if (sentAt < cutoffTime) {
+      if (
+        lastReplyMs !== undefined &&
+        Number.isFinite(lastReplyMs) &&
+        sentAt <= lastReplyMs
+      ) {
+        return messages.reverse();
+      }
+
+      if (lastReplyMs === undefined && sentAt < cutoffTime) {
         return messages.reverse();
       }
 
@@ -669,6 +713,7 @@ export const normalizeSlackEvent = (
   }
 
   const threadTs = event.thread_ts ?? event.ts;
+  const isThreadReply = event.thread_ts !== undefined && event.thread_ts !== event.ts;
   const sentAt = new Date(sentAtMs);
   const text = stripBotMention(event.text, botUserId);
   const message = {
@@ -683,6 +728,10 @@ export const normalizeSlackEvent = (
     eventId,
     channel: event.channel,
     channelType: event.channel_type,
+    scopeKind: isThreadReply ? "thread" : "channel",
+    scopeKey: isThreadReply
+      ? buildThreadScopeKey(event.channel, threadTs)
+      : buildChannelScopeKey(event.channel),
     threadTs,
     threadKey: buildThreadKey(event.channel, threadTs),
     messageKey: buildMessageKey(event.channel, event.ts),
@@ -703,25 +752,25 @@ export const classifySlackTrigger = (
 
   if (event.isDirectMessage) {
     return {
-      action: "enqueue",
-      queueKind: "subscribed",
+      action: "ignore",
+      reason: "direct_message_not_supported",
+      scopeKey: event.scopeKey,
       threadKey: event.threadKey,
       threadTs: event.threadTs,
       channel: event.channel,
       messageKey: event.messageKey,
       isDirectMessage: true,
       hasBotMention: event.hasBotMention,
-      alreadySubscribed,
-      shouldSubscribe: !alreadySubscribed,
-      message: event.message,
     };
   }
 
-  if (!alreadySubscribed) {
+  if (event.scopeKind === "channel") {
     if (event.eventType === "app_mention") {
       return {
         action: "enqueue",
         queueKind: "new_mention",
+        scopeKind: "channel",
+        scopeKey: event.scopeKey,
         threadKey: event.threadKey,
         threadTs: event.threadTs,
         channel: event.channel,
@@ -737,6 +786,39 @@ export const classifySlackTrigger = (
     return {
       action: "ignore",
       reason: "thread_not_subscribed",
+      scopeKey: event.scopeKey,
+      threadKey: event.threadKey,
+      threadTs: event.threadTs,
+      channel: event.channel,
+      messageKey: event.messageKey,
+      isDirectMessage: false,
+      hasBotMention: event.hasBotMention,
+    };
+  }
+
+  if (!alreadySubscribed) {
+    if (event.eventType === "app_mention") {
+      return {
+        action: "enqueue",
+        queueKind: "new_mention",
+        scopeKind: "thread",
+        scopeKey: event.scopeKey,
+        threadKey: event.threadKey,
+        threadTs: event.threadTs,
+        channel: event.channel,
+        messageKey: event.messageKey,
+        isDirectMessage: false,
+        hasBotMention: event.hasBotMention,
+        alreadySubscribed,
+        shouldSubscribe: true,
+        message: event.message,
+      };
+    }
+
+    return {
+      action: "ignore",
+      reason: "thread_not_subscribed",
+      scopeKey: event.scopeKey,
       threadKey: event.threadKey,
       threadTs: event.threadTs,
       channel: event.channel,
@@ -749,6 +831,8 @@ export const classifySlackTrigger = (
   return {
     action: "enqueue",
     queueKind: "subscribed",
+    scopeKind: "thread",
+    scopeKey: event.scopeKey,
     threadKey: event.threadKey,
     threadTs: event.threadTs,
     channel: event.channel,
@@ -799,7 +883,7 @@ const respondInSlackThread = async ({
   config,
   channel,
   threadTs,
-  threadKey,
+  scopeKey,
   sessionId,
   prompt,
   client,
@@ -808,7 +892,7 @@ const respondInSlackThread = async ({
   config: LoadedAgentConfig;
   channel: string;
   threadTs: string;
-  threadKey: string;
+  scopeKey: string;
   sessionId: string;
   prompt: string;
   client: SlackGatewayState;
@@ -835,17 +919,21 @@ const respondInSlackThread = async ({
       ? outputText
       : "I finished processing that, but I do not have a textual reply to send.";
 
-    await client.slackClient.chat.postMessage({
+    const response = await client.slackClient.chat.postMessage({
       channel,
       thread_ts: threadTs,
       ...createSlackReplyPayload(reply),
     });
+    if (response.ts) {
+      client.lastReplyTsByScope.set(scopeKey, response.ts);
+    }
 
     logger.info("slack.reply_posted", {
       durationMs: Date.now() - startedAt,
       replyChars: reply.length,
       sessionId,
-      threadKey,
+      scopeKey,
+      replyTs: response.ts,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -853,16 +941,19 @@ const respondInSlackThread = async ({
       durationMs: Date.now() - startedAt,
       message,
       sessionId,
-      threadKey,
+      scopeKey,
     });
 
-    await client.slackClient.chat.postMessage({
+    const fallback = await client.slackClient.chat.postMessage({
       channel,
       thread_ts: threadTs,
       ...createSlackReplyPayload(
         "I ran into an error while processing that request. Please try again in the same thread.",
       ),
     });
+    if (fallback.ts) {
+      client.lastReplyTsByScope.set(scopeKey, fallback.ts);
+    }
   }
 };
 
@@ -885,6 +976,14 @@ const getThreadQueue = (
 
 const buildThreadKey = (channel: string, threadTs: string): string => {
   return `${channel}:${threadTs}`;
+};
+
+const buildChannelScopeKey = (channel: string): string => {
+  return `channel:${channel}`;
+};
+
+const buildThreadScopeKey = (channel: string, threadTs: string): string => {
+  return `thread:${channel}:${threadTs}`;
 };
 
 const buildMessageKey = (channel: string, messageTs: string): string => {

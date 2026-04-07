@@ -25,9 +25,16 @@ export const createSlackSessionId = (threadId: string): string => {
   return threadId.replaceAll(":", "__").replaceAll("/", "_");
 };
 
-export const formatObservedContextBlock = (messages: SlackMessage[]): string => {
+export const formatChannelContextBlock = (
+  messages: SlackMessage[],
+  mode: "delta" | "bootstrap",
+): string => {
   if (messages.length === 0) {
-    return "Observed channel context before the mention:\n- No recent top-level channel messages were captured within the configured lookback window.";
+    if (mode === "delta") {
+      return "Top-level channel messages since your last reply in this channel:\n- No new top-level channel messages were captured before the current mention.";
+    }
+
+    return "Top-level channel messages before Jarvis joined this channel conversation:\n- No recent top-level channel messages were captured within the configured bootstrap window.";
   }
 
   const lines = messages.map((message) => {
@@ -36,7 +43,11 @@ export const formatObservedContextBlock = (messages: SlackMessage[]): string => 
     return `- [${timestamp}] ${author}: ${message.text}`;
   });
 
-  return `Observed channel context before the mention:\n${lines.join("\n")}`;
+  if (mode === "delta") {
+    return `Top-level channel messages since your last reply in this channel:\n${lines.join("\n")}`;
+  }
+
+  return `Top-level channel messages before Jarvis joined this channel conversation:\n${lines.join("\n")}`;
 };
 
 export const formatQueuedMessagesBlock = (skipped: SlackMessage[]): string => {
@@ -72,6 +83,7 @@ export const buildSubscribedThreadPrompt = (
     lead: [
       "You are continuing an existing Slack thread conversation.",
       "The thread history in your session is the source of truth for prior bot interaction.",
+      "Treat the queued user messages and current request below as the new thread messages since your last reply.",
     ],
     sections: [
       { body: formatQueuedMessagesBlock(skipped) },

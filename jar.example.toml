@@ -31,9 +31,9 @@ bot_token = "xoxb-replace-me"
 app_token = "xapp-replace-me"
 # Optional. Slack signing secret. Environment variables may still override this.
 signing_secret = "replace-me"
-# Optional. Channel lookback window for first-time mentions before Jarvis joins the thread.
+# Optional. Bootstrap lookback window for a channel scope that has not seen a Jarvis reply yet.
 context_lookback_minutes = 15
-# Optional. Maximum number of top-level channel messages included in observed context.
+# Optional. Maximum number of top-level channel messages injected for each channel-scope turn.
 context_message_limit = 12
 # Optional. HTTP bind host for the Slack health check server.
 host = "0.0.0.0"
