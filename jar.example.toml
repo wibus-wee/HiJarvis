@@ -23,8 +23,6 @@ enabled = true
 trigger_ratio = 0.9
 # Optional. Target fraction of the context window after compaction.
 budget_ratio = 0.9
-# Optional. Fraction of the context window reserved for the most recent messages.
-tail_ratio = 0.1
 # Optional. Max output tokens for the summary call.
 summary_max_tokens = 1024
 

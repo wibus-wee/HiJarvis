@@ -43,7 +43,6 @@ const settings: CompactionSettings = {
   enabled: true,
   triggerRatio: 0.9,
   budgetRatio: 0.8,
-  tailRatio: 0.1,
   summaryMaxTokens: 1024,
 };
 
@@ -78,9 +77,9 @@ test("buildCompactedMessages keeps recent user messages, summary, and tail", () 
   assert.equal(second.role, "user");
   assert.match(second.content as string, /U2:/);
   assert.equal(third.role, "user");
-  assert.match(third.content as string, new RegExp(SUMMARY_PREFIX));
+  assert.match(third.content as string, /U3:/);
   assert.equal(fourth.role, "user");
-  assert.match(fourth.content as string, /U3:/);
+  assert.match(fourth.content as string, new RegExp(SUMMARY_PREFIX));
 });
 
 test("buildCompactedMessages skips summary when summaryText is null", () => {

@@ -4,6 +4,7 @@ import { getModels, type KnownProvider, type Model } from "@mariozechner/pi-ai";
 import {
   createCompactionTransform,
   defaultCompactionSettings,
+  type CompactionEvent,
   type CompactionSettings,
 } from "./compaction.js";
 import type { Logger } from "./logger.js";
@@ -24,6 +25,7 @@ export type JarRuntimeOptions = {
   execution: PromptExecutionPolicy;
   compaction?: CompactionSettings;
   logger?: Logger;
+  compactionEventSink?: (event: CompactionEvent) => void;
   tools: AgentTool[];
 };
 
@@ -44,14 +46,13 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
     ...(config.logger ? { logger: config.logger } : {}),
   };
 
-  return new Agent({
+  const agent = new Agent({
     initialState: {
       systemPrompt,
       model,
       thinkingLevel: config.thinkingLevel,
       tools: config.tools,
     },
-    transformContext: createCompactionTransform(compactionRuntime),
     maxRetryDelayMs: config.execution.retryMaxDelayMs,
     getApiKey: (provider) => {
       if (provider !== config.provider) {
@@ -61,6 +62,16 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
       return config.providerConfig.apiKey;
     },
   });
+
+  agent.transformContext = createCompactionTransform({
+    ...compactionRuntime,
+    onCompaction: (event, messages) => {
+      agent.state.messages = messages;
+      config.compactionEventSink?.(event);
+    },
+  });
+
+  return agent;
 };
 
 const resolveConfiguredModel = (config: JarRuntimeOptions): Model<any> => {

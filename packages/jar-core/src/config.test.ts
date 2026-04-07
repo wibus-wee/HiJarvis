@@ -187,7 +187,6 @@ system_prompt = "You are a test agent."
 enabled = false
 trigger_ratio = 0.95
 budget_ratio = 0.85
-tail_ratio = 0.2
 summary_max_tokens = 777
 `);
 
@@ -197,7 +196,6 @@ summary_max_tokens = 777
       enabled: false,
       triggerRatio: 0.95,
       budgetRatio: 0.85,
-      tailRatio: 0.2,
       summaryMaxTokens: 777,
     });
   } finally {

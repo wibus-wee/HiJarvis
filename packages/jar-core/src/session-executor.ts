@@ -43,6 +43,13 @@ export const executePromptInSession = async (
   options: SessionPromptOptions,
 ): Promise<SessionPromptResult> => {
   const startTime = Date.now();
+  const session = await openSession({
+    rootDir: options.sessionsRootDir,
+    sessionId: options.sessionId,
+    provider: options.provider,
+    model: options.model,
+  });
+
   const agent = createAgent({
     provider: options.provider,
     model: options.model,
@@ -52,14 +59,10 @@ export const executePromptInSession = async (
     execution: options.execution,
     ...(options.compaction ? { compaction: options.compaction } : {}),
     ...(options.logger ? { logger: options.logger } : {}),
+    compactionEventSink: (event) => {
+      void session.appendEvent(event);
+    },
     tools: createTools(options.toolOptions),
-  });
-
-  const session = await openSession({
-    rootDir: options.sessionsRootDir,
-    sessionId: options.sessionId,
-    provider: options.provider,
-    model: options.model,
   });
 
   agent.sessionId = session.sessionId;

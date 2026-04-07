@@ -4,6 +4,17 @@ import path from "node:path";
 
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
+export type CompactionEvent = {
+  type: "compaction";
+  kind: "pre_turn" | "mid_turn";
+  tokenEstimateBefore: number;
+  tokenEstimateAfter: number;
+  summaryTokens: number;
+  summaryError?: string;
+};
+
+export type JarEvent = AgentEvent | CompactionEvent;
+
 export type SessionMeta = {
   v: 1;
   sessionId: string;
@@ -36,7 +47,7 @@ export type SessionEventRecord = {
   sessionId: string;
   sequence: number;
   recordedAt: number;
-  event: AgentEvent;
+  event: JarEvent;
 };
 
 export type SessionPaths = {
@@ -61,7 +72,7 @@ export type SessionHandle = {
   meta: SessionMeta;
   messages: AgentMessage[];
   appendMessage: (message: AgentMessage) => Promise<void>;
-  appendEvent: (event: AgentEvent) => Promise<void>;
+  appendEvent: (event: JarEvent) => Promise<void>;
   writeSnapshot: (messages: AgentMessage[]) => Promise<void>;
 };
 
@@ -151,7 +162,7 @@ export const openSession = async (
     });
   };
 
-  const appendEvent = async (event: AgentEvent): Promise<void> => {
+  const appendEvent = async (event: JarEvent): Promise<void> => {
     await enqueue(async () => {
       const record: SessionEventRecord = {
         v: 1,

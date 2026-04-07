@@ -54,10 +54,6 @@ const main = async (): Promise<void> => {
     return;
   }
   if (cliOptions.repl) {
-    const agent = createAgent({
-      ...config.runtime,
-      tools: createTools(config.toolOptions),
-    });
     const session = await openSession({
       rootDir: config.sessions.rootDir,
       provider: config.runtime.provider,
@@ -65,6 +61,13 @@ const main = async (): Promise<void> => {
       ...(cliOptions.sessionId !== undefined
         ? { sessionId: cliOptions.sessionId }
         : {}),
+    });
+    const agent = createAgent({
+      ...config.runtime,
+      compactionEventSink: (event) => {
+        void session.appendEvent(event);
+      },
+      tools: createTools(config.toolOptions),
     });
 
     agent.sessionId = session.sessionId;

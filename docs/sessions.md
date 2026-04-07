@@ -16,7 +16,7 @@ Jar 现在支持基于 `jsonl` 的会话持久化，用于多轮对话、会话�
 - `messages.jsonl`: 逐行追加的消息记录，作为可恢复的主日志
 - `session.json`: 会话快照，包含完整消息数组与最后序号
 - `meta.json`: 会话元信息（创建时间、最近更新时间、模型与 provider）
-- `events.jsonl`: 事件记录（包含 streaming 增量与 tool 执行事件），用于回放或调试，不参与会话恢复
+- `events.jsonl`: 事件记录（包含 streaming 增量、tool 执行事件、以及 compaction 事件），用于回放或调试，不参与会话恢复
 
 ## JSONL 记录结构
 
@@ -36,7 +36,7 @@ Jar 现在支持基于 `jsonl` 的会话持久化，用于多轮对话、会话�
 
 `messages.jsonl` 只保存最终消息，因此“恢复”指的是恢复模型上下文的真实状态，而不是复现当时的 streaming 动画。
 
-如果需要回放 streaming 过程，使用 `events.jsonl`。它记录了 `message_update` 与 `tool_execution_*` 等事件，但这些事件不会影响会话恢复的上下文。
+如果需要回放 streaming 过程，使用 `events.jsonl`。它记录了 `message_update`、`tool_execution_*` 以及 `compaction` 等事件，但这些事件不会影响会话恢复的上下文。
 
 ## CLI 使用
 

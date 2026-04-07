@@ -51,7 +51,6 @@ retry_max_delay_ms = 30000
 enabled = true
 trigger_ratio = 0.9
 budget_ratio = 0.9
-tail_ratio = 0.1
 summary_max_tokens = 1024
 
 [provider.openai]
@@ -108,7 +107,6 @@ root_dir = ".jar/sessions"
 - `enabled`: 是否启用自动压缩。默认：`true`。
 - `trigger_ratio`: 触发压缩的阈值（占 model context window 的比例）。默认：`0.9`。
 - `budget_ratio`: 压缩后目标预算（占 model context window 的比例）。默认：`0.9`。
-- `tail_ratio`: 预留给最近消息的预算比例。默认：`0.1`。
 - `summary_max_tokens`: 摘要生成的最大输出 token。默认：`1024`。
 
 ### `[provider.<name>]`

@@ -1,5 +1,10 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import { completeSimple, type Message, type Model } from "@mariozechner/pi-ai";
+import {
+  completeSimple,
+  type Message,
+  type Model,
+  type UserMessage,
+} from "@mariozechner/pi-ai";
 
 import type { Logger } from "./logger.js";
 
@@ -23,7 +28,6 @@ export type CompactionSettings = {
   enabled: boolean;
   triggerRatio: number;
   budgetRatio: number;
-  tailRatio: number;
   summaryMaxTokens: number;
 };
 
@@ -31,25 +35,35 @@ export const defaultCompactionSettings: CompactionSettings = {
   enabled: true,
   triggerRatio: 0.9,
   budgetRatio: 0.9,
-  tailRatio: 0.1,
   summaryMaxTokens: 1024,
 };
 
 export type CompactionRuntime = {
   model: Model<any>;
   systemPrompt: string;
+  settings: CompactionSettings;
   apiKey?: string;
   logger?: Logger;
-  settings: CompactionSettings;
+  onCompaction?: (event: CompactionEvent, messages: Message[]) => void;
+};
+
+export type CompactionKind = "pre_turn" | "mid_turn";
+
+export type CompactionEvent = {
+  type: "compaction";
+  kind: CompactionKind;
+  tokenEstimateBefore: number;
+  tokenEstimateAfter: number;
+  summaryTokens: number;
+  summaryError?: string;
 };
 
 export const createCompactionTransform = (runtime: CompactionRuntime) => {
-  const settings = runtime.settings;
   return async (
     messages: AgentMessage[],
     signal?: AbortSignal,
   ): Promise<AgentMessage[]> => {
-    if (!settings.enabled) {
+    if (!runtime.settings.enabled) {
       return messages;
     }
 
@@ -58,58 +72,118 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
     }
 
     const llmMessages = messages as Message[];
+
+    const lastMessage = llmMessages[llmMessages.length - 1];
+    if (!lastMessage) {
+      return llmMessages;
+    }
+
+    if (lastMessage.role === "assistant") {
+      return llmMessages;
+    }
+
     const systemPromptTokens = estimateTextTokens(runtime.systemPrompt);
     const contextWindow = runtime.model.contextWindow;
-    const triggerTokens = Math.floor(contextWindow * settings.triggerRatio);
-    const estimatedTokens =
-      estimateMessagesTokens(llmMessages) + systemPromptTokens;
+    const triggerTokens = Math.floor(contextWindow * runtime.settings.triggerRatio);
 
-    if (estimatedTokens < triggerTokens) {
-      return messages;
-    }
-
-    const existingSummary = extractSummaryFromMessages(llmMessages);
-    const strippedMessages = stripSummaryMessages(llmMessages);
-    const hadSummary = strippedMessages.length !== llmMessages.length;
-
-    let summaryText: string | null = null;
-    let summaryError: string | undefined;
-
-    if (existingSummary) {
-      summaryText = existingSummary;
-    } else if (!hadSummary) {
-      try {
-        summaryText = await summarizeContext(
-          strippedMessages,
-          runtime,
-          systemPromptTokens,
-          signal,
-        );
-      } catch (error) {
-        summaryError = error instanceof Error ? error.message : String(error);
+    if (lastMessage.role === "user") {
+      const baseHistory = llmMessages.slice(0, -1);
+      const baseTokens = estimateMessagesTokens(baseHistory) + systemPromptTokens;
+      if (baseTokens < triggerTokens) {
+        return llmMessages;
       }
+
+      const result = await compactHistory(
+        baseHistory,
+        runtime,
+        systemPromptTokens,
+        signal,
+      );
+      const nextMessages = [...result.messages, lastMessage];
+      applyCompactionInPlace(llmMessages, nextMessages);
+      runtime.onCompaction?.({
+        type: "compaction",
+        kind: "pre_turn",
+        tokenEstimateBefore: baseTokens,
+        tokenEstimateAfter: estimateMessagesTokens(llmMessages),
+        summaryTokens: result.summaryTokens,
+        ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+      }, llmMessages);
+      return llmMessages;
     }
 
-    const compactedMessages = buildCompactedMessages({
-      messages: strippedMessages,
-      summaryText,
-      settings,
-      contextWindow,
+    const totalTokens = estimateMessagesTokens(llmMessages) + systemPromptTokens;
+    if (totalTokens < triggerTokens) {
+      return llmMessages;
+    }
+
+    const result = await compactHistory(
+      llmMessages,
+      runtime,
       systemPromptTokens,
-    });
+      signal,
+    );
+    applyCompactionInPlace(llmMessages, result.messages);
+    runtime.onCompaction?.({
+      type: "compaction",
+      kind: "mid_turn",
+      tokenEstimateBefore: totalTokens,
+      tokenEstimateAfter: estimateMessagesTokens(llmMessages),
+      summaryTokens: result.summaryTokens,
+      ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+    }, llmMessages);
+    return llmMessages;
+  };
+};
 
-    runtime.logger?.info("session.compaction_applied", {
-      contextWindow,
-      triggerRatio: settings.triggerRatio,
-      budgetRatio: settings.budgetRatio,
-      tailRatio: settings.tailRatio,
-      summaryTokens: summaryText ? estimateTextTokens(summaryText) : 0,
-      tokenEstimateBefore: estimatedTokens,
-      tokenEstimateAfter: estimateMessagesTokens(compactedMessages),
-      summaryError,
-    });
+const compactHistory = async (
+  history: Message[],
+  runtime: CompactionRuntime,
+  systemPromptTokens: number,
+  signal?: AbortSignal,
+): Promise<{ messages: Message[]; summaryTokens: number; summaryError?: string }> => {
+  const strippedHistory = stripSummaryMessages(history);
+  const existingSummary = extractSummaryFromMessages(history);
+  let summaryText: string | null = existingSummary;
+  let summaryError: string | undefined;
 
-    return compactedMessages;
+  if (!summaryText) {
+    try {
+      summaryText = await summarizeContext(
+        strippedHistory,
+        runtime,
+        systemPromptTokens,
+        signal,
+      );
+    } catch (error) {
+      summaryError = error instanceof Error ? error.message : String(error);
+      summaryText = "(summary unavailable)";
+    }
+  }
+
+  const compacted = buildCompactedMessages({
+    messages: strippedHistory,
+    summaryText,
+    settings: runtime.settings,
+    contextWindow: runtime.model.contextWindow,
+    systemPromptTokens,
+  });
+
+  const summaryTokens = summaryText ? estimateTextTokens(summaryText) : 0;
+  runtime.logger?.info("session.compaction_applied", {
+    contextWindow: runtime.model.contextWindow,
+    triggerRatio: runtime.settings.triggerRatio,
+    budgetRatio: runtime.settings.budgetRatio,
+    summaryTokens,
+    tokenEstimateBefore: estimateMessagesTokens(history),
+    tokenEstimateAfter: estimateMessagesTokens(compacted),
+    summaryError,
+  });
+
+  return {
+    messages: compacted,
+    summaryTokens,
+    ...(summaryError ? { summaryError } : {}),
   };
 };
 
@@ -125,42 +199,23 @@ export const buildCompactedMessages = (
   input: BuildCompactedMessagesInput,
 ): Message[] => {
   const { messages, settings, contextWindow, systemPromptTokens } = input;
-  let summaryText = normalizeSummaryText(input.summaryText);
+  const summaryText = normalizeSummaryText(input.summaryText);
 
   const budgetTokens = Math.max(
     0,
     Math.floor(contextWindow * settings.budgetRatio) - systemPromptTokens,
   );
-  const tailBudgetTokens = Math.min(
-    budgetTokens,
-    Math.floor(contextWindow * settings.tailRatio),
-  );
 
-  const { tailMessages, headMessages } = collectTailMessages(
-    messages,
-    tailBudgetTokens,
-  );
-  const tailTokens = estimateMessagesTokens(tailMessages);
-
-  if (summaryText) {
-    const maxSummaryTokens = Math.max(0, budgetTokens - tailTokens);
-    summaryText = truncateTextToBudget(summaryText, maxSummaryTokens);
-  }
-
-  const summaryMessage = summaryText
-    ? [createSummaryMessage(summaryText)]
-    : [];
   const summaryTokens = summaryText
     ? estimateTextTokens(`${SUMMARY_PREFIX}\n${summaryText}`)
     : 0;
+  const remainingTokens = Math.max(0, budgetTokens - summaryTokens);
 
-  const remainingTokens = Math.max(
-    0,
-    budgetTokens - tailTokens - summaryTokens,
-  );
-  const userMessages = collectUserMessages(headMessages, remainingTokens);
-
-  return [...userMessages, ...summaryMessage, ...tailMessages];
+  const userMessages = collectUserMessages(messages, remainingTokens);
+  if (summaryText) {
+    return [...userMessages, createSummaryMessage(summaryText)];
+  }
+  return userMessages;
 };
 
 const summarizeContext = async (
@@ -271,124 +326,44 @@ const createSummaryMessage = (summaryText: string): Message => ({
   timestamp: Date.now(),
 });
 
-const collectTailMessages = (
-  messages: Message[],
-  budgetTokens: number,
-): { tailMessages: Message[]; headMessages: Message[] } => {
-  if (messages.length === 0 || budgetTokens <= 0) {
-    return { tailMessages: [], headMessages: messages };
-  }
-
-  let remaining = budgetTokens;
-  const tail: Message[] = [];
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!message) {
-      continue;
-    }
-    const tokens = estimateMessageTokens(message);
-    if (tokens <= remaining) {
-      tail.unshift(message);
-      remaining -= tokens;
-      continue;
-    }
-
-    if (remaining > 0) {
-      tail.unshift(truncateMessage(message, remaining));
-    }
-    break;
-  }
-
-  const headLength = Math.max(0, messages.length - tail.length);
-  return {
-    tailMessages: tail,
-    headMessages: messages.slice(0, headLength),
-  };
-};
-
 const collectUserMessages = (
   messages: Message[],
   budgetTokens: number,
-): Message[] => {
+): UserMessage[] => {
   if (budgetTokens <= 0) {
     return [];
   }
 
+  const userTexts = messages
+    .filter((message) => message.role === "user" && !isSummaryMessage(message))
+    .map((message) => extractUserText(message));
+
   let remaining = budgetTokens;
-  const selected: Message[] = [];
+  const selected: string[] = [];
 
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (!message) {
+  for (let index = userTexts.length - 1; index >= 0; index -= 1) {
+    const text = userTexts[index];
+    if (!text) {
       continue;
     }
-    if (message.role !== "user") {
-      continue;
-    }
-
-    const tokens = estimateMessageTokens(message);
+    const tokens = estimateTextTokens(text);
     if (tokens <= remaining) {
-      selected.unshift(message);
+      selected.unshift(text);
       remaining -= tokens;
       continue;
     }
 
     if (remaining > 0) {
-      selected.unshift(truncateMessage(message, remaining));
+      selected.unshift(truncateText(text, remaining));
     }
     break;
   }
 
-  return selected;
-};
-
-const truncateMessage = (message: Message, maxTokens: number): Message => {
-  if (maxTokens <= 0) {
-    return message;
-  }
-
-  if (message.role === "user") {
-    return {
-      ...message,
-      content: truncateText(extractUserText(message), maxTokens),
-    };
-  }
-
-  if (message.role === "assistant") {
-    const hasToolCall = message.content.some((item) => item.type === "toolCall");
-    if (hasToolCall) {
-      return message;
-    }
-    const text = extractAssistantText(message);
-    return {
-      ...message,
-      content: [{ type: "text", text: truncateText(text, maxTokens) }],
-    };
-  }
-
-  const text = extractToolResultText(message);
-  return {
-    ...message,
-    content: [{ type: "text", text: truncateText(text, maxTokens) }],
-  };
-};
-
-const truncateTextToBudget = (value: string, maxTokens: number): string => {
-  const prefixTokens = estimateTextTokens(SUMMARY_PREFIX);
-  const available = Math.max(0, maxTokens - prefixTokens);
-  if (available <= 0) {
-    return "(summary unavailable)";
-  }
-  return truncateText(value, available);
-};
-
-const truncateText = (value: string, maxTokens: number): string => {
-  const maxChars = Math.max(0, maxTokens * 4);
-  if (value.length <= maxChars) {
-    return value;
-  }
-  return value.slice(0, maxChars).trimEnd();
+  return selected.map((text) => ({
+    role: "user",
+    content: text,
+    timestamp: Date.now(),
+  }));
 };
 
 const estimateMessagesTokens = (messages: Message[]): number =>
@@ -463,7 +438,23 @@ const extractToolResultText = (message: Message): string => {
     .join("\n");
 };
 
-const isLlmMessage = (message: AgentMessage): message is Message => {
+const truncateText = (value: string, maxTokens: number): string => {
+  const maxChars = Math.max(0, maxTokens * 4);
+  if (value.length <= maxChars) {
+    return value;
+  }
+  return value.slice(0, maxChars).trimEnd();
+};
+
+const applyCompactionInPlace = (
+  target: Message[],
+  nextMessages: Message[],
+): void => {
+  target.length = 0;
+  target.push(...nextMessages);
+};
+
+const isLlmMessage = (message: AgentMessage | Message): message is Message => {
   if (!message || typeof message !== "object") {
     return false;
   }

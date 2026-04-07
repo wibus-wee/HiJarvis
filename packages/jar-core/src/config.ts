@@ -30,7 +30,6 @@ const compactionConfigSchema = z.object({
   enabled: z.boolean().optional(),
   trigger_ratio: z.number().min(0).max(1).optional(),
   budget_ratio: z.number().min(0).max(1).optional(),
-  tail_ratio: z.number().min(0).max(1).optional(),
   summary_max_tokens: z.number().int().positive().optional(),
 }).strict();
 
@@ -215,7 +214,6 @@ const parseCompactionConfig = (
     enabled: raw.enabled ?? defaultCompactionSettings.enabled,
     triggerRatio: raw.trigger_ratio ?? defaultCompactionSettings.triggerRatio,
     budgetRatio: raw.budget_ratio ?? defaultCompactionSettings.budgetRatio,
-    tailRatio: raw.tail_ratio ?? defaultCompactionSettings.tailRatio,
     summaryMaxTokens:
       raw.summary_max_tokens ?? defaultCompactionSettings.summaryMaxTokens,
   };
@@ -232,21 +230,9 @@ const parseCompactionConfig = (
     );
   }
 
-  if (resolved.tailRatio < 0 || resolved.tailRatio > 1) {
-    throw new Error(
-      "Invalid TOML config:\nagent.compaction.tail_ratio must be between 0 and 1",
-    );
-  }
-
   if (resolved.budgetRatio > resolved.triggerRatio) {
     throw new Error(
       "Invalid TOML config:\nagent.compaction.budget_ratio must be less than or equal to agent.compaction.trigger_ratio",
-    );
-  }
-
-  if (resolved.tailRatio > resolved.budgetRatio) {
-    throw new Error(
-      "Invalid TOML config:\nagent.compaction.tail_ratio must be less than or equal to agent.compaction.budget_ratio",
     );
   }
 
