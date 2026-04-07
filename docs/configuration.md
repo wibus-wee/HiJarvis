@@ -77,6 +77,7 @@ port = 3001
 [platform.wechat]
 base_url = "https://api-bot.hzxww.net"
 token_path = ".jar/wechat/credentials.json"
+coalesce_window_ms = 2500
 host = "0.0.0.0"
 port = 3002
 
@@ -90,6 +91,8 @@ workspace_root = "."
 max_file_bytes = 32768
 command_timeout_ms = 30000
 max_command_output_bytes = 32768
+web_request_timeout_ms = 30000
+max_web_response_bytes = 65536
 
 [sessions]
 root_dir = ".jar/sessions"
@@ -173,10 +176,12 @@ Telegram gateway 默认使用 long polling，而不是 webhook。
 
 - `base_url`: 可选 iLink API base URL 覆盖项。
 - `token_path`: 可选 credentials 文件路径；相对路径以当前工作目录解析，由 `@pinixai/weixin-bot` 持久化二维码登录态。
+- `coalesce_window_ms`: WeChat 消息聚合窗口。窗口内连续发来的图片和文本会合并成一次 Jar turn。默认：`2500`。
 - `host`: WeChat health check HTTP 服务监听 host。默认：`"0.0.0.0"`。
 - `port`: WeChat health check HTTP 服务监听端口。默认：`3002`。
 
 WeChat gateway 通过 `@pinixai/weixin-bot` 做二维码登录和长轮询。
+如果当前模型支持 image input，聚合后的同一轮消息会把图片作为真正的多模态 image block 送进模型；持久化到 session 时只保留文字轨迹，不会把 base64 原图写进 `.jar/sessions`。
 
 这些环境变量可以覆盖对应配置：
 
@@ -202,6 +207,8 @@ WeChat gateway 通过 `@pinixai/weixin-bot` 做二维码登录和长轮询。
 - `max_file_bytes`: maximum UTF-8 size accepted by `read_file`, `write_file`, and any file content produced by `apply_patch`. Default: `32768`.
 - `command_timeout_ms`: shell command timeout in milliseconds. Default: `30000`.
 - `max_command_output_bytes`: maximum buffered stdout/stderr captured from `bash`. Default: `32768`.
+- `web_request_timeout_ms`: default timeout in milliseconds for `web.fetch` when the tool call omits `timeoutMs`. Default: `30000`.
+- `max_web_response_bytes`: maximum UTF-8 response body size accepted by `web.fetch`. Default: `65536`.
 
 ### `[sessions]`
 

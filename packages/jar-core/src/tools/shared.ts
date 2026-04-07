@@ -5,6 +5,8 @@ export type ToolOptions = {
   maxFileBytes: number;
   commandTimeoutMs: number;
   maxCommandOutputBytes: number;
+  webRequestTimeoutMs: number;
+  maxWebResponseBytes: number;
 };
 
 export const resolveWorkspacePath = (

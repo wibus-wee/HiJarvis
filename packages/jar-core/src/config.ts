@@ -61,6 +61,8 @@ const rawConfigSchema = z.object({
     max_file_bytes: z.number().int().positive().optional(),
     command_timeout_ms: z.number().int().positive().optional(),
     max_command_output_bytes: z.number().int().positive().optional(),
+    web_request_timeout_ms: z.number().int().positive().optional(),
+    max_web_response_bytes: z.number().int().positive().optional(),
   }).strict().default({}),
 }).strict();
 
@@ -132,6 +134,8 @@ export const loadRuntimeConfig = async (
       commandTimeoutMs: parsedConfig.tools.command_timeout_ms ?? 30_000,
       maxCommandOutputBytes:
         parsedConfig.tools.max_command_output_bytes ?? 32_768,
+      webRequestTimeoutMs: parsedConfig.tools.web_request_timeout_ms ?? 30_000,
+      maxWebResponseBytes: parsedConfig.tools.max_web_response_bytes ?? 65_536,
     },
     sessions: {
       rootDir: sessionRoot,

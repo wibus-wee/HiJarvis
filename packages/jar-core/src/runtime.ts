@@ -74,6 +74,15 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
   return agent;
 };
 
+export const supportsModelInput = (
+  provider: KnownProvider,
+  modelId: string,
+  inputType: "text" | "image",
+): boolean => {
+  const model = getModels(provider).find((candidate) => candidate.id === modelId);
+  return model?.input.includes(inputType) ?? false;
+};
+
 const resolveConfiguredModel = (config: JarRuntimeOptions): Model<any> => {
   const model = getModels(config.provider).find(
     (candidate) => candidate.id === config.model,

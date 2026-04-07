@@ -132,6 +132,62 @@ system_prompt = "You are a test agent."
   }
 });
 
+test("loadAgentConfig applies default tool limits", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.toolOptions, {
+      workspaceRoot: path.dirname(configPath),
+      maxFileBytes: 32_768,
+      commandTimeoutMs: 30_000,
+      maxCommandOutputBytes: 32_768,
+      webRequestTimeoutMs: 30_000,
+      maxWebResponseBytes: 65_536,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads custom tool limits", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[tools]
+workspace_root = "./workspace"
+max_file_bytes = 4096
+command_timeout_ms = 45000
+max_command_output_bytes = 8192
+web_request_timeout_ms = 12000
+max_web_response_bytes = 16384
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.toolOptions, {
+      workspaceRoot: path.join(path.dirname(configPath), "workspace"),
+      maxFileBytes: 4_096,
+      commandTimeoutMs: 45_000,
+      maxCommandOutputBytes: 8_192,
+      webRequestTimeoutMs: 12_000,
+      maxWebResponseBytes: 16_384,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
 test("loadAgentConfig reads logging config from jar.toml", async () => {
   const { provider, model } = pickProviderAndModel();
   const configPath = await writeConfigFile(`

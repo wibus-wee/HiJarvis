@@ -67,6 +67,8 @@ port = 3001
 base_url = "https://api-bot.hzxww.net"
 # Optional. Persist WeChat bot credentials in a project-local file.
 token_path = ".jar/wechat/credentials.json"
+# Optional. Coalesce rapid consecutive WeChat messages into one Jar turn.
+coalesce_window_ms = 2500
 # Optional. HTTP bind host for the WeChat health check server.
 host = "0.0.0.0"
 # Optional. HTTP bind port for the WeChat health check server.
@@ -85,6 +87,8 @@ workspace_root = "."
 max_file_bytes = 32768
 command_timeout_ms = 30000
 max_command_output_bytes = 32768
+web_request_timeout_ms = 30000
+max_web_response_bytes = 65536
 
 [sessions]
 # Optional. Session storage root, relative to the config file when not absolute.

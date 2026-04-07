@@ -7,10 +7,10 @@
 ```bash
 .
 ├── apps
-│   ├── jar-cli
-│   ├── jar-slack
-│   ├── jar-telegram
-│   └── jar-wechat
+│   ├── jar-cli - a CLI interface with a readline loop
+│   ├── jar-slack - a Slack bot
+│   ├── jar-telegram - a Telegram bot
+│   └── jar-wechat - a WeChat bot
 ├── packages
 │   └── jar-core
 ```
@@ -50,6 +50,7 @@ port = 3000
 [platform.wechat]
 base_url = "https://api-bot.hzxww.net"
 token_path = ".jar/wechat/credentials.json"
+coalesce_window_ms = 2500
 host = "0.0.0.0"
 port = 3002
 
@@ -58,6 +59,8 @@ workspace_root = "."
 max_file_bytes = 32768
 command_timeout_ms = 30000
 max_command_output_bytes = 32768
+web_request_timeout_ms = 30000
+max_web_response_bytes = 65536
 ```
 
 Notes:
