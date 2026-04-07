@@ -37,7 +37,7 @@ test("bash executes a foreground command and returns the combined output", async
 test("bash.output reads background command output incrementally", async () => {
   const tools = createBashTools(toolOptions);
   const bashTool = getTool(tools, "bash");
-  const outputTool = getTool(tools, "bash.output");
+  const outputTool = getTool(tools, "bash_output");
 
   const startResult = await bashTool.execute("call-1", {
     command:
@@ -68,12 +68,12 @@ test("bash.output reads background command output incrementally", async () => {
 test("bash.kill stops a background command and exposes the final status", async () => {
   const tools = createBashTools(toolOptions);
   const bashTool = getTool(tools, "bash");
-  const killTool = getTool(tools, "bash.kill");
-  const outputTool = getTool(tools, "bash.output");
+  const killTool = getTool(tools, "bash_kill");
+  const outputTool = getTool(tools, "bash_output");
 
   const startResult = await bashTool.execute("call-1", {
     command:
-      "node -e \"setInterval(() => process.stdout.write('tick\\\\n'), 25)\"",
+      "node -e \"process.stdout.write('tick\\\\n'); setInterval(() => process.stdout.write('tick\\\\n'), 25)\"",
     background: true,
   });
 

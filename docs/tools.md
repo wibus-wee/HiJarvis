@@ -10,9 +10,9 @@ Jar currently documents these built-in local tools:
 - `write_file`
 - `apply_patch`
 - `bash`
-- `bash.output`
-- `bash.kill`
-- `web.fetch`
+- `bash_output`
+- `bash_kill`
+- `web_fetch`
 
 The tool list is built in `createTools()` and passed into the agent during startup.
 
@@ -22,8 +22,8 @@ Implementation is now split by responsibility:
 - `packages/jar-core/src/tools/shared.ts`: shared option types and workspace path confinement
 - `packages/jar-core/src/tools/file-tools.ts`: `read_file` and `write_file`
 - `packages/jar-core/src/tools/patch-tool.ts`: `apply_patch`, patch parsing, and patch application
-- `packages/jar-core/src/tools/bash-tool.ts`: `bash`, `bash.output`, and `bash.kill`
-- `packages/jar-core/src/tools/web-fetch-tool.ts`: `web.fetch`
+- `packages/jar-core/src/tools/bash-tool.ts`: `bash`, `bash_output`, and `bash_kill`
+- `packages/jar-core/src/tools/web-fetch-tool.ts`: `web_fetch`
 
 The path confinement and patch parsing helpers also have targeted tests in:
 
@@ -194,8 +194,8 @@ Executes a shell command starting inside the configured workspace root.
 - foreground execution is limited by `tools.command_timeout_ms`
 - combined command output is limited by `tools.max_command_output_bytes`
 - `background: true` returns immediately with a `shellId`
-- background commands can be polled with `bash.output`
-- background commands can be terminated with `bash.kill`
+- background commands can be polled with `bash_output`
+- background commands can be terminated with `bash_kill`
 - commands are not sandboxed to the workspace after startup
 
 ### Result Shape
@@ -229,7 +229,7 @@ Tool details include:
 
 Background execution returns a short summary with `Status: running` and the `Shell id`.
 
-## `web.fetch`
+## `web_fetch`
 
 Fetches an `http` or `https` URL with `GET` and returns text content.
 
@@ -279,7 +279,7 @@ Tool details include:
 - `format`
 - `timeoutMs`
 
-## `bash.output`
+## `bash_output`
 
 Reads buffered combined stdout/stderr from a background `bash` command.
 
@@ -298,7 +298,7 @@ Reads buffered combined stdout/stderr from a background `bash` command.
 - `shellId` must reference a previously started background command in the same agent/session
 - `offset` defaults to `0`
 - `limit` is optional; when omitted, all remaining buffered output is returned
-- `nextOffset` can be fed back into the next `bash.output` call for incremental polling
+- `nextOffset` can be fed back into the next `bash_output` call for incremental polling
 - completed shells remain readable after exit
 
 ### Result Shape
@@ -328,7 +328,7 @@ Tool details include:
 - `timedOut`
 - `isMaxBuffer`
 
-## `bash.kill`
+## `bash_kill`
 
 Terminates a background `bash` command.
 

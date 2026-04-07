@@ -207,8 +207,8 @@ WeChat gateway 通过 `@pinixai/weixin-bot` 做二维码登录和长轮询。
 - `max_file_bytes`: maximum UTF-8 size accepted by `read_file`, `write_file`, and any file content produced by `apply_patch`. Default: `32768`.
 - `command_timeout_ms`: shell command timeout in milliseconds. Default: `30000`.
 - `max_command_output_bytes`: maximum buffered stdout/stderr captured from `bash`. Default: `32768`.
-- `web_request_timeout_ms`: default timeout in milliseconds for `web.fetch` when the tool call omits `timeoutMs`. Default: `30000`.
-- `max_web_response_bytes`: maximum UTF-8 response body size accepted by `web.fetch`. Default: `65536`.
+- `web_request_timeout_ms`: default timeout in milliseconds for `web_fetch` when the tool call omits `timeoutMs`. Default: `30000`.
+- `max_web_response_bytes`: maximum UTF-8 response body size accepted by `web_fetch`. Default: `65536`.
 
 ### `[sessions]`
 

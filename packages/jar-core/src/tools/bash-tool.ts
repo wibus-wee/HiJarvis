@@ -25,7 +25,7 @@ const bashParameters: TSchema = Type.Object({
   background: Type.Optional(
     Type.Boolean({
       description:
-        "Start the command in the background and use bash.output or bash.kill with the returned shell id",
+        "Start the command in the background and use bash_output or bash_kill with the returned shell id",
     }),
   ),
 });
@@ -231,7 +231,7 @@ export const createBashOutputTool = (
   shellManager: ShellManager,
 ): AgentTool<typeof bashOutputParameters> => {
   return {
-    name: "bash.output",
+    name: "bash_output",
     label: "Bash Output",
     description:
       "Read buffered combined stdout and stderr from a background bash command.",
@@ -282,7 +282,7 @@ export const createBashKillTool = (
   shellManager: ShellManager,
 ): AgentTool<typeof bashKillParameters> => {
   return {
-    name: "bash.kill",
+    name: "bash_kill",
     label: "Bash Kill",
     description:
       "Terminate a background bash command and return its final status.",

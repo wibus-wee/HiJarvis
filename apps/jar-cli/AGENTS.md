@@ -15,8 +15,8 @@ packages/jar-core/src/session-store.ts - JSONL transcript + snapshot session per
 packages/jar-core/src/tools/shared.ts - Shared tool option types and workspace path confinement.
 packages/jar-core/src/tools/file-tools.ts - read_file and write_file implementations.
 packages/jar-core/src/tools/patch-tool.ts - apply_patch parser, patch applier, and tool implementation.
-packages/jar-core/src/tools/bash-tool.ts - bash, bash.output, and bash.kill implementations.
-packages/jar-core/src/tools/web-fetch-tool.ts - web.fetch implementation for remote text-like content.
+packages/jar-core/src/tools/bash-tool.ts - bash, bash_output, and bash_kill implementations.
+packages/jar-core/src/tools/web-fetch-tool.ts - web_fetch implementation for remote text-like content.
 packages/jar-repl-ink/src/repl.tsx - Ink-based interactive REPL/TUI for multi-turn sessions.
 packages/jar-repl-ink/src/tui/format.ts - Width-aware wrapping and truncation helpers for TUI panels.
 packages/jar-repl-ink/src/tui/state.ts - TUI state reducer that normalizes agent events into transcript/tool/diagnostic panels.

@@ -54,7 +54,7 @@ export const createWebFetchTool = (
   options: ToolOptions,
 ): AgentTool<typeof webFetchParameters> => {
   return {
-    name: "web.fetch",
+    name: "web_fetch",
     label: "Web Fetch",
     description:
       "Fetch a remote page or text document with HTTP GET. HTML is converted into markdown-like text when possible.",
@@ -84,9 +84,7 @@ export const createWebFetchTool = (
         const contentType =
           response.headers.get("content-type") ?? "application/octet-stream";
         if (!isTextLikeContentType(contentType)) {
-          throw new Error(
-            `Unsupported content type "${contentType}". web.fetch only supports text-like responses.`,
-          );
+          throw new Error(`Unsupported content type "${contentType}". web_fetch only supports text-like responses.`);
         }
 
         const declaredLength = parseContentLength(
