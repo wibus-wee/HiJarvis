@@ -31,7 +31,7 @@ Both commands run via `tsx`, and internal packages such as `@hijarvis/jar-core` 
 
 ## Config Layout
 
-`jar.toml` uses six top-level tables:
+`jar.toml` uses seven top-level tables:
 
 ```toml
 [agent]
@@ -85,6 +85,14 @@ port = 3002
 level = "info"
 stderr = true
 file_path = ".jar/logs/runtime.log"
+
+[skills]
+enabled = true
+roots = [".jarvis/skills", "~/.jarvis/skills"]
+max_scan_depth = 6
+max_skills = 2000
+max_catalog_chars = 12000
+max_body_chars = 20000
 
 [tools]
 workspace_root = "."
@@ -201,6 +209,21 @@ WeChat gateway 通过 `@pinixai/weixin-bot` 做二维码登录和长轮询。
 - `info`：只输出关键阶段边界，例如 Slack 事件接收、队列合并、channel delta 抓取、session 执行开始/结束、reply 发回 Slack。
 - `debug`：在 `info` 基础上补充更多低层事件，例如 message 落盘、被忽略或被去重的 Slack 事件。
 
+### `[skills]`
+
+- `enabled`: 是否启用 skills 发现与注入。默认：`true`。
+- `roots`: skill 根目录列表。相对路径以配置文件所在目录解析；默认值是 `[".jarvis/skills", "~/.jarvis/skills"]`。
+- `max_scan_depth`: 目录扫描深度上限。默认：`6`。
+- `max_skills`: 最多加载多少个 `SKILL.md`。默认：`2000`。
+- `max_catalog_chars`: 注入到 system prompt 的 skills catalog 最大字符数。默认：`12000`。
+- `max_body_chars`: 单个 `SKILL.md` 在单轮注入时的最大字符数。默认：`20000`。
+
+Skills 的运行时语义是 Codex-style 的两层注入：
+
+- 启动时扫描 `roots`，读取每个 `SKILL.md` 的 frontmatter，并把可隐式触发的 skill 清单拼进 system prompt overlay。
+- 每一轮只会根据用户显式写出的 `$skill-name` 去读取对应 `SKILL.md` 正文，并把正文作为 turn-scoped block 注入到当前 prompt。
+- 注入过的 `<skill>...</skill>` block 不会长期保存在 session 历史里；旧消息会在后续轮次进入模型前被清洗掉。
+
 ### `[tools]`
 
 - `workspace_root`: root directory exposed to the file tools and the default starting directory for the shell tool. Relative paths are resolved from the config file directory. Default: `"."`.
@@ -221,6 +244,7 @@ WeChat gateway 通过 `@pinixai/weixin-bot` 做二维码登录和长轮询。
 - `apps/jar-telegram/src/telegram-runtime.ts` reads `platform.telegram`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `apps/jar-wechat/src/wechat-runtime.ts` reads `platform.wechat`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
+- `packages/jar-core/src/config.ts` resolves `skills` at startup and passes the catalog/runtime metadata into `packages/jar-core/src/runtime.ts` and `packages/jar-core/src/session-executor.ts`.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
 - `packages/jar-core/src/session-executor.ts` emits session/tool summary logs without streaming every token delta.
 - `packages/jar-core/src/runtime.ts` forwards `agent.retry_max_delay_ms` to `Agent.maxRetryDelayMs`.
@@ -250,6 +274,7 @@ Common failure cases:
 - a model id that does not exist for the selected provider
 - invalid provider-specific keys under `provider.<name>`
 - invalid `provider.<name>.base_url`
+- invalid `[skills]` numeric limits
 - non-positive tool limits
 - invalid retry policy values (for example, `retry_max_delay_ms < retry_initial_delay_ms`)
 

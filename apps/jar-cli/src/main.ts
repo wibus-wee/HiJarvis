@@ -9,6 +9,8 @@ import {
   listSessions,
   loadRuntimeConfig,
   openSession,
+  preparePromptWithSkills,
+  stripMemoryExcludedPromptContextFromMessage,
 } from "@hijarvis/jar-core";
 import { runRepl } from "@hijarvis/jar-repl-ink";
 
@@ -78,21 +80,33 @@ const main = async (): Promise<void> => {
       }
       await session.appendEvent(event);
       if (event.type === "message_end") {
-        await session.appendMessage(event.message);
+        await session.appendMessage(stripMemoryExcludedPromptContextFromMessage(event.message));
       }
       if (event.type === "agent_end") {
-        await session.writeSnapshot(agent.state.messages);
+        await session.writeSnapshot(
+          agent.state.messages.map(stripMemoryExcludedPromptContextFromMessage),
+        );
       }
     });
 
     const prompt = await readPrompt(cliOptions.prompt);
     await runRepl({
       agent,
-      executePrompt: (
+      executePrompt: async (
         input: string,
         writers: { stderr: Pick<NodeJS.WriteStream, "write"> },
-      ) =>
-        executePromptWithPolicy(agent, input, config.runtime.execution, writers),
+      ) => {
+        const prepared = await preparePromptWithSkills(input, {
+          skills: config.runtime.skills,
+          triggerText: input,
+        });
+        await executePromptWithPolicy(
+          agent,
+          prepared.prompt,
+          config.runtime.execution,
+          writers,
+        );
+      },
       ...(prompt !== undefined ? { initialPrompt: prompt } : {}),
     });
     return;
@@ -111,6 +125,7 @@ const main = async (): Promise<void> => {
       sessionsRootDir: config.sessions.rootDir,
       sessionId: cliOptions.sessionId,
       prompt,
+      skillTriggerText: prompt,
       writers: {
         stderr: process.stderr,
       },
@@ -126,7 +141,11 @@ const main = async (): Promise<void> => {
     agent.subscribe((event) => {
       renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
     });
-    await executePromptWithPolicy(agent, prompt, config.runtime.execution, {
+    const prepared = await preparePromptWithSkills(prompt, {
+      skills: config.runtime.skills,
+      triggerText: prompt,
+    });
+    await executePromptWithPolicy(agent, prepared.prompt, config.runtime.execution, {
       stderr: process.stderr,
     });
   }

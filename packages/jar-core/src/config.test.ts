@@ -259,6 +259,64 @@ summary_max_tokens = 777
   }
 });
 
+test("loadAgentConfig applies default skills roots and limits", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.equal(config.runtime.skills.enabled, true);
+    assert.deepEqual(config.runtime.skills.roots, [
+      path.join(path.dirname(configPath), ".jarvis/skills"),
+      path.join(os.homedir(), ".jarvis/skills"),
+    ]);
+    assert.equal(config.runtime.skills.maxScanDepth, 6);
+    assert.equal(config.runtime.skills.maxSkills, 2_000);
+    assert.equal(config.runtime.skills.maxCatalogChars, 12_000);
+    assert.equal(config.runtime.skills.maxBodyChars, 20_000);
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads custom skills settings", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[skills]
+enabled = true
+roots = ["./team-skills", "~/shared-skills"]
+max_scan_depth = 3
+max_skills = 9
+max_catalog_chars = 2048
+max_body_chars = 4096
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.equal(config.runtime.skills.enabled, true);
+    assert.deepEqual(config.runtime.skills.roots, [
+      path.join(path.dirname(configPath), "team-skills"),
+      path.join(os.homedir(), "shared-skills"),
+    ]);
+    assert.equal(config.runtime.skills.maxScanDepth, 3);
+    assert.equal(config.runtime.skills.maxSkills, 9);
+    assert.equal(config.runtime.skills.maxCatalogChars, 2_048);
+    assert.equal(config.runtime.skills.maxBodyChars, 4_096);
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
 test("loadAgentConfig rejects invalid compaction ratios", async () => {
   const { provider, model } = pickProviderAndModel();
   const configPath = await writeConfigFile(`

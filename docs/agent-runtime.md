@@ -155,13 +155,16 @@ That keeps provider/model metadata aligned with `pi-ai` while still allowing cus
 
 Prompt assembly is now split into two layers:
 
-- `buildSystemPrompt()`: owns the final system prompt text handed to `pi-agent-core`. Right now it wraps the configured base prompt, but it is the single seam for future overlays such as platform policy, memory summaries, or execution constraints.
+- `buildSystemPrompt()`: owns the final system prompt text handed to `pi-agent-core`. It wraps the configured base prompt and appends runtime overlays such as the discovered skills catalog.
 - `buildTurnPrompt()`: owns adapter-level per-turn text assembly. Adapters such as Slack use it to compose observed context, queued follow-up messages, and the current user request without mutating the system prompt.
+- `resolveSkillPromptContext()`: owns skill discovery for the current turn. It only reacts to `$skill-name` mentions from the trigger text supplied by the caller and returns typed skill fragments.
+- `prompt-context.ts`: owns contextual fragment rendering, prompt injection, and memory-excluded cleanup before persistence or compaction.
 
 `packages/jar-core/src/session-executor.ts` is the shared session-bound execution seam for non-CLI adapters. It:
 
 - creates a fresh `Agent`
 - restores the persisted Jar session
+- sanitizes older persisted user messages so previous memory-excluded contextual fragments do not keep accumulating in future context windows
 - appends runtime events/messages back into the session store
 - emits summary logs for prompt/tool boundaries
 - executes the prompt using the same retry/timeout policy
@@ -227,7 +230,7 @@ Jar is intentionally minimal right now:
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven; there is no persisted retry history
 - prompt compaction is applied via `agent.compaction` to keep long sessions within context limits
-- no dynamic system prompt overlays yet, even though the assembly seam now exists
+- skills catalog overlays are supported, but full skill bodies remain turn-scoped and are not persisted as long-lived system prompt text
 - no built-in tools beyond text file IO and shell execution
 
 If any of these behaviors change, update this document together with `apps/jar-cli/src/main.ts`, `packages/jar-core/src/runtime.ts`, and any affected adapter package.

@@ -7,6 +7,7 @@ import {
   createLogger,
   executePromptInSession,
   loadRuntimeConfig,
+  stripMemoryExcludedPromptContextFromMessage,
   supportsModelInput,
   type ImageContent,
   type LoadedRuntimeConfig,
@@ -447,6 +448,7 @@ const handleQueueBatch = async (
     conversationKey,
     sessionId,
     prompt,
+    skillTriggerText: buildWeChatSkillTriggerText(messages),
     logger: requestLogger,
   });
 };
@@ -598,6 +600,7 @@ const respondInWeChatConversation = async (options: {
   conversationKey: string;
   sessionId: string;
   prompt: UserMessage;
+  skillTriggerText: string;
   logger: Logger;
 }): Promise<void> => {
   const startedAt = Date.now();
@@ -617,8 +620,13 @@ const respondInWeChatConversation = async (options: {
       sessionsRootDir: options.runtime.sessions.rootDir,
       sessionId: options.sessionId,
       prompt: options.prompt,
+      skillTriggerText: options.skillTriggerText,
       logger: options.logger,
-      serializeMessage: sanitizePersistedConversationMessage,
+      serializeMessage: (message) => {
+        return stripMemoryExcludedPromptContextFromMessage(
+          sanitizePersistedConversationMessage(message),
+        );
+      },
       writers: {
         stderr: process.stderr,
       },
@@ -652,6 +660,15 @@ const respondInWeChatConversation = async (options: {
   } finally {
     await options.bot.stopTyping(options.rawMessage.userId).catch(() => undefined);
   }
+};
+
+const buildWeChatSkillTriggerText = (
+  messages: WeChatMessage[],
+): string => {
+  return messages
+    .map((message) => (message.text ?? "").trim())
+    .filter((text) => text.length > 0)
+    .join("\n");
 };
 
 const fetchImageContent = async (url: string): Promise<ImageContent> => {

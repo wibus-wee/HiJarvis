@@ -517,6 +517,7 @@ const handleQueueEntry = async (
     scopeKey,
     sessionId,
     prompt,
+    skillTriggerText: buildSlackSkillTriggerText(current, skippedMessages),
     client: state,
     logger: requestLogger,
   });
@@ -883,6 +884,7 @@ const respondInSlackThread = async ({
   scopeKey,
   sessionId,
   prompt,
+  skillTriggerText,
   client,
   logger,
 }: {
@@ -892,6 +894,7 @@ const respondInSlackThread = async ({
   scopeKey: string;
   sessionId: string;
   prompt: string;
+  skillTriggerText: string;
   client: SlackGatewayState;
   logger: Logger;
 }): Promise<void> => {
@@ -906,6 +909,7 @@ const respondInSlackThread = async ({
       sessionsRootDir: runtime.sessions.rootDir,
       sessionId,
       prompt,
+      skillTriggerText,
       logger,
       writers: {
         stderr: process.stderr,
@@ -952,6 +956,16 @@ const respondInSlackThread = async ({
       client.lastReplyTsByScope.set(scopeKey, fallback.ts);
     }
   }
+};
+
+const buildSlackSkillTriggerText = (
+  currentMessage: SlackMessage,
+  skipped: SlackMessage[],
+): string => {
+  return [...skipped, currentMessage]
+    .map((message) => message.text.trim())
+    .filter((text) => text.length > 0)
+    .join("\n");
 };
 
 const getThreadQueue = (

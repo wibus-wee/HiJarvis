@@ -8,6 +8,11 @@ import {
   defaultCompactionSettings,
   type CompactionSettings,
 } from "./compaction.js";
+import {
+  resolveSkillsRuntime,
+  type SkillsRuntime,
+  type SkillsConfigInput,
+} from "./skills.js";
 import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
 import { parse } from "smol-toml";
 import { z } from "zod";
@@ -31,6 +36,15 @@ const compactionConfigSchema = z.object({
   trigger_ratio: z.number().min(0).max(1).optional(),
   budget_ratio: z.number().min(0).max(1).optional(),
   summary_max_tokens: z.number().int().positive().optional(),
+}).strict();
+
+const skillsConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  roots: z.array(nonEmptyString).optional(),
+  max_scan_depth: z.number().int().min(0).optional(),
+  max_skills: z.number().int().positive().optional(),
+  max_catalog_chars: z.number().int().positive().optional(),
+  max_body_chars: z.number().int().positive().optional(),
 }).strict();
 
 const rawConfigSchema = z.object({
@@ -64,6 +78,7 @@ const rawConfigSchema = z.object({
     web_request_timeout_ms: z.number().int().positive().optional(),
     max_web_response_bytes: z.number().int().positive().optional(),
   }).strict().default({}),
+  skills: skillsConfigSchema.default({}),
 }).strict();
 
 type RawConfig = z.infer<typeof rawConfigSchema>;
@@ -80,7 +95,7 @@ export type LoadedRuntimeConfig = {
     stderr: boolean;
     filePath?: string;
   };
-  runtime: Omit<JarRuntimeOptions, "tools">;
+  runtime: Omit<JarRuntimeOptions, "tools"> & { skills: SkillsRuntime };
   toolOptions: ToolOptions;
   sessions: {
     rootDir: string;
@@ -102,6 +117,10 @@ export const loadRuntimeConfig = async (
   const compaction = parseCompactionConfig(parsedConfig.agent);
   const model = parseModel(provider, parsedConfig.agent.model);
   const configDirectory = path.dirname(absoluteConfigPath);
+  const skills = await resolveSkillsRuntime(
+    normalizeSkillsConfig(parsedConfig.skills),
+    configDirectory,
+  );
   const sessionRoot = path.resolve(
     configDirectory,
     parsedConfig.sessions.root_dir ?? ".jar/sessions",
@@ -124,6 +143,7 @@ export const loadRuntimeConfig = async (
       providerConfig: toRuntimeProviderConfig(providerConfig),
       execution,
       compaction,
+      skills,
     },
     toolOptions: {
       workspaceRoot: path.resolve(
@@ -277,5 +297,24 @@ const toRuntimeProviderConfig = (
     ...(providerConfig.base_url === undefined
       ? {}
       : { baseUrl: providerConfig.base_url }),
+  };
+};
+
+const normalizeSkillsConfig = (
+  config: RawConfig["skills"],
+): SkillsConfigInput => {
+  return {
+    ...(config.enabled === undefined ? {} : { enabled: config.enabled }),
+    ...(config.roots === undefined ? {} : { roots: config.roots }),
+    ...(config.max_scan_depth === undefined
+      ? {}
+      : { maxScanDepth: config.max_scan_depth }),
+    ...(config.max_skills === undefined ? {} : { maxSkills: config.max_skills }),
+    ...(config.max_catalog_chars === undefined
+      ? {}
+      : { maxCatalogChars: config.max_catalog_chars }),
+    ...(config.max_body_chars === undefined
+      ? {}
+      : { maxBodyChars: config.max_body_chars }),
   };
 };

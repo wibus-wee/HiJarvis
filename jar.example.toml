@@ -82,6 +82,20 @@ stderr = true
 # Optional. Persist summary logs to a file, relative to this config file.
 file_path = ".jar/logs/runtime.log"
 
+[skills]
+# Optional. Disable all skill discovery and prompt injection.
+enabled = true
+# Optional. Skill roots. Relative paths resolve from this config file.
+roots = [".jarvis/skills", "~/.jarvis/skills"]
+# Optional. Maximum directory traversal depth for skill discovery.
+max_scan_depth = 6
+# Optional. Maximum number of SKILL.md files loaded into the catalog.
+max_skills = 2000
+# Optional. Maximum catalog characters appended to the system prompt.
+max_catalog_chars = 12000
+# Optional. Maximum characters injected from one SKILL.md body per turn.
+max_body_chars = 20000
+
 [tools]
 workspace_root = "."
 max_file_bytes = 32768

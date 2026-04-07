@@ -615,6 +615,7 @@ const handleQueueEntry = async (
     conversationKey,
     sessionId,
     prompt,
+    skillTriggerText: buildTelegramSkillTriggerText(current, skippedMessages),
     logger: requestLogger,
   });
 };
@@ -639,6 +640,7 @@ const respondInTelegramConversation = async (options: {
   conversationKey: string;
   sessionId: string;
   prompt: string;
+  skillTriggerText: string;
   logger: Logger;
 }): Promise<void> => {
   const startedAt = Date.now();
@@ -651,6 +653,7 @@ const respondInTelegramConversation = async (options: {
     sessionsRootDir: options.runtime.sessions.rootDir,
     sessionId: options.sessionId,
     prompt: options.prompt,
+    skillTriggerText: options.skillTriggerText,
     logger: options.logger,
     writers: {
       stderr: process.stderr,
@@ -713,6 +716,16 @@ const respondInTelegramConversation = async (options: {
       );
     }
   }
+};
+
+const buildTelegramSkillTriggerText = (
+  currentMessage: TelegramMessage,
+  skipped: TelegramMessage[],
+): string => {
+  return [...skipped, currentMessage]
+    .map((message) => message.text.trim())
+    .filter((text) => text.length > 0)
+    .join("\n");
 };
 
 const createReplyOptions = (

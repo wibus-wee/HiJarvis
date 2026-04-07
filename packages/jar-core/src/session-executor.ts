@@ -1,6 +1,7 @@
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
 import type { Logger } from "./logger.js";
+import { stripMemoryExcludedPromptContextFromMessage } from "./prompt-context.js";
 import {
   executePromptWithPolicy,
   type PromptInput,
@@ -8,6 +9,9 @@ import {
 } from "./prompt-executor.js";
 import { createAgent, type JarRuntimeOptions } from "./runtime.js";
 import { openSession } from "./session-store.js";
+import {
+  preparePromptWithSkills,
+} from "./skills.js";
 import { createTools, type ToolOptions } from "./tools.js";
 
 type SessionExecutionWriters = {
@@ -20,9 +24,11 @@ export type SessionPromptOptions = {
   provider: JarRuntimeOptions["provider"];
   model: JarRuntimeOptions["model"];
   prompt: PromptInput;
+  skillTriggerText?: string;
   sessionId: string;
   sessionsRootDir: string;
   systemPrompt: JarRuntimeOptions["systemPrompt"];
+  skills: JarRuntimeOptions["skills"];
   thinkingLevel: JarRuntimeOptions["thinkingLevel"];
   compaction?: JarRuntimeOptions["compaction"];
   toolOptions: ToolOptions;
@@ -56,6 +62,7 @@ export const executePromptInSession = async (
     provider: options.provider,
     model: options.model,
     systemPrompt: options.systemPrompt,
+    skills: options.skills,
     thinkingLevel: options.thinkingLevel,
     providerConfig: options.providerConfig,
     execution: options.execution,
@@ -74,15 +81,28 @@ export const executePromptInSession = async (
     provider: options.provider,
     model: options.model,
   });
-  const serializeMessage = options.serializeMessage ?? identityMessage;
+  const serializeMessage =
+    options.serializeMessage ?? stripMemoryExcludedPromptContextFromMessage;
+  const preparedPrompt = await preparePromptWithSkills(options.prompt, {
+    skills: options.skills,
+    ...(options.skillTriggerText === undefined
+      ? {}
+      : { triggerText: options.skillTriggerText }),
+    ...(logger === undefined ? {} : { logger }),
+  });
 
   let outputText = "";
 
   logger?.info("session.prompt_started", {
     existingMessages: session.messages.length,
-    promptChars: estimatePromptChars(options.prompt),
-    promptMessageCount: countPromptMessages(options.prompt),
+    promptChars: estimatePromptChars(preparedPrompt.prompt),
+    promptMessageCount: countPromptMessages(preparedPrompt.prompt),
+    skillCount: preparedPrompt.injectedSkills.length,
+    skills: preparedPrompt.injectedSkills,
   });
+  for (const warning of preparedPrompt.warnings) {
+    logger?.warn("skills.injection_failed", { message: warning });
+  }
 
   agent.subscribe(async (event, signal) => {
     if (signal.aborted) {
@@ -114,7 +134,7 @@ export const executePromptInSession = async (
   try {
     await executePromptWithPolicy(
       agent,
-      options.prompt,
+      preparedPrompt.prompt,
       options.execution,
       options.writers ?? defaultWriters,
       logger,
@@ -138,8 +158,6 @@ export const executePromptInSession = async (
     sessionId: session.sessionId,
   };
 };
-
-const identityMessage = (message: AgentMessage): AgentMessage => message;
 
 const countPromptMessages = (prompt: PromptInput): number => {
   if (typeof prompt === "string") {
