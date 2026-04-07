@@ -39,6 +39,44 @@ const makeAssistant = (text: string) => ({
   timestamp: 1,
 });
 
+const makeToolCallAssistant = (toolName: string) => ({
+  role: "assistant" as const,
+  content: [{
+    type: "toolCall" as const,
+    id: `${toolName}-call`,
+    name: toolName,
+    arguments: { query: "status" },
+  }],
+  api: "openai-responses" as const,
+  provider: "openai" as const,
+  model: "gpt-test",
+  usage: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 0,
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    },
+  },
+  stopReason: "toolUse" as const,
+  timestamp: 1,
+});
+
+const makeToolResult = (toolName: string, text: string) => ({
+  role: "toolResult" as const,
+  toolCallId: `${toolName}-call`,
+  toolName,
+  content: [{ type: "text" as const, text }],
+  isError: false,
+  timestamp: 1,
+});
+
 const settings: CompactionSettings = {
   enabled: true,
   triggerRatio: 0.9,
@@ -46,16 +84,16 @@ const settings: CompactionSettings = {
   summaryMaxTokens: 1024,
 };
 
-test("buildCompactedMessages keeps recent user messages, summary, and tail", () => {
+test("buildCompactedMessages drops assistant tail during pre-turn compaction", () => {
   const messages = [
     makeUser(makeText("U1:", 80)),
     makeAssistant(makeText("A1:", 80)),
     makeUser(makeText("U2:", 80)),
     makeAssistant(makeText("A2:", 80)),
-    makeUser(makeText("U3:", 80)),
   ];
 
   const result = buildCompactedMessages({
+    kind: "pre_turn",
     messages,
     summaryText: "Summary.",
     settings,
@@ -63,23 +101,50 @@ test("buildCompactedMessages keeps recent user messages, summary, and tail", () 
     systemPromptTokens: 0,
   });
 
-  assert.equal(result.length, 4);
+  assert.equal(result.length, 3);
   const first = result[0];
   const second = result[1];
   const third = result[2];
-  const fourth = result[3];
   assert.ok(first);
   assert.ok(second);
   assert.ok(third);
-  assert.ok(fourth);
   assert.equal(first.role, "user");
   assert.match(first.content as string, /U1:/);
   assert.equal(second.role, "user");
   assert.match(second.content as string, /U2:/);
   assert.equal(third.role, "user");
-  assert.match(third.content as string, /U3:/);
-  assert.equal(fourth.role, "user");
-  assert.match(fourth.content as string, new RegExp(SUMMARY_PREFIX));
+  assert.match(third.content as string, new RegExp(SUMMARY_PREFIX));
+});
+
+test("buildCompactedMessages keeps minimal tool tail during mid-turn compaction", () => {
+  const messages = [
+    makeUser(makeText("U1:", 80)),
+    makeAssistant(makeText("A1:", 40)),
+    makeUser(makeText("U2:", 80)),
+    makeToolCallAssistant("bash"),
+    makeToolResult("bash", makeText("T1:", 20)),
+  ];
+
+  const result = buildCompactedMessages({
+    kind: "mid_turn",
+    messages,
+    summaryText: "Summary.",
+    settings,
+    contextWindow: 500,
+    systemPromptTokens: 0,
+  });
+
+  const third = result[2];
+  const fourth = result[3];
+  const fifth = result[4];
+  assert.ok(third);
+  assert.ok(fourth);
+  assert.ok(fifth);
+  assert.equal(third.role, "user");
+  assert.match(third.content as string, new RegExp(SUMMARY_PREFIX));
+  assert.equal(fourth.role, "assistant");
+  assert.equal(fourth.content[0]?.type, "toolCall");
+  assert.equal(fifth.role, "toolResult");
 });
 
 test("buildCompactedMessages skips summary when summaryText is null", () => {
@@ -90,6 +155,7 @@ test("buildCompactedMessages skips summary when summaryText is null", () => {
   ];
 
   const result = buildCompactedMessages({
+    kind: "pre_turn",
     messages,
     summaryText: null,
     settings,

@@ -34,7 +34,7 @@ Jar 现在支持基于 `jsonl` 的会话持久化，用于多轮对话、会话�
 
 ## streaming 与恢复
 
-`messages.jsonl` 只保存最终消息，因此“恢复”指的是恢复模型上下文的真实状态，而不是复现当时的 streaming 动画。
+`messages.jsonl` 只保存最终消息，因此“恢复”指的是恢复模型上下文的真实状态，而不是复现当时的 streaming 动画。自动 compaction 发生后，后续写入的 `session.json` 快照会保存压缩后的消息数组；`messages.jsonl` 里历史追加记录仍会保留，便于审计。
 
 如果需要回放 streaming 过程，使用 `events.jsonl`。它记录了 `message_update`、`tool_execution_*` 以及 `compaction` 等事件，但这些事件不会影响会话恢复的上下文。
 

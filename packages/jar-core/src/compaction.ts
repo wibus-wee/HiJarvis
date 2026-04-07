@@ -38,6 +38,8 @@ export const defaultCompactionSettings: CompactionSettings = {
   summaryMaxTokens: 1024,
 };
 
+const MID_TURN_TOOL_TAIL_MAX_TOKENS = 4096;
+
 export type CompactionRuntime = {
   model: Model<any>;
   systemPrompt: string;
@@ -95,6 +97,7 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
 
       const result = await compactHistory(
         baseHistory,
+        "pre_turn",
         runtime,
         systemPromptTokens,
         signal,
@@ -119,6 +122,7 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
 
     const result = await compactHistory(
       llmMessages,
+      "mid_turn",
       runtime,
       systemPromptTokens,
       signal,
@@ -138,6 +142,7 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
 
 const compactHistory = async (
   history: Message[],
+  kind: CompactionKind,
   runtime: CompactionRuntime,
   systemPromptTokens: number,
   signal?: AbortSignal,
@@ -162,6 +167,7 @@ const compactHistory = async (
   }
 
   const compacted = buildCompactedMessages({
+    kind,
     messages: strippedHistory,
     summaryText,
     settings: runtime.settings,
@@ -188,6 +194,7 @@ const compactHistory = async (
 };
 
 export type BuildCompactedMessagesInput = {
+  kind: CompactionKind;
   messages: Message[];
   summaryText: string | null;
   settings: CompactionSettings;
@@ -198,7 +205,7 @@ export type BuildCompactedMessagesInput = {
 export const buildCompactedMessages = (
   input: BuildCompactedMessagesInput,
 ): Message[] => {
-  const { messages, settings, contextWindow, systemPromptTokens } = input;
+  const { kind, messages, settings, contextWindow, systemPromptTokens } = input;
   const summaryText = normalizeSummaryText(input.summaryText);
 
   const budgetTokens = Math.max(
@@ -206,16 +213,28 @@ export const buildCompactedMessages = (
     Math.floor(contextWindow * settings.budgetRatio) - systemPromptTokens,
   );
 
+  const tailBudgetTokens =
+    kind === "mid_turn"
+      ? Math.min(
+          budgetTokens,
+          MID_TURN_TOOL_TAIL_MAX_TOKENS,
+        )
+      : 0;
+  const { tailMessages, remainingMessages } =
+    kind === "mid_turn"
+      ? collectMinimalToolTail(messages, tailBudgetTokens)
+      : { tailMessages: [], remainingMessages: messages };
+  const tailTokens = estimateMessagesTokens(tailMessages);
   const summaryTokens = summaryText
     ? estimateTextTokens(`${SUMMARY_PREFIX}\n${summaryText}`)
     : 0;
-  const remainingTokens = Math.max(0, budgetTokens - summaryTokens);
+  const remainingTokens = Math.max(0, budgetTokens - summaryTokens - tailTokens);
 
-  const userMessages = collectUserMessages(messages, remainingTokens);
+  const userMessages = collectUserMessages(remainingMessages, remainingTokens);
   if (summaryText) {
-    return [...userMessages, createSummaryMessage(summaryText)];
+    return [...userMessages, createSummaryMessage(summaryText), ...tailMessages];
   }
-  return userMessages;
+  return [...userMessages, ...tailMessages];
 };
 
 const summarizeContext = async (
@@ -364,6 +383,63 @@ const collectUserMessages = (
     content: text,
     timestamp: Date.now(),
   }));
+};
+
+const collectMinimalToolTail = (
+  messages: Message[],
+  budgetTokens: number,
+): { tailMessages: Message[]; remainingMessages: Message[] } => {
+  if (budgetTokens <= 0) {
+    return {
+      tailMessages: [],
+      remainingMessages: messages,
+    };
+  }
+
+  let remaining = budgetTokens;
+  let tailStartIndex = messages.length;
+  let index = messages.length - 1;
+
+  while (index >= 0) {
+    const message = messages[index];
+    if (!message || message.role !== "toolResult") {
+      break;
+    }
+
+    const tokens = estimateMessageTokens(message);
+    if (tokens > remaining) {
+      break;
+    }
+
+    remaining -= tokens;
+    tailStartIndex = index;
+    index -= 1;
+  }
+
+  const assistantCandidate = messages[index];
+  if (
+    assistantCandidate &&
+    assistantCandidate.role === "assistant" &&
+    hasToolCallContent(assistantCandidate)
+  ) {
+    const tokens = estimateMessageTokens(assistantCandidate);
+    if (tokens <= remaining) {
+      tailStartIndex = index;
+    }
+  }
+
+  return {
+    tailMessages: messages.slice(tailStartIndex),
+    remainingMessages: messages.slice(0, tailStartIndex),
+  };
+};
+
+const hasToolCallContent = (message: Message): boolean => {
+  if (message.role !== "assistant") {
+    return false;
+  }
+
+  return message.content.some((item) => item.type === "toolCall");
 };
 
 const estimateMessagesTokens = (messages: Message[]): number =>

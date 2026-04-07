@@ -109,6 +109,8 @@ root_dir = ".jar/sessions"
 - `budget_ratio`: 压缩后目标预算（占 model context window 的比例）。默认：`0.9`。
 - `summary_max_tokens`: 摘要生成的最大输出 token。默认：`1024`。
 
+`mid_turn` 下用于保留最小 tool tail 的预算现在是内部固定值，不再暴露为配置项。
+
 ### `[provider.<name>]`
 
 - `api_key`: optional provider API key. If omitted, `pi-ai` falls back to provider-specific environment variables.

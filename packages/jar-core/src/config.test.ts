@@ -225,3 +225,25 @@ budget_ratio = 0.8
     await cleanupConfigFile(configPath);
   }
 });
+
+test("loadAgentConfig rejects removed tail ratio config", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[agent.compaction]
+tail_ratio = 0.5
+`);
+
+  try {
+    await assert.rejects(
+      () => loadAgentConfig(configPath),
+      /Invalid TOML config:\nagent\.compaction: Unrecognized key: "tail_ratio"/,
+    );
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
