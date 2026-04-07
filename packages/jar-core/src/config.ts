@@ -4,6 +4,10 @@ import path from "node:path";
 import { logLevels, type LogLevel } from "./logger.js";
 import type { PromptExecutionPolicy } from "./prompt-executor.js";
 import type { JarRuntimeOptions, RuntimeProviderConfig } from "./runtime.js";
+import {
+  defaultCompactionSettings,
+  type CompactionSettings,
+} from "./compaction.js";
 import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
 import { parse } from "smol-toml";
 import { z } from "zod";
@@ -22,6 +26,14 @@ const thinkingLevels = [
 
 const nonEmptyString = z.string().trim().min(1);
 
+const compactionConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  trigger_ratio: z.number().min(0).max(1).optional(),
+  budget_ratio: z.number().min(0).max(1).optional(),
+  tail_ratio: z.number().min(0).max(1).optional(),
+  summary_max_tokens: z.number().int().positive().optional(),
+}).strict();
+
 const rawConfigSchema = z.object({
   agent: z.object({
     provider: nonEmptyString,
@@ -33,6 +45,7 @@ const rawConfigSchema = z.object({
     retry_initial_delay_ms: z.number().int().positive().optional(),
     retry_backoff_multiplier: z.number().min(1).optional(),
     retry_max_delay_ms: z.number().int().positive().optional(),
+    compaction: compactionConfigSchema.optional(),
   }).strict(),
   provider: z.record(z.string(), z.unknown()).default({}),
   platform: z.record(z.string(), z.unknown()).default({}),
@@ -85,6 +98,7 @@ export const loadRuntimeConfig = async (
   const provider = parseProvider(parsedConfig.agent.provider);
   const providerConfig = parseProviderConfig(parsedConfig.provider, provider);
   const execution = parseExecutionConfig(parsedConfig.agent);
+  const compaction = parseCompactionConfig(parsedConfig.agent);
   const model = parseModel(provider, parsedConfig.agent.model);
   const configDirectory = path.dirname(absoluteConfigPath);
   const sessionRoot = path.resolve(
@@ -108,6 +122,7 @@ export const loadRuntimeConfig = async (
       thinkingLevel: parsedConfig.agent.thinking_level,
       providerConfig: toRuntimeProviderConfig(providerConfig),
       execution,
+      compaction,
     },
     toolOptions: {
       workspaceRoot: path.resolve(
@@ -190,6 +205,52 @@ const parseExecutionConfig = (
   }
 
   return execution;
+};
+
+const parseCompactionConfig = (
+  agentConfig: RawConfig["agent"],
+): CompactionSettings => {
+  const raw = agentConfig.compaction ?? {};
+  const resolved: CompactionSettings = {
+    enabled: raw.enabled ?? defaultCompactionSettings.enabled,
+    triggerRatio: raw.trigger_ratio ?? defaultCompactionSettings.triggerRatio,
+    budgetRatio: raw.budget_ratio ?? defaultCompactionSettings.budgetRatio,
+    tailRatio: raw.tail_ratio ?? defaultCompactionSettings.tailRatio,
+    summaryMaxTokens:
+      raw.summary_max_tokens ?? defaultCompactionSettings.summaryMaxTokens,
+  };
+
+  if (resolved.triggerRatio <= 0 || resolved.triggerRatio > 1) {
+    throw new Error(
+      "Invalid TOML config:\nagent.compaction.trigger_ratio must be between 0 and 1",
+    );
+  }
+
+  if (resolved.budgetRatio <= 0 || resolved.budgetRatio > 1) {
+    throw new Error(
+      "Invalid TOML config:\nagent.compaction.budget_ratio must be between 0 and 1",
+    );
+  }
+
+  if (resolved.tailRatio < 0 || resolved.tailRatio > 1) {
+    throw new Error(
+      "Invalid TOML config:\nagent.compaction.tail_ratio must be between 0 and 1",
+    );
+  }
+
+  if (resolved.budgetRatio > resolved.triggerRatio) {
+    throw new Error(
+      "Invalid TOML config:\nagent.compaction.budget_ratio must be less than or equal to agent.compaction.trigger_ratio",
+    );
+  }
+
+  if (resolved.tailRatio > resolved.budgetRatio) {
+    throw new Error(
+      "Invalid TOML config:\nagent.compaction.tail_ratio must be less than or equal to agent.compaction.budget_ratio",
+    );
+  }
+
+  return resolved;
 };
 
 const parseProviderConfig = (

@@ -1,6 +1,12 @@
 import { Agent, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModels, type KnownProvider, type Model } from "@mariozechner/pi-ai";
 
+import {
+  createCompactionTransform,
+  defaultCompactionSettings,
+  type CompactionSettings,
+} from "./compaction.js";
+import type { Logger } from "./logger.js";
 import { buildSystemPrompt } from "./prompt-builder.js";
 import type { PromptExecutionPolicy } from "./prompt-executor.js";
 
@@ -16,21 +22,36 @@ export type JarRuntimeOptions = {
   thinkingLevel: ThinkingLevel;
   providerConfig: RuntimeProviderConfig;
   execution: PromptExecutionPolicy;
+  compaction?: CompactionSettings;
+  logger?: Logger;
   tools: AgentTool[];
 };
 
 export const createAgent = (config: JarRuntimeOptions): Agent => {
   const model = resolveConfiguredModel(config);
+  const compactionSettings =
+    config.compaction ?? defaultCompactionSettings;
+  const systemPrompt = buildSystemPrompt({
+    basePrompt: config.systemPrompt,
+  });
+  const compactionRuntime = {
+    model,
+    systemPrompt,
+    settings: compactionSettings,
+    ...(config.providerConfig.apiKey
+      ? { apiKey: config.providerConfig.apiKey }
+      : {}),
+    ...(config.logger ? { logger: config.logger } : {}),
+  };
 
   return new Agent({
     initialState: {
-      systemPrompt: buildSystemPrompt({
-        basePrompt: config.systemPrompt,
-      }),
+      systemPrompt,
       model,
       thinkingLevel: config.thinkingLevel,
       tools: config.tools,
     },
+    transformContext: createCompactionTransform(compactionRuntime),
     maxRetryDelayMs: config.execution.retryMaxDelayMs,
     getApiKey: (provider) => {
       if (provider !== config.provider) {

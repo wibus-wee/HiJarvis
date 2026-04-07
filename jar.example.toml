@@ -16,6 +16,18 @@ retry_backoff_multiplier = 2
 # Optional. Upper bound for retry wait and provider-suggested retry delays.
 retry_max_delay_ms = 30000
 
+[agent.compaction]
+# Optional. Toggle auto-compaction for long-running sessions.
+enabled = true
+# Optional. Trigger compaction when estimated tokens exceed this fraction of the context window.
+trigger_ratio = 0.9
+# Optional. Target fraction of the context window after compaction.
+budget_ratio = 0.9
+# Optional. Fraction of the context window reserved for the most recent messages.
+tail_ratio = 0.1
+# Optional. Max output tokens for the summary call.
+summary_max_tokens = 1024
+
 [provider.openai]
 # Optional. When omitted, pi-ai falls back to provider environment variables.
 api_key = "replace-me"

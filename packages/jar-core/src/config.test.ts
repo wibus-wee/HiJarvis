@@ -7,6 +7,7 @@ import test from "node:test";
 import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
 
 import { loadAgentConfig } from "./config.js";
+import { defaultCompactionSettings } from "./compaction.js";
 
 const pickProviderAndModel = (): { provider: KnownProvider; model: string } => {
   const providers = getProviders();
@@ -152,6 +153,76 @@ file_path = "./runtime.log"
       stderr: false,
       filePath: path.join(path.dirname(configPath), "runtime.log"),
     });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig applies default compaction settings", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.runtime.compaction, defaultCompactionSettings);
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads custom compaction settings", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[agent.compaction]
+enabled = false
+trigger_ratio = 0.95
+budget_ratio = 0.85
+tail_ratio = 0.2
+summary_max_tokens = 777
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.runtime.compaction, {
+      enabled: false,
+      triggerRatio: 0.95,
+      budgetRatio: 0.85,
+      tailRatio: 0.2,
+      summaryMaxTokens: 777,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig rejects invalid compaction ratios", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[agent.compaction]
+trigger_ratio = 0.4
+budget_ratio = 0.8
+`);
+
+  try {
+    await assert.rejects(
+      () => loadAgentConfig(configPath),
+      /Invalid TOML config:\nagent\.compaction\.budget_ratio must be less than or equal to agent\.compaction\.trigger_ratio/,
+    );
   } finally {
     await cleanupConfigFile(configPath);
   }

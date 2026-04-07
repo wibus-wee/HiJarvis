@@ -210,7 +210,7 @@ Jar is intentionally minimal right now:
 - Telegram transport exists as a dedicated grammY long-polling app in `apps/jar-telegram`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven; there is no persisted retry history
-- no prompt compaction or transcript pruning
+- prompt compaction is applied via `agent.compaction` to keep long sessions within context limits
 - no dynamic system prompt overlays yet, even though the assembly seam now exists
 - no built-in tools beyond text file IO and shell execution
 

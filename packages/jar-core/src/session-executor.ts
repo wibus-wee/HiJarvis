@@ -23,6 +23,7 @@ export type SessionPromptOptions = {
   sessionsRootDir: string;
   systemPrompt: JarRuntimeOptions["systemPrompt"];
   thinkingLevel: JarRuntimeOptions["thinkingLevel"];
+  compaction?: JarRuntimeOptions["compaction"];
   toolOptions: ToolOptions;
   providerConfig: JarRuntimeOptions["providerConfig"];
   logger?: Logger;
@@ -49,6 +50,8 @@ export const executePromptInSession = async (
     thinkingLevel: options.thinkingLevel,
     providerConfig: options.providerConfig,
     execution: options.execution,
+    ...(options.compaction ? { compaction: options.compaction } : {}),
+    ...(options.logger ? { logger: options.logger } : {}),
     tools: createTools(options.toolOptions),
   });
 
