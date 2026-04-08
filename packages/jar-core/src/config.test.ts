@@ -51,7 +51,7 @@ system_prompt = "You are a test agent."
 
   try {
     const config = await loadAgentConfig(configPath);
-    assert.deepEqual(config.runtime.execution, {
+    assert.deepEqual(config.agent.execution, {
       requestTimeoutMs: 120_000,
       retryAttempts: 5,
       retryInitialDelayMs: 1_000,
@@ -79,7 +79,7 @@ retry_max_delay_ms = 45000
 
   try {
     const config = await loadAgentConfig(configPath);
-    assert.deepEqual(config.runtime.execution, {
+    assert.deepEqual(config.agent.execution, {
       requestTimeoutMs: 90_000,
       retryAttempts: 7,
       retryInitialDelayMs: 1_200,
@@ -225,7 +225,7 @@ system_prompt = "You are a test agent."
 
   try {
     const config = await loadAgentConfig(configPath);
-    assert.deepEqual(config.runtime.compaction, defaultCompactionSettings);
+    assert.deepEqual(config.agent.compaction, defaultCompactionSettings);
   } finally {
     await cleanupConfigFile(configPath);
   }
@@ -248,7 +248,7 @@ summary_max_tokens = 777
 
   try {
     const config = await loadAgentConfig(configPath);
-    assert.deepEqual(config.runtime.compaction, {
+    assert.deepEqual(config.agent.compaction, {
       enabled: false,
       triggerRatio: 0.95,
       budgetRatio: 0.85,

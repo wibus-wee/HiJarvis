@@ -3,7 +3,7 @@ import process from "node:process";
 
 import {
   createAgent,
-  createTools,
+  createDefaultTools,
   executePromptInSession,
   executePromptWithPolicy,
   listSessions,
@@ -59,8 +59,8 @@ const main = async (): Promise<void> => {
   if (cliOptions.repl) {
     const session = await openSession({
       rootDir: config.sessions.rootDir,
-      provider: config.runtime.provider,
-      model: config.runtime.model,
+      provider: config.agent.provider,
+      model: config.agent.model,
       ...(cliOptions.sessionId !== undefined
         ? { sessionId: cliOptions.sessionId }
         : {}),
@@ -70,14 +70,14 @@ const main = async (): Promise<void> => {
       | undefined;
     let activeOutputText = "";
     const agent = createAgent({
-      ...config.runtime,
+      ...config.agent,
       compactionEventSink: (event) => {
         void session.appendEvent(event);
         if (activeExecution) {
           void activeExecution.recordCompaction(event);
         }
       },
-      tools: createTools(config.toolOptions),
+      tools: createDefaultTools(config.toolOptions),
     });
 
     agent.sessionId = session.sessionId;
@@ -135,7 +135,7 @@ const main = async (): Promise<void> => {
           await executePromptWithPolicy(
             agent,
             prepared.prompt,
-            config.runtime.execution,
+            config.agent.execution,
             writers,
             undefined,
             {
@@ -170,25 +170,19 @@ const main = async (): Promise<void> => {
 
   if (cliOptions.sessionId !== undefined) {
     await executePromptInSession({
-      ...config.runtime,
-      skills: config.skills,
-      toolOptions: config.toolOptions,
-      sessionsRootDir: config.sessions.rootDir,
+      config,
       sessionId: cliOptions.sessionId,
       prompt,
       skillTriggerText: prompt,
       turnTrigger: "user_input",
-      writers: {
-        stderr: process.stderr,
-      },
       onEvent: (event) => {
         renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
       },
     });
   } else {
     const agent = createAgent({
-      ...config.runtime,
-      tools: createTools(config.toolOptions),
+      ...config.agent,
+      tools: createDefaultTools(config.toolOptions),
     });
     agent.subscribe((event) => {
       renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
@@ -197,7 +191,7 @@ const main = async (): Promise<void> => {
       skills: config.skills,
       triggerText: prompt,
     });
-    await executePromptWithPolicy(agent, prepared.prompt, config.runtime.execution, {
+    await executePromptWithPolicy(agent, prepared.prompt, config.agent.execution, {
       stderr: process.stderr,
     });
   }

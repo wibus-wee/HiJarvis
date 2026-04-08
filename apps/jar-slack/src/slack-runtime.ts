@@ -907,10 +907,7 @@ const respondInSlackThread = async ({
       promptChars: prompt.length,
     });
     const execution = await executePromptInSession({
-      ...runtime.runtime,
-      skills: runtime.skills,
-      toolOptions: runtime.toolOptions,
-      sessionsRootDir: runtime.sessions.rootDir,
+      config: runtime,
       sessionId,
       prompt,
       skillTriggerText,
@@ -922,9 +919,6 @@ const respondInSlackThread = async ({
         threadTs,
       },
       logger,
-      writers: {
-        stderr: process.stderr,
-      },
     });
     turnId = execution.turnId;
     runId = execution.runId;

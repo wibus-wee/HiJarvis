@@ -169,15 +169,16 @@ Prompt assembly is now split into two layers:
 
 `packages/jar-core/src/session-executor.ts` is the shared session-bound execution seam (convenience API). It:
 
-- creates a fresh `Agent` — accepts either pre-built `tools` or `toolOptions` (falls back to `createDefaultTools()`), and merges `systemPromptOverlays` with skill catalog overlays
-- restores the persisted Jar session
+- accepts a single `config: LoadedRuntimeConfig` object instead of individual agent fields — callers do not need to spread or duplicate any agent configuration
+- creates a fresh `Agent` using `config.agent` fields and `createDefaultTools(config.toolOptions)`
+- restores the persisted Jar session from `config.sessions.rootDir`
 - creates one explicit `turn` and one `run(kind=act)` for the current request
-- optionally injects skills when `skills` is provided; skips skill injection entirely when omitted
+- injects skills from `config.skills` into each prompt turn; the system prompt catalog overlay is already embedded in `config.agent.systemPromptOverlays` by `loadRuntimeConfig` and is not re-applied here
 - sanitizes older persisted user messages so previous memory-excluded contextual fragments do not keep accumulating in future context windows
 - appends runtime events/messages back into the session store
 - maps the current execution into structured `items` such as `user_input`, `assistant_message`, `tool_call`, `tool_result`, `retry_notice`, and `compaction`
 - emits summary logs for prompt/tool boundaries
-- executes the prompt using the same retry/timeout policy
+- executes the prompt using the retry/timeout policy from `config.agent.execution`
 - returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
 
 The default tools (via `createDefaultTools()`) are:

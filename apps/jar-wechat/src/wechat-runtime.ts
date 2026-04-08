@@ -98,8 +98,8 @@ export const startWeChatGateway = async (
   const env = loadWeChatGatewayEnv(process.env);
   const bot = createWeChatBot(wechatConfig, env, logger);
   const imageInputEnabled = supportsImageInput(
-    runtimeConfig.runtime.provider,
-    runtimeConfig.runtime.model,
+    runtimeConfig.agent.provider,
+    runtimeConfig.agent.model,
   );
 
   await bot.login();
@@ -618,10 +618,7 @@ const respondInWeChatConversation = async (options: {
 
   try {
     const execution = await executePromptInSession({
-      ...options.runtime.runtime,
-      skills: options.runtime.skills,
-      toolOptions: options.runtime.toolOptions,
-      sessionsRootDir: options.runtime.sessions.rootDir,
+      config: options.runtime,
       sessionId: options.sessionId,
       prompt: options.prompt,
       skillTriggerText: options.skillTriggerText,
@@ -637,9 +634,6 @@ const respondInWeChatConversation = async (options: {
         return stripMemoryExcludedPromptContextFromMessage(
           sanitizePersistedConversationMessage(message),
         );
-      },
-      writers: {
-        stderr: process.stderr,
       },
     });
     turnId = execution.turnId;
@@ -781,7 +775,7 @@ const resolveCoalesceWindowMs = (
 };
 
 const supportsImageInput = (
-  provider: LoadedRuntimeConfig["runtime"]["provider"],
+  provider: LoadedRuntimeConfig["agent"]["provider"],
   modelId: string,
 ): boolean => {
   return supportsModelInput(provider, modelId, "image");

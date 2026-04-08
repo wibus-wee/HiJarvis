@@ -96,7 +96,7 @@ export type LoadedBaseConfig = {
     stderr: boolean;
     filePath?: string;
   };
-  runtime: Omit<JarRuntimeOptions, "tools">;
+  agent: Omit<JarRuntimeOptions, "tools" | "compaction"> & { compaction: CompactionSettings };
   skillsConfig: SkillsConfigInput;
   toolOptions: ToolOptions;
   sessions: {
@@ -137,7 +137,7 @@ export const loadBaseConfig = async (
         ? {}
         : { filePath: path.resolve(configDirectory, parsedConfig.logging.file_path) }),
     },
-    runtime: {
+    agent: {
       provider,
       model,
       systemPrompt: parsedConfig.agent.system_prompt,
@@ -181,8 +181,8 @@ export const loadRuntimeConfig = async (
   const { skillsConfig: _, ...rest } = baseConfig;
   return {
     ...rest,
-    runtime: {
-      ...rest.runtime,
+    agent: {
+      ...rest.agent,
       systemPromptOverlays: getSkillsCatalogOverlays(skills),
     },
     skills,

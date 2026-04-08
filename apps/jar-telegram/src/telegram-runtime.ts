@@ -651,17 +651,11 @@ const respondInTelegramConversation = async (options: {
   let runId: string | undefined;
 
   const responseTask = executePromptInSession({
-    ...options.runtime.runtime,
-    skills: options.runtime.skills,
-    toolOptions: options.runtime.toolOptions,
-    sessionsRootDir: options.runtime.sessions.rootDir,
+    config: options.runtime,
     sessionId: options.sessionId,
     prompt: options.prompt,
     skillTriggerText: options.skillTriggerText,
     logger: options.logger,
-    writers: {
-      stderr: process.stderr,
-    },
     turnTrigger: "platform_event",
     turnInputMetadata: {
       platform: "telegram",
