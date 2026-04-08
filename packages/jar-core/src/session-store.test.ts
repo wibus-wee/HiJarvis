@@ -6,6 +6,7 @@ import test from "node:test";
 
 import type { Message } from "@mariozechner/pi-ai";
 
+import { createSummaryMessage } from "./compaction/assembly.js";
 import { listSessions, openSession } from "./session-store.js";
 
 test("openSession persists messages and snapshots", async () => {
@@ -35,10 +36,47 @@ test("openSession persists messages and snapshots", async () => {
 
     assert.equal(reopened.messages.length, 1);
     assert.deepEqual(reopened.messages[0], message);
+    assert.equal(reopened.compactionBoundary, null);
 
     const sessions = await listSessions(rootDir);
     assert.equal(sessions.length, 1);
     assert.equal(sessions[0]?.sessionId, session.sessionId);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("openSession persists snapshot-backed compaction boundary", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-session-"));
+  try {
+    const session = await openSession({
+      rootDir,
+      provider: "openai",
+      model: "gpt-4o-mini",
+    });
+
+    const messages: Message[] = [
+      { role: "user", content: "older", timestamp: 1 },
+      createSummaryMessage("summary"),
+      { role: "user", content: "latest", timestamp: 2 },
+    ];
+
+    await session.writeSnapshot(messages, {
+      kind: "post_turn",
+      messageIndex: 2,
+      summaryMessageIndex: 1,
+      recordedAt: Date.now(),
+    });
+
+    const reopened = await openSession({
+      rootDir,
+      sessionId: session.sessionId,
+      provider: "openai",
+      model: "gpt-4o-mini",
+    });
+
+    assert.equal(reopened.compactionBoundary?.kind, "post_turn");
+    assert.equal(reopened.compactionBoundary?.summaryMessageIndex, 1);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
@@ -131,10 +169,10 @@ test("openSession persists compaction events with staged metadata", async () => 
       tokenEstimateAfter: 4_500,
       summaryTokens: 300,
       stageCount: 3,
-      appliedStages: ["lightweight", "summary", "assembly"],
+      appliedStages: ["snip", "summary", "assembly"],
       stages: [
         {
-          stage: "lightweight",
+          stage: "snip",
           applied: true,
           tokenEstimateBefore: 12_000,
           tokenEstimateAfter: 8_000,
@@ -163,7 +201,7 @@ test("openSession persists compaction events with staged metadata", async () => 
 
     const events = await readFile(session.paths.eventsPath, "utf8");
     assert.match(events, /"stageCount":3/);
-    assert.match(events, /"appliedStages":\["lightweight","summary","assembly"\]/);
+    assert.match(events, /"appliedStages":\["snip","summary","assembly"\]/);
     assert.match(events, /"summaryIncluded":true/);
   } finally {
     await rm(rootDir, { recursive: true, force: true });

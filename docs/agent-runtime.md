@@ -240,7 +240,7 @@ Jar is intentionally minimal right now:
 - WeChat transport exists as a dedicated `@pinixai/weixin-bot` long-polling app in `apps/jar-wechat`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven, but retry notices are now mirrored into session `items`
-- prompt compaction is applied via the `packages/jar-core/src/compaction/` subsystem to keep long sessions within context limits; runtime sanitizes history first, then a staged compaction pipeline may apply snip-style oldest-history trimming, lightweight tool-result reduction, summary compaction, and final payload assembly, and the subsystem also exposes partial-compaction and prompt-variant support while persisting structured compaction metadata into session events/items
+- prompt compaction is applied via the `packages/jar-core/src/compaction/` subsystem to keep long sessions within context limits; runtime first slices history from the snapshot-backed compaction boundary, then sanitizes that history, then runs a staged pipeline that may apply snip-style oldest-history trimming, lightweight tool-result reduction, automatic partial-or-full summary compaction, and final payload assembly; summary generation also retries with progressively truncated history if the compaction request itself is too large, and the subsystem now restores structured artifacts such as recent tool-state and skill-state cues into the compacted payload while persisting compaction metadata into session events/items and snapshot boundary state
 - skills catalog overlays are supported, but full skill bodies remain turn-scoped and are not persisted as long-lived system prompt text
 - no built-in tools beyond text file IO and shell execution
 

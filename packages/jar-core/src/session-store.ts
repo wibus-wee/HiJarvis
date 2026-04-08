@@ -4,6 +4,13 @@ import path from "node:path";
 
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
+export type SessionCompactionBoundary = {
+  kind: "pre_turn" | "mid_turn" | "post_turn";
+  messageIndex: number;
+  summaryMessageIndex: number | null;
+  recordedAt: number;
+};
+
 export type CompactionEvent = {
   type: "compaction";
   kind: "pre_turn" | "mid_turn" | "post_turn";
@@ -11,15 +18,23 @@ export type CompactionEvent = {
   tokenEstimateAfter: number;
   summaryTokens: number;
   summaryError?: string;
+  strategy?: "full" | "partial";
+  partialDirection?: "from" | "up_to";
+  partialSplitIndex?: number;
+  artifacts?: Array<{
+    kind: "tool_state" | "skill_state";
+    label: string;
+    content: string;
+  }>;
   stageCount?: number;
   stages?: Array<{
-    stage: "lightweight" | "summary" | "assembly";
+    stage: "snip" | "lightweight" | "summary" | "assembly";
     applied: boolean;
     tokenEstimateBefore: number;
     tokenEstimateAfter: number;
     notes?: string;
   }>;
-  appliedStages?: Array<"lightweight" | "summary" | "assembly">;
+  appliedStages?: Array<"snip" | "lightweight" | "summary" | "assembly">;
   boundary?: {
     kind: "pre_turn" | "mid_turn" | "post_turn";
     summaryIncluded: boolean;
@@ -41,11 +56,12 @@ export type SessionMeta = {
 };
 
 export type SessionSnapshot = {
-  v: 1;
+  v: 2;
   sessionId: string;
   updatedAt: number;
   lastSequence: number;
   messages: AgentMessage[];
+  compactionBoundary: SessionCompactionBoundary | null;
 };
 
 export type SessionRecord = {
@@ -201,12 +217,16 @@ export type SessionHandle = {
   paths: SessionPaths;
   meta: SessionMeta;
   messages: AgentMessage[];
+  compactionBoundary: SessionCompactionBoundary | null;
   appendMessage: (message: AgentMessage) => Promise<void>;
   appendEvent: (event: JarEvent) => Promise<void>;
   appendTurn: (turn: SessionTurn) => Promise<void>;
   appendRun: (run: SessionRun) => Promise<void>;
   appendItem: (item: SessionItem) => Promise<void>;
-  writeSnapshot: (messages: AgentMessage[]) => Promise<void>;
+  writeSnapshot: (
+    messages: AgentMessage[],
+    compactionBoundary?: SessionCompactionBoundary | null,
+  ) => Promise<void>;
 };
 
 type ParsedTranscript = {
@@ -264,6 +284,7 @@ export const openSession = async (
   const events = await loadEvents(paths.eventsPath);
 
   const snapshotMessages = snapshot?.messages ?? [];
+  let currentCompactionBoundary = snapshot?.compactionBoundary ?? null;
   const lastSequence = snapshot?.lastSequence ?? 0;
 
   const replayMessages = transcript.records
@@ -356,15 +377,21 @@ export const openSession = async (
     });
   };
 
-  const writeSnapshot = async (currentMessages: AgentMessage[]): Promise<void> => {
+  const writeSnapshot = async (
+    currentMessages: AgentMessage[],
+    compactionBoundary: SessionCompactionBoundary | null = currentCompactionBoundary,
+  ): Promise<void> => {
     await enqueue(async () => {
       const snapshotRecord: SessionSnapshot = {
-        v: 1,
+        v: 2,
         sessionId,
         updatedAt: Date.now(),
         lastSequence: Math.max(0, nextSequence - 1),
         messages: currentMessages,
+        compactionBoundary,
       };
+
+      currentCompactionBoundary = compactionBoundary;
 
       meta.updatedAt = snapshotRecord.updatedAt;
       meta.provider = options.provider;
@@ -383,11 +410,12 @@ export const openSession = async (
     });
   };
 
-  return {
+  const handle: SessionHandle = {
     sessionId,
     paths,
     meta,
     messages,
+    compactionBoundary: currentCompactionBoundary,
     appendMessage,
     appendEvent,
     appendTurn,
@@ -395,6 +423,8 @@ export const openSession = async (
     appendItem,
     writeSnapshot,
   };
+
+  return handle;
 };
 
 const generateSessionId = (): string => {
@@ -461,7 +491,7 @@ const loadSnapshot = async (
     return null;
   }
 
-  if (snapshot.v !== 1) {
+  if (snapshot.v !== 2) {
     throw new Error(`Unsupported session snapshot version: ${snapshot.v}`);
   }
 

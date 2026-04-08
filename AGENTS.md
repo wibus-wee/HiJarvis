@@ -11,8 +11,15 @@
 │   ├── jar-slack - a Slack bot
 │   ├── jar-telegram - a Telegram bot
 │   └── jar-wechat - a WeChat bot
+├── docs
+│   └── exec-plans - living implementation plans for large refactors and features
 ├── packages
 │   └── jar-core
+│       └── src
+│           └── compaction - staged compaction subsystem with boundary, pipeline, summary, partial compaction, retry, and artifact restoration
+└── research
+    ├── claude-code-compaction - research notes on Claude Code's compaction system
+    └── hijarvis-compaction-vs-claude-code.md - current parity gap audit between HiJarvis and Claude Code compaction
 ```
 
 ## Config Layout

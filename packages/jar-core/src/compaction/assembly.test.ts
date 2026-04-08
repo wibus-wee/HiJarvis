@@ -129,11 +129,11 @@ test("buildCompactedMessages drops assistant tail during pre-turn compaction", (
   assert.ok(second);
   assert.ok(third);
   assert.equal(first.role, "user");
-  assert.match(first.content as string, /U1:/);
+  assert.match(first.content as string, new RegExp(SUMMARY_PREFIX));
   assert.equal(second.role, "user");
-  assert.match(second.content as string, /U2:/);
+  assert.match(second.content as string, /U1:/);
   assert.equal(third.role, "user");
-  assert.match(third.content as string, new RegExp(SUMMARY_PREFIX));
+  assert.match(third.content as string, /U2:/);
 });
 
 test("buildCompactedMessages keeps minimal tool tail during mid-turn compaction", () => {
@@ -161,10 +161,14 @@ test("buildCompactedMessages keeps minimal tool tail during mid-turn compaction"
   assert.ok(fourth);
   assert.ok(fifth);
   assert.equal(third.role, "user");
-  assert.match(third.content as string, new RegExp(SUMMARY_PREFIX));
+  assert.match(third.content as string, /U2:/);
   assert.equal(fourth.role, "assistant");
   assert.equal(fourth.content[0]?.type, "toolCall");
   assert.equal(fifth.role, "toolResult");
+  const first = result[0];
+  assert.ok(first);
+  assert.equal(first.role, "user");
+  assert.match(first.content as string, new RegExp(SUMMARY_PREFIX));
 });
 
 test("buildCompactedMessages skips summary when summaryText is null", () => {

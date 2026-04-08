@@ -33,7 +33,7 @@ ${summaryText}`)
 
   const userMessages = collectUserMessages(remainingMessages, remainingTokens);
   if (summaryText) {
-    return [...userMessages, createSummaryMessage(summaryText), ...tailMessages];
+    return [createSummaryMessage(summaryText), ...userMessages, ...tailMessages];
   }
   return [...userMessages, ...tailMessages];
 };
@@ -52,6 +52,16 @@ export const extractSummaryFromMessages = (messages: Message[]): string | null =
     const withoutPrefix = trimmed.slice(SUMMARY_PREFIX.length).trimStart();
     if (withoutPrefix.length > 0) {
       return withoutPrefix;
+    }
+  }
+  return null;
+};
+
+export const findSummaryMessageIndex = (messages: Message[]): number | null => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message && isSummaryMessage(message)) {
+      return index;
     }
   }
   return null;

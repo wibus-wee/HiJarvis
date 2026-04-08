@@ -5,6 +5,7 @@ import {
   estimateMessagesTokens,
   normalizeSummaryText,
 } from "./assembly.js";
+import { extractCompactionArtifacts, renderArtifactMessages } from "./artifacts.js";
 import { applyLightweightReduction } from "./lightweight.js";
 import { applySnipReduction } from "./snip.js";
 import { compactWithSummaryStrategy } from "./strategy-summary.js";
@@ -24,6 +25,30 @@ export const runCompactionPipeline = async (
   runtime: CompactionRuntime,
   signal?: AbortSignal,
 ): Promise<CompactionResult> => {
+  const partialPlan = choosePartialPlan(history, runtime.model.contextWindow);
+  if (partialPlan) {
+    const partial = await runPartialCompactionPipeline(
+      history,
+      partialPlan.splitIndex,
+      partialPlan.direction,
+      runtime,
+      signal,
+    );
+    return {
+      messages: partial.messages,
+      summaryText: partial.summaryText,
+      summaryTokens: partial.summaryTokens,
+      stages: partial.stages,
+      appliedStages: partial.appliedStages,
+      boundary: partial.boundary,
+      strategy: "partial",
+      partialDirection: partial.direction,
+      partialSplitIndex: partial.splitIndex,
+      artifacts: partial.artifacts,
+      ...(partial.summaryError ? { summaryError: partial.summaryError } : {}),
+    };
+  }
+
   const stages: CompactionStageEvent[] = [];
 
   const snip = applySnipReduction(history, runtime.model.contextWindow);
@@ -69,12 +94,20 @@ export const runCompactionPipeline = async (
   });
 
   const boundary = buildBoundary(kind, summaryResult.messages, history);
+  const artifacts = extractCompactionArtifacts(history, runtime);
+  const messagesWithArtifacts = [
+    ...summaryResult.messages,
+    ...renderArtifactMessages(artifacts),
+  ];
 
   return {
     ...summaryResult,
+    messages: messagesWithArtifacts,
     stages,
     appliedStages: stages.filter((stage) => stage.applied).map((stage) => stage.stage),
     boundary,
+    strategy: "full",
+    artifacts,
   };
 };
 
@@ -124,6 +157,11 @@ export const runPartialCompactionPipeline = async (
   const messages = direction === "from"
     ? [...preservedSegment, ...summaryResult.messages]
     : [...summaryResult.messages, ...preservedSegment];
+  const artifacts = extractCompactionArtifacts(history, runtime);
+  const restoredMessages = [
+    ...messages,
+    ...renderArtifactMessages(artifacts),
+  ];
 
   stages.push({
     stage: "summary",
@@ -136,7 +174,7 @@ export const runPartialCompactionPipeline = async (
     stage: "assembly",
     applied: true,
     tokenEstimateBefore: estimateMessagesTokens(history),
-    tokenEstimateAfter: estimateMessagesTokens(messages),
+    tokenEstimateAfter: estimateMessagesTokens(restoredMessages),
     notes: direction === "from"
       ? "preserved prefix and summarized suffix"
       : "summarized prefix and preserved suffix",
@@ -149,7 +187,7 @@ export const runPartialCompactionPipeline = async (
   );
 
   return {
-    messages,
+    messages: restoredMessages,
     summaryText: summaryResult.summaryText,
     summaryTokens: summaryResult.summaryTokens,
     direction,
@@ -158,7 +196,34 @@ export const runPartialCompactionPipeline = async (
     stages,
     appliedStages: stages.filter((stage) => stage.applied).map((stage) => stage.stage),
     boundary,
+    retryCount: summaryResult.retryCount,
+    artifacts,
     ...(summaryResult.summaryError ? { summaryError: summaryResult.summaryError } : {}),
+  };
+};
+
+export const choosePartialPlan = (
+  history: Message[],
+  contextWindow: number,
+): { direction: PartialCompactionDirection; splitIndex: number } | null => {
+  if (history.length < 8) {
+    return null;
+  }
+
+  const totalTokens = estimateMessagesTokens(history);
+  if (totalTokens < Math.floor(contextWindow * 0.8)) {
+    return null;
+  }
+
+  const keepTailCount = Math.max(3, Math.floor(history.length * 0.3));
+  const splitIndex = Math.max(1, history.length - keepTailCount);
+  if (splitIndex >= history.length) {
+    return null;
+  }
+
+  return {
+    direction: "up_to",
+    splitIndex,
   };
 };
 

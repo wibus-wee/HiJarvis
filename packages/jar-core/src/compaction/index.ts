@@ -5,6 +5,7 @@ import {
   estimateMessagesTokens,
   estimateTextTokens,
 } from "./assembly.js";
+import { createSnapshotBoundary, getMessagesAfterBoundary } from "./boundary.js";
 import { runCompactionPipeline, runPartialCompactionPipeline } from "./pipeline.js";
 import type {
   CompactionKind,
@@ -26,7 +27,9 @@ export type {
   PartialCompactionDirection,
   PartialCompactionResult,
 } from "./types.js";
-export { buildCompactedMessages } from "./assembly.js";
+export { buildCompactedMessages, findSummaryMessageIndex } from "./assembly.js";
+export { extractCompactionArtifacts, renderArtifactMessages } from "./artifacts.js";
+export { createSnapshotBoundary, getMessagesAfterBoundary } from "./boundary.js";
 export { getUsageInputTokens, shouldCompactFromUsage, decideCompactionFromUsage } from "./policy.js";
 export { getSummaryPrompt } from "./prompt.js";
 
@@ -74,6 +77,12 @@ export const compactHistoryNow = async (
     summaryTokens: result.summaryTokens,
     tokenEstimateAfter: estimateMessagesTokens(result.messages),
     ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+    strategy: result.strategy,
+    ...(result.partialDirection ? { partialDirection: result.partialDirection } : {}),
+    ...(result.partialSplitIndex !== undefined
+      ? { partialSplitIndex: result.partialSplitIndex }
+      : {}),
+    artifacts: result.artifacts,
     stageCount: result.stages.length,
     stages: result.stages,
     appliedStages: result.appliedStages,
@@ -126,6 +135,12 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
         tokenEstimateAfter: estimateMessagesTokens(llmMessages),
         summaryTokens: result.summaryTokens,
         ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+        strategy: result.strategy,
+        ...(result.partialDirection ? { partialDirection: result.partialDirection } : {}),
+        ...(result.partialSplitIndex !== undefined
+          ? { partialSplitIndex: result.partialSplitIndex }
+          : {}),
+        artifacts: result.artifacts,
         stageCount: result.stages.length,
         stages: result.stages,
         appliedStages: result.appliedStages,
@@ -153,6 +168,12 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
       tokenEstimateAfter: estimateMessagesTokens(llmMessages),
       summaryTokens: result.summaryTokens,
       ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+      strategy: result.strategy,
+      ...(result.partialDirection ? { partialDirection: result.partialDirection } : {}),
+      ...(result.partialSplitIndex !== undefined
+        ? { partialSplitIndex: result.partialSplitIndex }
+        : {}),
+      artifacts: result.artifacts,
       stageCount: result.stages.length,
       stages: result.stages,
       appliedStages: result.appliedStages,

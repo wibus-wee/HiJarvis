@@ -13,6 +13,8 @@ import type {
   SummaryPromptVariant,
 } from "./types.js";
 
+const MAX_SUMMARY_RETRIES = 3;
+
 export const summarizeHistory = async (
   messages: Message[],
   runtime: CompactionRuntime,
@@ -31,37 +33,55 @@ export const summarizeHistory = async (
     timestamp: Date.now(),
   };
 
-  const summaryMessages = trimMessagesToBudget(
-    messages,
-    maxInputTokens,
-    summaryPromptMessage,
-  );
-
   const streamOptions = {
     maxTokens: runtime.settings.summaryMaxTokens,
     ...(runtime.apiKey ? { apiKey: runtime.apiKey } : {}),
     ...(signal ? { signal } : {}),
   };
 
-  const summaryResponse = await completeSimple(
-    runtime.model,
-    {
-      systemPrompt: runtime.systemPrompt,
-      messages: summaryMessages,
-    },
-    streamOptions,
-  );
+  let attempt = 0;
+  let workingMessages = messages;
+  let lastError: unknown;
 
-  const text = extractAssistantText(summaryResponse);
-  const summaryText = normalizeSummaryText(text) ?? "(summary unavailable)";
-  return {
-    summaryText,
-    summaryTokens: estimateMessageTokens({
-      role: "user",
-      content: summaryText,
-      timestamp: Date.now(),
-    }),
-  };
+  while (attempt < MAX_SUMMARY_RETRIES) {
+    const summaryMessages = trimMessagesToBudget(
+      workingMessages,
+      maxInputTokens,
+      summaryPromptMessage,
+    );
+
+    try {
+      const summaryResponse = await completeSimple(
+        runtime.model,
+        {
+          systemPrompt: runtime.systemPrompt,
+          messages: summaryMessages,
+        },
+        streamOptions,
+      );
+
+      const text = extractAssistantText(summaryResponse);
+      const summaryText = normalizeSummaryText(text) ?? "(summary unavailable)";
+      return {
+        summaryText,
+        summaryTokens: estimateMessageTokens({
+          role: "user",
+          content: summaryText,
+          timestamp: Date.now(),
+        }),
+        retryCount: attempt,
+      };
+    } catch (error) {
+      lastError = error;
+      if (workingMessages.length <= 1) {
+        break;
+      }
+      workingMessages = truncateForRetry(workingMessages);
+      attempt += 1;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 };
 
 export const trimMessagesToBudget = (
@@ -82,4 +102,12 @@ export const trimMessagesToBudget = (
   }
 
   return [...history, suffix];
+};
+
+export const truncateForRetry = (messages: Message[]): Message[] => {
+  if (messages.length <= 1) {
+    return messages;
+  }
+  const dropCount = Math.max(1, Math.floor(messages.length * 0.2));
+  return messages.slice(dropCount);
 };

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { partialCompactHistoryNow, type CompactionRuntime } from "./index.js";
+import { choosePartialPlan } from "./pipeline.js";
 
 const makeUser = (text: string) => ({
   role: "user" as const,
@@ -81,4 +82,16 @@ test("partialCompactHistoryNow returns a safe no-op result when compaction is di
   assert.equal(result.splitIndex, 2);
   assert.equal(result.stageCount, 0);
   assert.deepEqual(result.messages, messages);
+});
+
+test("choosePartialPlan auto-selects partial strategy for long histories", () => {
+  const longHistory = Array.from({ length: 10 }, (_, index) =>
+    index % 2 === 0
+      ? makeUser(`U${index}:${"x".repeat(2000)}`)
+      : makeAssistant(`A${index}:${"y".repeat(2000)}`),
+  );
+
+  const plan = choosePartialPlan(longHistory, runtime.model.contextWindow);
+  assert.ok(plan);
+  assert.equal(plan?.direction, "up_to");
 });

@@ -29,6 +29,15 @@ Someone verifying this work should be able to inspect the new directory tree, ru
 - [x] (2026-04-08 01:35Z) Re-ran `pnpm --filter jar-core test` successfully for the staged architecture pass.
 - [x] (2026-04-08 01:50Z) Added snip-style reduction, layout-aware summary prompt variants, and partial-compaction entry points to complete the first full Claude-Code-inspired architecture pass.
 - [x] (2026-04-08 01:55Z) Added tests for snip reduction, prompt variants, and partial-compaction entry behavior, then re-ran `pnpm --filter jar-core test` successfully.
+- [x] (2026-04-08 02:15Z) Replaced event-only boundary metadata with a breaking snapshot-backed boundary schema and made runtime/history slicing use that boundary directly.
+- [x] (2026-04-08 02:20Z) Added tests for boundary persistence and boundary-aware history slicing.
+- [x] (2026-04-08 02:25Z) Re-ran `pnpm --filter jar-core test` successfully after the snapshot-backed boundary migration.
+- [x] (2026-04-08 02:40Z) Made partial compaction a built-in runtime strategy rather than a manual API-only capability.
+- [x] (2026-04-08 02:45Z) Added compaction-level prompt-too-long retry behavior inside summary generation.
+- [x] (2026-04-08 02:50Z) Added tests and re-ran `pnpm --filter jar-core test` successfully for the auto-partial and PTL retry pass.
+- [x] (2026-04-08 03:05Z) Added a post-compact artifact restoration layer so non-summary state can be reconstructed structurally rather than relying only on summary text.
+- [x] (2026-04-08 03:10Z) Persisted artifact metadata through compaction results and events.
+- [x] (2026-04-08 03:15Z) Added tests and re-ran `pnpm --filter jar-core test` successfully for the artifact restoration pass.
 
 ## Surprises & Discoveries
 
@@ -52,6 +61,24 @@ Someone verifying this work should be able to inspect the new directory tree, ru
 
 - Observation: Adding partial compaction and prompt variants on top of the new subsystem was straightforward once summary generation and assembly were already separated.
   Evidence: `packages/jar-core/src/compaction/prompt.ts`, `packages/jar-core/src/compaction/summary.ts`, and `packages/jar-core/src/compaction/pipeline.ts` now wire prompt variants and partial compaction without touching runtime wiring.
+
+- Observation: The cleanest place to hold boundary state is the session snapshot, because snapshot write/read is already the authoritative persistence seam for current message state.
+  Evidence: `packages/jar-core/src/session-store.ts` owns `SessionSnapshot`, `loadSnapshot(...)`, and `writeSnapshot(...)`, while post-turn compaction in `packages/jar-core/src/session-executor.ts` already writes a fresh snapshot immediately after compaction.
+
+- Observation: Moving the summary message to the front of the compacted payload makes boundary slicing much simpler, because the snapshot boundary can point to a stable summary anchor instead of guessing among preserved user messages.
+  Evidence: `packages/jar-core/src/compaction/assembly.ts` now places `createSummaryMessage(...)` before preserved user messages when a summary exists, and `packages/jar-core/src/compaction/boundary.ts` uses that summary index as the slicing anchor.
+
+- Observation: The current partial-compaction implementation is already complete enough to promote into runtime strategy selection; the missing piece is choosing it automatically rather than exposing it only as a callable API.
+  Evidence: `packages/jar-core/src/compaction/pipeline.ts` already supports `runPartialCompactionPipeline(...)`, and `packages/jar-core/src/compaction/prompt.ts` already has layout-aware prompt variants.
+
+- Observation: The cleanest place to implement compaction PTL retry is inside `summarizeHistory(...)`, because that function already owns prompt construction, token budgeting, and the model call boundary.
+  Evidence: `packages/jar-core/src/compaction/summary.ts` now contains both `trimMessagesToBudget(...)` and `truncateForRetry(...)`, so retry stays local to summary generation instead of leaking into runtime orchestration.
+
+- Observation: The most valuable first restored artifacts in HiJarvis are compacted tool execution state and recent skill-injection metadata, because those are machine-relevant state cues that summary text alone does not preserve reliably.
+  Evidence: `packages/jar-core/src/compaction/assembly.ts` already preserves minimal tool tails structurally, while `packages/jar-core/src/session-executor.ts` and `packages/jar-core/src/skills.ts` show that skill injection and tool execution are explicit runtime concerns.
+
+- Observation: A lightweight artifact layer can be expressed as ordinary restored user messages while still remaining structurally distinct from the summary, as long as extraction and rendering are handled in a dedicated module.
+  Evidence: `packages/jar-core/src/compaction/artifacts.ts` now cleanly separates `extractCompactionArtifacts(...)` from `renderArtifactMessages(...)`.
 
 ## Decision Log
 
@@ -83,6 +110,22 @@ Someone verifying this work should be able to inspect the new directory tree, ru
   Rationale: This is the closest low-risk analogue to Claude Code's pre-summary slimming stages and gives immediate token savings without adding another model call.
   Date/Author: 2026-04-08 / OpenCode
 
+- Decision: Boundary state will now be stored natively in `SessionSnapshot` rather than only in events, and this migration is intentionally breaking with no old snapshot compatibility layer.
+  Rationale: The user explicitly allowed destructive changes, and snapshot-backed boundary metadata is the cleanest way to make boundary semantics first-class without introducing fake messages or changing upstream message-role unions.
+  Date/Author: 2026-04-08 / OpenCode
+
+- Decision: Auto partial compaction will now be built into the main compaction pipeline and selected heuristically for long histories, rather than being left as an opt-in helper for callers.
+  Rationale: The user explicitly asked for these capabilities to be built in rather than exposed as optional interfaces.
+  Date/Author: 2026-04-08 / OpenCode
+
+- Decision: Compaction PTL retry will use deterministic oldest-history truncation rather than adding another policy layer or another model call type.
+  Rationale: The goal is resilience, not sophistication; a simple local retry strategy is easier to reason about and aligns with the current HiJarvis design level.
+  Date/Author: 2026-04-08 / OpenCode
+
+- Decision: The first artifact restoration layer will restore compacted tool-state summaries and recent skill-use metadata as structured user-visible messages inside the compacted payload, rather than introducing a parallel hidden storage format.
+  Rationale: This keeps the system inspectable and testable while still separating structured restoration from the summary prompt itself.
+  Date/Author: 2026-04-08 / OpenCode
+
 ## Outcomes & Retrospective
 
 The subsystem redesign is now partially implemented. The old monolithic file has been replaced by `packages/jar-core/src/compaction/` with separate files for types, policy, prompt, summary generation, assembly, strategy orchestration, and runtime exports. Runtime, config, and session execution now import from the new subtree. The remaining work is to run tests, fix any breakage, and then finish the documentation and retrospective updates.
@@ -94,6 +137,12 @@ What was achieved in this pass is architectural separation. The code now has exp
 The staged architecture pass is now also complete. HiJarvis now has a compaction pipeline rather than a direct jump from trigger decision to summary compaction. The pipeline currently runs a deterministic lightweight reduction stage over oversized tool results, then runs the summary strategy, then records a final assembly stage. The system also emits and persists richer metadata including stage lists, applied stage names, and a boundary-like summary of what the compacted payload preserved. This is not a literal clone of Claude Code's compact-boundary message model, but it is now structurally much closer to Claude Code's architecture than the previous single-step system.
 
 The full Claude-Code-inspired pass is now complete. The pipeline now includes a snip-style reduction stage, supports layout-aware summary prompt variants, and exposes a partial-compaction entry point that can summarize either the prefix or suffix while preserving the opposite segment. This completes the requested "entire feature" within HiJarvis constraints while keeping message-role compatibility intact.
+
+The snapshot-backed boundary pass is now also complete. HiJarvis no longer relies only on event metadata to remember compaction eras. Session snapshots now persist a first-class compaction boundary, runtime slices history from that boundary before sanitization and compaction, and post-turn compaction writes a fresh boundary immediately after producing a new compacted payload. This is the cleanest boundary design available without changing upstream message-role unions.
+
+The built-in auto-partial and PTL-retry pass is now complete as well. HiJarvis no longer treats partial compaction as a side API only; the main compaction pipeline can now automatically choose a partial strategy for sufficiently long histories, preserving the newest tail while summarizing the older prefix. Summary generation also retries with progressively truncated history when the compaction request itself fails, which closes an important resilience gap compared with the earlier implementation.
+
+The artifact restoration pass is now complete too. HiJarvis compaction no longer relies only on summary text plus preserved raw messages. The pipeline now extracts structured artifacts from pre-compact state, currently including recent tool-state and recent skill-state cues, and renders them back into the compacted payload in a dedicated restoration layer. Artifact metadata also flows through compaction results and events, making the restored state explicit and inspectable.
 
 ## Context and Orientation
 

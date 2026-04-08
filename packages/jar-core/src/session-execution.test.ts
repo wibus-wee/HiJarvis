@@ -69,11 +69,14 @@ test("startSessionExecutionTracker records turn, run, and items", async () => {
       tokenEstimateBefore: 10_000,
       tokenEstimateAfter: 4_000,
       summaryTokens: 256,
+      strategy: "partial",
+      partialDirection: "up_to",
+      partialSplitIndex: 5,
       stageCount: 3,
-      appliedStages: ["lightweight", "summary", "assembly"],
+      appliedStages: ["snip", "summary", "assembly"],
       stages: [
         {
-          stage: "lightweight",
+          stage: "snip",
           applied: true,
           tokenEstimateBefore: 10_000,
           tokenEstimateAfter: 7_000,
@@ -133,8 +136,10 @@ test("startSessionExecutionTracker records turn, run, and items", async () => {
     );
     const compactionItem = items.find((entry) => entry.item.type === "compaction");
     assert.equal(compactionItem?.item.payload.stageCount, 3);
-    assert.deepEqual(compactionItem?.item.payload.appliedStages, ["lightweight", "summary", "assembly"]);
+    assert.deepEqual(compactionItem?.item.payload.appliedStages, ["snip", "summary", "assembly"]);
     assert.equal(compactionItem?.item.payload.boundary?.summaryIncluded, true);
+    assert.equal(compactionItem?.item.payload.strategy, "partial");
+    assert.equal(compactionItem?.item.payload.partialDirection, "up_to");
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
