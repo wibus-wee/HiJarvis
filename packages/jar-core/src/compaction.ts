@@ -3,6 +3,7 @@ import {
   completeSimple,
   type Message,
   type Model,
+  type Usage,
   type UserMessage,
 } from "@mariozechner/pi-ai";
 
@@ -49,7 +50,7 @@ export type CompactionRuntime = {
   onCompaction?: (event: CompactionEvent, messages: Message[]) => void;
 };
 
-export type CompactionKind = "pre_turn" | "mid_turn";
+export type CompactionKind = "pre_turn" | "mid_turn" | "post_turn";
 
 export type CompactionEvent = {
   type: "compaction";
@@ -58,6 +59,76 @@ export type CompactionEvent = {
   tokenEstimateAfter: number;
   summaryTokens: number;
   summaryError?: string;
+};
+
+export type CompactionNowResult = {
+  messages: Message[];
+  summaryTokens: number;
+  summaryError?: string;
+  tokenEstimateAfter: number;
+};
+
+export const getUsageInputTokens = (usage?: Usage): number => {
+  if (!usage) {
+    return 0;
+  }
+  return usage.input > 0 ? usage.input : usage.totalTokens;
+};
+
+export const shouldCompactFromUsage = (
+  usage: Usage | undefined,
+  runtime: Pick<CompactionRuntime, "model" | "settings">,
+): boolean => {
+  const inputTokens = getUsageInputTokens(usage);
+  if (inputTokens <= 0) {
+    return false;
+  }
+  const triggerTokens = Math.floor(
+    runtime.model.contextWindow * runtime.settings.triggerRatio,
+  );
+  return inputTokens >= triggerTokens;
+};
+
+export const compactHistoryNow = async (
+  messages: AgentMessage[],
+  kind: CompactionKind,
+  runtime: CompactionRuntime,
+  signal?: AbortSignal,
+): Promise<CompactionNowResult> => {
+  if (!runtime.settings.enabled) {
+    const tokenEstimateAfter = messages.some((message) => !isLlmMessage(message))
+      ? 0
+      : estimateMessagesTokens(messages as Message[]);
+    return {
+      messages: messages as Message[],
+      summaryTokens: 0,
+      tokenEstimateAfter,
+    };
+  }
+
+  if (messages.some((message) => !isLlmMessage(message))) {
+    return {
+      messages: messages as Message[],
+      summaryTokens: 0,
+      tokenEstimateAfter: 0,
+    };
+  }
+
+  const llmMessages = messages as Message[];
+  const systemPromptTokens = estimateTextTokens(runtime.systemPrompt);
+  const result = await compactHistory(
+    llmMessages,
+    kind,
+    runtime,
+    systemPromptTokens,
+    signal,
+  );
+  return {
+    messages: result.messages,
+    summaryTokens: result.summaryTokens,
+    tokenEstimateAfter: estimateMessagesTokens(result.messages),
+    ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+  };
 };
 
 export const createCompactionTransform = (runtime: CompactionRuntime) => {

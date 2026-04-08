@@ -1,5 +1,11 @@
 import type { AgentEvent, AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 
+import {
+  compactHistoryNow,
+  defaultCompactionSettings,
+  getUsageInputTokens,
+  shouldCompactFromUsage,
+} from "./compaction.js";
 import type { Logger } from "./logger.js";
 import { stripMemoryExcludedPromptContextFromMessage } from "./prompt-context.js";
 import {
@@ -14,7 +20,7 @@ import {
   startSessionExecutionTracker,
 } from "./session-execution.js";
 import { createAgent, type JarRuntimeOptions } from "./runtime.js";
-import { openSession, type SessionTurnTrigger } from "./session-store.js";
+import { openSession, type CompactionEvent, type SessionTurnTrigger } from "./session-store.js";
 import {
   getSkillsCatalogOverlays,
   preparePromptWithSkills,
@@ -178,6 +184,61 @@ export const executePromptInSession = async (
     });
   }
 
+  const compactionSettings =
+    options.compaction ?? defaultCompactionSettings;
+  const compactionRuntime = {
+    model: agent.state.model,
+    systemPrompt: agent.state.systemPrompt,
+    settings: compactionSettings,
+    ...(options.providerConfig.apiKey
+      ? { apiKey: options.providerConfig.apiKey }
+      : {}),
+    ...(logger ? { logger } : {}),
+  };
+
+  const runPostTurnCompaction = async (
+    message: AgentMessage,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (!compactionSettings.enabled) {
+      return;
+    }
+    if (message.role !== "assistant") {
+      return;
+    }
+    if (message.stopReason === "error" || message.stopReason === "aborted") {
+      return;
+    }
+    if (!shouldCompactFromUsage(message.usage, compactionRuntime)) {
+      return;
+    }
+
+    const result = await compactHistoryNow(
+      agent.state.messages,
+      "post_turn",
+      compactionRuntime,
+      signal,
+    );
+    agent.state.messages = result.messages;
+    await session.writeSnapshot(
+      agent.state.messages.map(serializeMessage),
+    );
+
+    const inputTokens = getUsageInputTokens(message.usage);
+    const compactionEvent: CompactionEvent = {
+      type: "compaction",
+      kind: "post_turn",
+      tokenEstimateBefore: inputTokens,
+      tokenEstimateAfter: result.tokenEstimateAfter,
+      summaryTokens: result.summaryTokens,
+      ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+    };
+    await session.appendEvent(compactionEvent);
+    if (tracker) {
+      await tracker.recordCompaction(compactionEvent);
+    }
+  };
+
   agent.subscribe(async (event, signal) => {
     if (signal.aborted) {
       return;
@@ -195,6 +256,7 @@ export const executePromptInSession = async (
 
     if (event.type === "message_end") {
       await session.appendMessage(serializeMessage(event.message));
+      await runPostTurnCompaction(event.message, signal);
     }
 
     if (event.type === "agent_end") {

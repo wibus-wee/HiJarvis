@@ -6,7 +6,7 @@ import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
 export type CompactionEvent = {
   type: "compaction";
-  kind: "pre_turn" | "mid_turn";
+  kind: "pre_turn" | "mid_turn" | "post_turn";
   tokenEstimateBefore: number;
   tokenEstimateAfter: number;
   summaryTokens: number;

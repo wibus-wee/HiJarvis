@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCompactedMessages, type CompactionSettings } from "./compaction.js";
+import {
+  buildCompactedMessages,
+  shouldCompactFromUsage,
+  type CompactionSettings,
+} from "./compaction.js";
+import type { Usage } from "@mariozechner/pi-ai";
 
 const SUMMARY_PREFIX =
   "Another language model started to solve this problem and produced a summary of its thinking process.";
@@ -83,6 +88,21 @@ const settings: CompactionSettings = {
   budgetRatio: 0.8,
   summaryMaxTokens: 1024,
 };
+
+const makeUsage = (input: number): Usage => ({
+  input,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: input,
+  cost: {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0,
+  },
+});
 
 test("buildCompactedMessages drops assistant tail during pre-turn compaction", () => {
   const messages = [
@@ -169,4 +189,31 @@ test("buildCompactedMessages skips summary when summaryText is null", () => {
     }
     return (message.content as string).startsWith(SUMMARY_PREFIX);
   }), false);
+});
+
+test("shouldCompactFromUsage triggers from input tokens only", () => {
+  const runtime = {
+    model: {
+      id: "test-model",
+      name: "test-model",
+      api: "openai-responses" as const,
+      provider: "openai" as const,
+      baseUrl: "https://example.com",
+      reasoning: false,
+      input: ["text"] as ("text" | "image")[],
+      cost: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+      contextWindow: 1000,
+      maxTokens: 1000,
+    },
+    settings,
+  };
+
+  assert.equal(shouldCompactFromUsage(makeUsage(900), runtime), true);
+  assert.equal(shouldCompactFromUsage(makeUsage(899), runtime), false);
+  assert.equal(shouldCompactFromUsage(makeUsage(0), runtime), false);
 });

@@ -239,7 +239,7 @@ Jar is intentionally minimal right now:
 - WeChat transport exists as a dedicated `@pinixai/weixin-bot` long-polling app in `apps/jar-wechat`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven, but retry notices are now mirrored into session `items`
-- prompt compaction is applied via `agent.compaction` to keep long sessions within context limits
+- prompt compaction is applied via `agent.compaction` to keep long sessions within context limits; when assistant usage crosses the trigger threshold, Jar performs a post-turn compaction
 - skills catalog overlays are supported, but full skill bodies remain turn-scoped and are not persisted as long-lived system prompt text
 - no built-in tools beyond text file IO and shell execution
 
