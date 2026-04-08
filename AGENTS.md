@@ -6,6 +6,8 @@
 
 ```bash
 .
+├── 3rd
+│   └── wechat-sdk - extracted WeChat API SDK
 ├── apps
 │   ├── jar-cli - a CLI interface with a readline loop
 │   ├── jar-slack - a Slack bot

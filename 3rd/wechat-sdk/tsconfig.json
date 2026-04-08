@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "declaration": false,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true
+  },
+  "include": ["index.ts", "src/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "src/channel.ts",
+    "src/compat.ts",
+    "src/runtime.ts",
+    "src/monitor/**",
+    "src/messaging/process-message.ts",
+    "src/config/**",
+    "src/auth/accounts.ts",
+    "src/auth/pairing.ts",
+    "src/storage/sync-buf.ts"
+  ]
+}
