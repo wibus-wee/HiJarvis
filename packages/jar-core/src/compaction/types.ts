@@ -19,6 +19,31 @@ export type CompactionEvent = {
   tokenEstimateAfter: number;
   summaryTokens: number;
   summaryError?: string;
+  stageCount?: number;
+  stages?: CompactionStageEvent[];
+  appliedStages?: CompactionStageName[];
+  boundary?: CompactionBoundary;
+};
+
+export type CompactionStageName =
+  | "lightweight"
+  | "summary"
+  | "assembly";
+
+export type CompactionStageEvent = {
+  stage: CompactionStageName;
+  applied: boolean;
+  tokenEstimateBefore: number;
+  tokenEstimateAfter: number;
+  notes?: string;
+};
+
+export type CompactionBoundary = {
+  kind: CompactionKind;
+  summaryIncluded: boolean;
+  summaryMessageCount: number;
+  preservedTailMessageCount: number;
+  preservedUserMessageCount: number;
 };
 
 export type CompactionRuntime = {
@@ -35,6 +60,10 @@ export type CompactionNowResult = {
   summaryTokens: number;
   summaryError?: string;
   tokenEstimateAfter: number;
+  stageCount?: number;
+  stages?: CompactionStageEvent[];
+  appliedStages?: CompactionStageName[];
+  boundary?: CompactionBoundary;
 };
 
 export type CompactionPolicyDecision = {
@@ -55,6 +84,17 @@ export type CompactionResult = {
   summaryText: string | null;
   summaryTokens: number;
   summaryError?: string;
+  stages: CompactionStageEvent[];
+  appliedStages: CompactionStageName[];
+  boundary: CompactionBoundary;
+};
+
+export type LightweightReductionResult = {
+  messages: Message[];
+  tokenEstimateBefore: number;
+  tokenEstimateAfter: number;
+  applied: boolean;
+  notes?: string;
 };
 
 export type BuildCompactedMessagesInput = {

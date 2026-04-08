@@ -69,6 +69,35 @@ test("startSessionExecutionTracker records turn, run, and items", async () => {
       tokenEstimateBefore: 10_000,
       tokenEstimateAfter: 4_000,
       summaryTokens: 256,
+      stageCount: 3,
+      appliedStages: ["lightweight", "summary", "assembly"],
+      stages: [
+        {
+          stage: "lightweight",
+          applied: true,
+          tokenEstimateBefore: 10_000,
+          tokenEstimateAfter: 7_000,
+        },
+        {
+          stage: "summary",
+          applied: true,
+          tokenEstimateBefore: 7_000,
+          tokenEstimateAfter: 4_000,
+        },
+        {
+          stage: "assembly",
+          applied: true,
+          tokenEstimateBefore: 7_000,
+          tokenEstimateAfter: 4_000,
+        },
+      ],
+      boundary: {
+        kind: "pre_turn",
+        summaryIncluded: true,
+        summaryMessageCount: 1,
+        preservedTailMessageCount: 0,
+        preservedUserMessageCount: 2,
+      },
     });
     await tracker.recordNote({
       kind: "skills_warning",
@@ -102,6 +131,10 @@ test("startSessionExecutionTracker records turn, run, and items", async () => {
         "assistant_message",
       ],
     );
+    const compactionItem = items.find((entry) => entry.item.type === "compaction");
+    assert.equal(compactionItem?.item.payload.stageCount, 3);
+    assert.deepEqual(compactionItem?.item.payload.appliedStages, ["lightweight", "summary", "assembly"]);
+    assert.equal(compactionItem?.item.payload.boundary?.summaryIncluded, true);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }

@@ -5,7 +5,7 @@ import {
   estimateMessagesTokens,
   estimateTextTokens,
 } from "./assembly.js";
-import { compactWithSummaryStrategy } from "./strategy-summary.js";
+import { runCompactionPipeline } from "./pipeline.js";
 import type {
   CompactionNowResult,
   CompactionRuntime,
@@ -59,7 +59,7 @@ export const compactHistoryNow = async (
   }
 
   const llmMessages = messages as Message[];
-  const result = await compactWithSummaryStrategy(
+  const result = await runCompactionPipeline(
     llmMessages,
     kind,
     runtime,
@@ -70,6 +70,10 @@ export const compactHistoryNow = async (
     summaryTokens: result.summaryTokens,
     tokenEstimateAfter: estimateMessagesTokens(result.messages),
     ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+    stageCount: result.stages.length,
+    stages: result.stages,
+    appliedStages: result.appliedStages,
+    boundary: result.boundary,
   };
 };
 
@@ -103,7 +107,7 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
         return llmMessages;
       }
 
-      const result = await compactWithSummaryStrategy(
+      const result = await runCompactionPipeline(
         baseHistory,
         "pre_turn",
         runtime,
@@ -118,6 +122,10 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
         tokenEstimateAfter: estimateMessagesTokens(llmMessages),
         summaryTokens: result.summaryTokens,
         ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+        stageCount: result.stages.length,
+        stages: result.stages,
+        appliedStages: result.appliedStages,
+        boundary: result.boundary,
       }, llmMessages);
       return llmMessages;
     }
@@ -127,7 +135,7 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
       return llmMessages;
     }
 
-    const result = await compactWithSummaryStrategy(
+    const result = await runCompactionPipeline(
       llmMessages,
       "mid_turn",
       runtime,
@@ -141,6 +149,10 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
       tokenEstimateAfter: estimateMessagesTokens(llmMessages),
       summaryTokens: result.summaryTokens,
       ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+      stageCount: result.stages.length,
+      stages: result.stages,
+      appliedStages: result.appliedStages,
+      boundary: result.boundary,
     }, llmMessages);
     return llmMessages;
   };

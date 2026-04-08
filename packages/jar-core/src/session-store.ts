@@ -11,6 +11,22 @@ export type CompactionEvent = {
   tokenEstimateAfter: number;
   summaryTokens: number;
   summaryError?: string;
+  stageCount?: number;
+  stages?: Array<{
+    stage: "lightweight" | "summary" | "assembly";
+    applied: boolean;
+    tokenEstimateBefore: number;
+    tokenEstimateAfter: number;
+    notes?: string;
+  }>;
+  appliedStages?: Array<"lightweight" | "summary" | "assembly">;
+  boundary?: {
+    kind: "pre_turn" | "mid_turn" | "post_turn";
+    summaryIncluded: boolean;
+    summaryMessageCount: number;
+    preservedTailMessageCount: number;
+    preservedUserMessageCount: number;
+  };
 };
 
 export type JarEvent = AgentEvent | CompactionEvent;

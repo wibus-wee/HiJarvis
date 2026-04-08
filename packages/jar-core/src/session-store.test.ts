@@ -114,3 +114,58 @@ test("openSession supports turn, run, and item records without changing transcri
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("openSession persists compaction events with staged metadata", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-session-"));
+  try {
+    const session = await openSession({
+      rootDir,
+      provider: "openai",
+      model: "gpt-4o-mini",
+    });
+
+    await session.appendEvent({
+      type: "compaction",
+      kind: "post_turn",
+      tokenEstimateBefore: 12_000,
+      tokenEstimateAfter: 4_500,
+      summaryTokens: 300,
+      stageCount: 3,
+      appliedStages: ["lightweight", "summary", "assembly"],
+      stages: [
+        {
+          stage: "lightweight",
+          applied: true,
+          tokenEstimateBefore: 12_000,
+          tokenEstimateAfter: 8_000,
+        },
+        {
+          stage: "summary",
+          applied: true,
+          tokenEstimateBefore: 8_000,
+          tokenEstimateAfter: 4_500,
+        },
+        {
+          stage: "assembly",
+          applied: true,
+          tokenEstimateBefore: 8_000,
+          tokenEstimateAfter: 4_500,
+        },
+      ],
+      boundary: {
+        kind: "post_turn",
+        summaryIncluded: true,
+        summaryMessageCount: 1,
+        preservedTailMessageCount: 0,
+        preservedUserMessageCount: 2,
+      },
+    });
+
+    const events = await readFile(session.paths.eventsPath, "utf8");
+    assert.match(events, /"stageCount":3/);
+    assert.match(events, /"appliedStages":\["lightweight","summary","assembly"\]/);
+    assert.match(events, /"summaryIncluded":true/);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});

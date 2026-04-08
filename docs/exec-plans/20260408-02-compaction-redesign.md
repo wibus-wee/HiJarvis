@@ -23,6 +23,10 @@ Someone verifying this work should be able to inspect the new directory tree, ru
 - [x] (2026-04-08 00:50Z) Updated `docs/agent-runtime.md` and `docs/README.md` so the repository documentation reflects the new subsystem layout.
 - [x] (2026-04-08 00:55Z) Ran `pnpm --filter jar-core test` successfully after deleting the old monolith and recorded the completed outcome in this plan.
 - [x] (2026-04-08 01:00Z) Recorded final outcomes and retrospective for the first completed architecture pass.
+- [x] (2026-04-08 01:20Z) Expanded the subsystem into a HiJarvis-specific Claude-Code-style staged compaction pipeline with explicit stage results, lightweight reduction before summary compaction, and richer compaction metadata.
+- [x] (2026-04-08 01:25Z) Persisted and exposed staged compaction metadata in session events and tracker items instead of introducing a new synthetic message role.
+- [x] (2026-04-08 01:30Z) Added tests proving lightweight reduction behavior and structured compaction metadata persistence.
+- [x] (2026-04-08 01:35Z) Re-ran `pnpm --filter jar-core test` successfully for the staged architecture pass.
 
 ## Surprises & Discoveries
 
@@ -37,6 +41,12 @@ Someone verifying this work should be able to inspect the new directory tree, ru
 
 - Observation: The old HiJarvis compaction logic moved into the new subtree with less friction than expected because the existing code already had a natural split between policy, summary generation, and assembly helpers; the main work was turning those implicit boundaries into explicit files.
   Evidence: `packages/jar-core/src/compaction/policy.ts`, `packages/jar-core/src/compaction/summary.ts`, and `packages/jar-core/src/compaction/assembly.ts` now map cleanly to the old helper groups from the deleted monolith.
+
+- Observation: HiJarvis cannot directly copy Claude Code's compact-boundary message model because current runtime and persistence paths only accept the existing `AgentMessage` / `Message` role shapes.
+  Evidence: `packages/jar-core/src/compaction/index.ts` still validates only `user`, `assistant`, and `toolResult`, and `packages/jar-core/src/session-store.ts` persists `AgentMessage[]` snapshots directly.
+
+- Observation: We can still capture most of Claude Code's architectural value without a new message role by persisting boundary-like metadata in `CompactionEvent`, `CompactionNowResult`, and tracker items.
+  Evidence: `packages/jar-core/src/compaction/types.ts` now defines `CompactionBoundary`, `CompactionStageEvent`, and `appliedStages`, and `packages/jar-core/src/session-execution.ts` records that structured metadata into session items.
 
 ## Decision Log
 
@@ -60,6 +70,14 @@ Someone verifying this work should be able to inspect the new directory tree, ru
   Rationale: The architectural refactor itself is the primary goal of this pass. Keeping behavior stable reduces migration risk and gives future work a cleaner base.
   Date/Author: 2026-04-08 / OpenCode
 
+- Decision: The Claude Code-inspired pass will adapt the architecture, not the exact message schema. HiJarvis will use structured compaction events and normalized pipeline metadata instead of introducing a new synthetic message role for compact boundaries in this pass.
+  Rationale: This preserves compatibility with current upstream message unions while still delivering the architectural benefits of staged compaction.
+  Date/Author: 2026-04-08 / OpenCode
+
+- Decision: The first lightweight reduction stage will target oversized `toolResult` text blocks only, using a deterministic textual compaction rather than a model-generated summary.
+  Rationale: This is the closest low-risk analogue to Claude Code's pre-summary slimming stages and gives immediate token savings without adding another model call.
+  Date/Author: 2026-04-08 / OpenCode
+
 ## Outcomes & Retrospective
 
 The subsystem redesign is now partially implemented. The old monolithic file has been replaced by `packages/jar-core/src/compaction/` with separate files for types, policy, prompt, summary generation, assembly, strategy orchestration, and runtime exports. Runtime, config, and session execution now import from the new subtree. The remaining work is to run tests, fix any breakage, and then finish the documentation and retrospective updates.
@@ -67,6 +85,8 @@ The subsystem redesign is now partially implemented. The old monolithic file has
 This first architecture pass is now complete. The monolithic `packages/jar-core/src/compaction.ts` file has been removed. The new subtree exists and is wired into runtime, config, and session execution. `pnpm --filter jar-core test` passes, which demonstrates that the moved summary-based behavior still works through the new subsystem. The main remaining gap is not correctness but capability: the new architecture is ready for future staged compaction features, but those richer strategies have not been implemented yet.
 
 What was achieved in this pass is architectural separation. The code now has explicit boundaries between policy, prompt text, summary generation, compacted-payload assembly, and top-level orchestration. That directly satisfies the purpose of replacing the old one-file design with a first-class subsystem. What was intentionally not achieved in this pass is Claude-Code-level functionality such as lightweight pre-summary reductions, partial compaction, or metadata-rich boundary records. Those should now be added as follow-up changes on top of the new structure rather than mixed into a monolith.
+
+The staged architecture pass is now also complete. HiJarvis now has a compaction pipeline rather than a direct jump from trigger decision to summary compaction. The pipeline currently runs a deterministic lightweight reduction stage over oversized tool results, then runs the summary strategy, then records a final assembly stage. The system also emits and persists richer metadata including stage lists, applied stage names, and a boundary-like summary of what the compacted payload preserved. This is not a literal clone of Claude Code's compact-boundary message model, but it is now structurally much closer to Claude Code's architecture than the previous single-step system.
 
 ## Context and Orientation
 
@@ -93,6 +113,8 @@ This plan uses the term “strategy” in plain language to mean one algorithm f
 This plan uses the term “assembly” to mean the code that converts a structured compaction result into the final `Message[]` array stored in agent state. The point of this layer is to keep summary generation separate from final payload construction.
 
 This plan uses the term “policy” to mean code that decides whether compaction should run, what kind should run, and what state should be logged about the decision. Today this logic is mostly `shouldCompactFromUsage(...)`. After the redesign, it should become explicit and extensible.
+
+This plan also uses the term “stage” to mean one step in a compaction pipeline. A stage may shrink oversized tool results, summarize older history, or assemble the final compacted payload. Claude Code uses several stages before and after summarization. HiJarvis will adopt that staged shape, adapted to the message and persistence model already in this repository.
 
 ## Plan of Work
 
@@ -296,6 +318,8 @@ Observed implementation notes:
     - The old `packages/jar-core/src/compaction.ts` file was deleted.
     - The new subtree now contains `types.ts`, `policy.ts`, `prompt.ts`, `summary.ts`, `assembly.ts`, `strategy-summary.ts`, and `index.ts`.
     - The former `packages/jar-core/src/compaction.test.ts` test file now lives at `packages/jar-core/src/compaction/assembly.test.ts`.
+    - The staged pass added `packages/jar-core/src/compaction/lightweight.ts`, `packages/jar-core/src/compaction/lightweight.test.ts`, and `packages/jar-core/src/compaction/pipeline.ts`.
+    - `CompactionEvent` and session tracker items now persist stage metadata and boundary-like metadata.
 
 Expected architecture proof to mention in the final retrospective:
 
@@ -360,3 +384,5 @@ Keep token-estimation helpers as close as possible to the layer that uses them. 
 Revision note: Updated after the first migration pass to record that the new `packages/jar-core/src/compaction/` subtree now exists, imports have been rewired, the old monolith has been removed, and the remaining work is validation plus final documentation cleanup.
 
 Revision note: Updated after validation to record passing `jar-core` tests, completed documentation updates, and the end state of the first architecture pass.
+
+Revision note: Updated again after implementing the Claude-Code-inspired staged compaction architecture, including the lightweight reduction stage, pipeline metadata, session event persistence, and passing `jar-core` tests.

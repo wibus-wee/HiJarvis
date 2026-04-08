@@ -221,6 +221,10 @@ export const startSessionExecutionTracker = async (
           tokenEstimateAfter: event.tokenEstimateAfter,
           summaryTokens: event.summaryTokens,
           ...(event.summaryError === undefined ? {} : { summaryError: event.summaryError }),
+          ...(event.stageCount === undefined ? {} : { stageCount: event.stageCount }),
+          ...(event.stages === undefined ? {} : { stages: event.stages }),
+          ...(event.appliedStages === undefined ? {} : { appliedStages: event.appliedStages }),
+          ...(event.boundary === undefined ? {} : { boundary: event.boundary }),
         },
       });
     },

@@ -241,6 +241,8 @@ const extractToolResultText = (message: Message): string => {
     .join("\n");
 };
 
+export { extractToolResultText };
+
 const truncateText = (value: string, maxTokens: number): string => {
   const maxChars = Math.max(0, maxTokens * 4);
   if (value.length <= maxChars) {

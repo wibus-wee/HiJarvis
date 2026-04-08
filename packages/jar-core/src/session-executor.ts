@@ -201,6 +201,10 @@ export const executePromptInSession = async (
       tokenEstimateAfter: result.tokenEstimateAfter,
       summaryTokens: result.summaryTokens,
       ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+      ...(result.stageCount === undefined ? {} : { stageCount: result.stageCount }),
+      ...(result.stages === undefined ? {} : { stages: result.stages }),
+      ...(result.appliedStages === undefined ? { } : { appliedStages: result.appliedStages }),
+      ...(result.boundary === undefined ? {} : { boundary: result.boundary }),
     };
     await session.appendEvent(compactionEvent);
     if (tracker) {
