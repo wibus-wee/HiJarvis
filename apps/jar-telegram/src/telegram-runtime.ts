@@ -9,6 +9,7 @@ import {
   createLogger,
   executePromptInSession,
   loadRuntimeConfig,
+  SessionExecutionError,
   type LoadedRuntimeConfig,
   type Logger,
 } from "@hijarvis/jar-core";
@@ -646,6 +647,8 @@ const respondInTelegramConversation = async (options: {
   const startedAt = Date.now();
   const textStream = new AsyncTextDeltaQueue();
   let emittedText = false;
+  let turnId: string | undefined;
+  let runId: string | undefined;
 
   const responseTask = executePromptInSession({
     ...options.runtime.runtime,
@@ -658,6 +661,13 @@ const respondInTelegramConversation = async (options: {
     writers: {
       stderr: process.stderr,
     },
+    turnTrigger: "platform_event",
+    turnInputMetadata: {
+      platform: "telegram",
+      conversationKey: options.conversationKey,
+      chatId: String(options.context.chat.id),
+      messageId: options.context.msg.message_id,
+    },
     onEvent(event) {
       if (
         event.type === "message_update" &&
@@ -668,7 +678,8 @@ const respondInTelegramConversation = async (options: {
       }
     },
   })
-    .then(({ outputText }) => {
+    .then((result) => {
+      const { outputText } = result;
       if (!emittedText) {
         textStream.push(
           outputText.trim().length > 0
@@ -678,7 +689,7 @@ const respondInTelegramConversation = async (options: {
       }
 
       textStream.close();
-      return outputText;
+      return result;
     })
     .catch((error: unknown) => {
       textStream.fail(toError(error));
@@ -690,22 +701,31 @@ const respondInTelegramConversation = async (options: {
       textStream,
       createReplyOptions(options.context),
     );
-    const outputText = await responseTask;
+    const result = await responseTask;
+    turnId = result.turnId;
+    runId = result.runId;
+    const outputText = result.outputText;
 
     options.logger.info("telegram.reply_posted", {
       durationMs: Date.now() - startedAt,
       replyChars: outputText.trim().length,
       sessionId: options.sessionId,
+      turnId: result.turnId,
+      runId: result.runId,
       conversationKey: options.conversationKey,
       streamed: true,
     });
   } catch (error) {
-    await responseTask.catch(() => undefined);
+    const settledResult = await responseTask.catch(() => undefined);
+    turnId = turnId ?? settledResult?.turnId;
+    runId = runId ?? settledResult?.runId;
     const normalizedError = toError(error);
     options.logger.error("telegram.reply_failed", {
       durationMs: Date.now() - startedAt,
       message: normalizedError.message,
       sessionId: options.sessionId,
+      turnId: turnId ?? (error instanceof SessionExecutionError ? error.turnId : undefined),
+      runId: runId ?? (error instanceof SessionExecutionError ? error.runId : undefined),
       conversationKey: options.conversationKey,
     });
 

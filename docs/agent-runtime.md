@@ -21,7 +21,7 @@ CLI invocation 仍然保持原有流程：
 6. Creates a `pi-agent-core` `Agent`.
 7. Executes prompts via `packages/jar-core/src/prompt-executor.ts` for one-shot runs, or `packages/jar-core/src/session-executor.ts` when `--session` is used.
 8. Either streams assistant text to stdout through the CLI adapter or renders the Ink TUI package (`--repl`).
-9. Optionally persists session transcripts and event logs through `packages/jar-core/src/session-store.ts`.
+9. Optionally persists session transcripts plus turn/run/item execution records through `packages/jar-core/src/session-store.ts`.
 
 Slack gateway 的流程不同：
 
@@ -32,7 +32,7 @@ Slack gateway 的流程不同：
 5. On a new `@mention`, subscribes the Slack thread, collects a bounded window of top-level channel messages before the mention, and composes an observed-context prompt.
 6. On follow-up messages inside a subscribed Slack thread, routes the message into the same Jar session without rebuilding channel history.
 7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
-8. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
+8. Persists transcript/event/snapshot data plus session-scoped turn/run/item records through the same `packages/jar-core/src/session-store.ts`.
 9. Emits summary logs through `packages/jar-core/src/logger.ts` so the request path is readable without replaying raw events.
 
 Telegram gateway 则是：
@@ -45,7 +45,7 @@ Telegram gateway 则是：
 6. Builds a Telegram prompt from the current message, optional reply context, and any skipped messages.
 7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
 8. Streams assistant text back to Telegram through `@grammyjs/stream`.
-9. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
+9. Persists transcript/event/snapshot data plus session-scoped turn/run/item records through the same `packages/jar-core/src/session-store.ts`.
 
 WeChat gateway 则是：
 
@@ -57,7 +57,7 @@ WeChat gateway 则是：
 6. Builds a WeChat prompt from the current message and any skipped messages.
 7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
 8. Posts the final assistant text back through `bot.reply()`, with typing indicators around the LLM turn.
-9. Persists transcript/event/snapshot data through the same `packages/jar-core/src/session-store.ts`.
+9. Persists transcript/event/snapshot data plus session-scoped turn/run/item records through the same `packages/jar-core/src/session-store.ts`.
 
 ## Entrypoint
 
@@ -164,11 +164,13 @@ Prompt assembly is now split into two layers:
 
 - creates a fresh `Agent`
 - restores the persisted Jar session
+- creates one explicit `turn` and one `run(kind=act)` for the current request
 - sanitizes older persisted user messages so previous memory-excluded contextual fragments do not keep accumulating in future context windows
 - appends runtime events/messages back into the session store
+- maps the current execution into structured `items` such as `user_input`, `assistant_message`, `tool_call`, `tool_result`, `retry_notice`, and `compaction`
 - emits summary logs for prompt/tool boundaries
 - executes the prompt using the same retry/timeout policy
-- returns the accumulated assistant text for the caller to post back to the platform
+- returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
 
 The current built-in tools are:
 
@@ -195,7 +197,7 @@ Jar does not currently render:
 - structured reasoning blocks
 - persisted transcripts
 
-Slack gateway additionally emits request-level summary logs. These logs intentionally summarize stage boundaries instead of mirroring every streaming delta, which keeps long-running Slack sessions readable at `info` level.
+Slack, Telegram, and WeChat gateways additionally emit request-level summary logs. These logs intentionally summarize stage boundaries instead of mirroring every streaming delta, which keeps long-running sessions readable at `info` level. When the execution seam is used, the core logs also attach `turnId` and `runId` to prompt/tool stage records.
 
 In `--repl` mode, `packages/jar-repl-ink/src/repl.tsx` subscribes to the same event stream but routes it into an Ink state reducer instead of writing directly to stdout/stderr. The TUI currently renders:
 
@@ -228,10 +230,25 @@ Jar is intentionally minimal right now:
 - Telegram transport exists as a dedicated grammY long-polling app in `apps/jar-telegram`
 - WeChat transport exists as a dedicated `@pinixai/weixin-bot` long-polling app in `apps/jar-wechat`
 - no provider-specific auth refresh flow
-- retry behavior is process-local and config-driven; there is no persisted retry history
+- retry behavior is process-local and config-driven, but retry notices are now mirrored into session `items`
 - prompt compaction is applied via `agent.compaction` to keep long sessions within context limits
 - skills catalog overlays are supported, but full skill bodies remain turn-scoped and are not persisted as long-lived system prompt text
 - no built-in tools beyond text file IO and shell execution
+
+## Session Execution Model
+
+Jar 现在显式区分四层执行对象：
+
+- `session`: 长期持久化的会话容器，也是恢复模型上下文的边界
+- `turn`: 一次输入触发的一单位工作
+- `run`: 某个 `turn` 的一次具体执行；当前默认只有一个 `run(kind=act)`
+- `item`: `run` 内的细粒度审计记录，例如 assistant delta、tool 调用、retry 通知、compaction
+
+当前实现里：
+
+- `messages.jsonl` 和 `session.json` 仍然是上下文恢复的唯一来源
+- `turns.jsonl`、`runs.jsonl`、`items.jsonl` 只承担执行审计与后续扩展职责
+- `events.jsonl` 继续保留原始底层事件流，不被 `items` 取代
 
 If any of these behaviors change, update this document together with `apps/jar-cli/src/main.ts`, `packages/jar-core/src/runtime.ts`, and any affected adapter package.
 

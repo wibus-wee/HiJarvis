@@ -80,10 +80,21 @@ type ManagedShellStatus =
   | "timed_out"
   | "buffer_exceeded";
 
-type ExecaShellResult = Awaited<ReturnType<typeof execaCommand>>;
-type ManagedSubprocess = Promise<ExecaShellResult> & {
+type ExecaShellResult = {
+  all?: string;
+  exitCode: number;
+  signal?: string;
+  failed: boolean;
+  timedOut: boolean;
+  isMaxBuffer: boolean;
+  stdout?: string;
+  stderr?: string;
+};
+
+type ManagedSubprocess = {
   all: NodeJS.ReadableStream | undefined;
-  kill: (signal?: string | number) => boolean;
+  kill: (signal?: NodeJS.Signals | number) => boolean;
+  wait: () => Promise<ExecaShellResult>;
 };
 
 type ManagedShell = {
@@ -331,7 +342,7 @@ const createShellManager = (options: ToolOptions): ShellManager => {
     },
     startShell: async (params) => {
       const shellId = randomUUID();
-      const subprocess = execaCommand(params.command, {
+      const subprocess = createManagedSubprocess(execaCommand(params.command, {
         all: true,
         cwd: params.resolvedWorkingDirectory,
         maxBuffer: options.maxCommandOutputBytes,
@@ -341,7 +352,7 @@ const createShellManager = (options: ToolOptions): ShellManager => {
         ...(params.background
           ? {}
           : { timeout: options.commandTimeoutMs }),
-      }) as unknown as ManagedSubprocess;
+      }));
       const shell: ManagedShell = {
         shellId,
         command: params.command,
@@ -396,6 +407,35 @@ const createShellManager = (options: ToolOptions): ShellManager => {
   };
 };
 
+const createManagedSubprocess = (
+  subprocess: {
+    all: NodeJS.ReadableStream | undefined;
+    kill: (signal?: NodeJS.Signals | number) => boolean;
+    then: PromiseLike<Partial<ExecaShellResult>>["then"];
+  },
+): ManagedSubprocess => {
+  return {
+    all: subprocess.all,
+    kill: (signal) => subprocess.kill(signal),
+    wait: async () => normalizeShellResult(await Promise.resolve(subprocess)),
+  };
+};
+
+const normalizeShellResult = (
+  result: Partial<ExecaShellResult>,
+): ExecaShellResult => {
+  return {
+    exitCode: result.exitCode ?? 0,
+    failed: result.failed === true,
+    timedOut: result.timedOut === true,
+    isMaxBuffer: result.isMaxBuffer === true,
+    ...(typeof result.all === "string" ? { all: result.all } : {}),
+    ...(result.signal === undefined ? {} : { signal: result.signal }),
+    ...(typeof result.stdout === "string" ? { stdout: result.stdout } : {}),
+    ...(typeof result.stderr === "string" ? { stderr: result.stderr } : {}),
+  };
+};
+
 const observeShell = async (shell: ManagedShell): Promise<void> => {
   const allOutput = shell.subprocess.all;
   if (allOutput !== undefined) {
@@ -406,7 +446,7 @@ const observeShell = async (shell: ManagedShell): Promise<void> => {
   }
 
   try {
-    const result = await shell.subprocess;
+    const result = await shell.subprocess.wait();
     updateShellFromResult(shell, result);
   } catch (error) {
     updateShellFromFailure(shell, error);

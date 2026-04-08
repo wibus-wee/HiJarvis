@@ -4,14 +4,18 @@ import type { Logger } from "./logger.js";
 import { stripMemoryExcludedPromptContextFromMessage } from "./prompt-context.js";
 import {
   executePromptWithPolicy,
-  type PromptInput,
+  type PromptExecutionObserver,
   type PromptExecutionPolicy,
+  type PromptInput,
 } from "./prompt-executor.js";
-import { createAgent, type JarRuntimeOptions } from "./runtime.js";
-import { openSession } from "./session-store.js";
 import {
-  preparePromptWithSkills,
-} from "./skills.js";
+  countPromptMessages,
+  estimatePromptChars,
+  startSessionExecutionTracker,
+} from "./session-execution.js";
+import { createAgent, type JarRuntimeOptions } from "./runtime.js";
+import { openSession, type SessionTurnTrigger } from "./session-store.js";
+import { preparePromptWithSkills } from "./skills.js";
 import { createTools, type ToolOptions } from "./tools.js";
 
 type SessionExecutionWriters = {
@@ -35,13 +39,41 @@ export type SessionPromptOptions = {
   providerConfig: JarRuntimeOptions["providerConfig"];
   logger?: Logger;
   serializeMessage?: (message: AgentMessage) => AgentMessage;
+  turnTrigger?: SessionTurnTrigger;
+  turnInputMetadata?: Record<string, unknown>;
   writers?: SessionExecutionWriters;
 };
 
 export type SessionPromptResult = {
   outputText: string;
   sessionId: string;
+  turnId: string;
+  runId: string;
 };
+
+export class SessionExecutionError extends Error {
+  readonly sessionId: string;
+  readonly turnId?: string;
+  readonly runId?: string;
+
+  constructor(options: {
+    message: string;
+    sessionId: string;
+    turnId?: string;
+    runId?: string;
+    cause?: unknown;
+  }) {
+    super(options.message, options.cause === undefined ? {} : { cause: options.cause });
+    this.name = "SessionExecutionError";
+    this.sessionId = options.sessionId;
+    if (options.turnId !== undefined) {
+      this.turnId = options.turnId;
+    }
+    if (options.runId !== undefined) {
+      this.runId = options.runId;
+    }
+  }
+}
 
 const defaultWriters: SessionExecutionWriters = {
   stderr: process.stderr,
@@ -51,6 +83,9 @@ export const executePromptInSession = async (
   options: SessionPromptOptions,
 ): Promise<SessionPromptResult> => {
   const startTime = Date.now();
+  let tracker:
+    | Awaited<ReturnType<typeof startSessionExecutionTracker>>
+    | undefined;
   const session = await openSession({
     rootDir: options.sessionsRootDir,
     sessionId: options.sessionId,
@@ -70,6 +105,9 @@ export const executePromptInSession = async (
     ...(options.logger ? { logger: options.logger } : {}),
     compactionEventSink: (event) => {
       void session.appendEvent(event);
+      if (tracker) {
+        void tracker.recordCompaction(event);
+      }
     },
     tools: createTools(options.toolOptions),
   });
@@ -90,10 +128,21 @@ export const executePromptInSession = async (
       : { triggerText: options.skillTriggerText }),
     ...(logger === undefined ? {} : { logger }),
   });
+  tracker = await startSessionExecutionTracker({
+    session,
+    prompt: preparedPrompt.prompt,
+    trigger: options.turnTrigger ?? "user_input",
+    ...(logger === undefined ? {} : { logger }),
+    ...(options.turnInputMetadata === undefined
+      ? {}
+      : { turnInputMetadata: options.turnInputMetadata }),
+  });
 
   let outputText = "";
 
   logger?.info("session.prompt_started", {
+    turnId: tracker.turnId,
+    runId: tracker.runId,
     existingMessages: session.messages.length,
     promptChars: estimatePromptChars(preparedPrompt.prompt),
     promptMessageCount: countPromptMessages(preparedPrompt.prompt),
@@ -101,7 +150,15 @@ export const executePromptInSession = async (
     skills: preparedPrompt.injectedSkills,
   });
   for (const warning of preparedPrompt.warnings) {
-    logger?.warn("skills.injection_failed", { message: warning });
+    logger?.warn("skills.injection_failed", {
+      turnId: tracker.turnId,
+      runId: tracker.runId,
+      message: warning,
+    });
+    await tracker.recordNote({
+      kind: "skills_warning",
+      message: warning,
+    });
   }
 
   agent.subscribe(async (event, signal) => {
@@ -110,6 +167,7 @@ export const executePromptInSession = async (
     }
 
     await session.appendEvent(event);
+    await tracker.recordEvent(event);
 
     if (
       event.type === "message_update" &&
@@ -123,13 +181,24 @@ export const executePromptInSession = async (
     }
 
     if (event.type === "agent_end") {
-      await session.writeSnapshot(agent.state.messages.map(serializeMessage));
+      await session.writeSnapshot(
+        agent.state.messages.map(serializeMessage),
+      );
     }
 
-    logAgentEvent(logger, event);
+    logAgentEvent(logger, tracker.turnId, tracker.runId, event);
 
     await options.onEvent?.(event);
   });
+
+  const promptObserver: PromptExecutionObserver = {
+    onAttemptFailed: async (failure) => {
+      await tracker.recordRetryNotice(failure);
+    },
+    onRetryScheduled: async (event) => {
+      await tracker.recordRetryNotice(event);
+    },
+  };
 
   try {
     await executePromptWithPolicy(
@@ -138,17 +207,30 @@ export const executePromptInSession = async (
       options.execution,
       options.writers ?? defaultWriters,
       logger,
+      promptObserver,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    await tracker.fail(message);
     logger?.error("session.prompt_failed", {
+      turnId: tracker.turnId,
+      runId: tracker.runId,
       durationMs: Date.now() - startTime,
       message,
     });
-    throw error;
+    throw new SessionExecutionError({
+      message,
+      sessionId: session.sessionId,
+      turnId: tracker.turnId,
+      runId: tracker.runId,
+      cause: error,
+    });
   }
 
+  await tracker.complete(outputText);
   logger?.info("session.prompt_finished", {
+    turnId: tracker.turnId,
+    runId: tracker.runId,
     durationMs: Date.now() - startTime,
     outputChars: outputText.trim().length,
   });
@@ -156,85 +238,17 @@ export const executePromptInSession = async (
   return {
     outputText,
     sessionId: session.sessionId,
+    turnId: tracker.turnId,
+    runId: tracker.runId,
   };
 };
 
-const countPromptMessages = (prompt: PromptInput): number => {
-  if (typeof prompt === "string") {
-    return 1;
-  }
-
-  return Array.isArray(prompt) ? prompt.length : 1;
-};
-
-const estimatePromptChars = (prompt: PromptInput): number => {
-  if (typeof prompt === "string") {
-    return prompt.length;
-  }
-
-  const messages = Array.isArray(prompt) ? prompt : [prompt];
-  return messages.reduce((sum, message) => sum + estimateMessageChars(message), 0);
-};
-
-const estimateMessageChars = (message: AgentMessage): number => {
-  if (!("role" in message)) {
-    return 0;
-  }
-
-  if (message.role === "user") {
-    if (typeof message.content === "string") {
-      return message.content.length;
-    }
-
-    return message.content.reduce((sum, item) => {
-      if (item.type === "text") {
-        return sum + item.text.length;
-      }
-
-      if (item.type === "image") {
-        return sum + item.data.length;
-      }
-
-      return sum;
-    }, 0);
-  }
-
-  if (message.role === "assistant") {
-    return message.content.reduce((sum, item) => {
-      if (item.type === "text") {
-        return sum + item.text.length;
-      }
-
-      if (item.type === "thinking") {
-        return sum + item.thinking.length;
-      }
-
-      if (item.type === "toolCall") {
-        return sum + item.name.length + JSON.stringify(item.arguments ?? {}).length;
-      }
-
-      return sum;
-    }, 0);
-  }
-
-  if (message.role === "toolResult") {
-    return message.content.reduce((sum, item) => {
-      if (item.type === "text") {
-        return sum + item.text.length;
-      }
-
-      if (item.type === "image") {
-        return sum + item.data.length;
-      }
-
-      return sum;
-    }, 0);
-  }
-
-  return 0;
-};
-
-const logAgentEvent = (logger: Logger | undefined, event: AgentEvent): void => {
+const logAgentEvent = (
+  logger: Logger | undefined,
+  turnId: string,
+  runId: string,
+  event: AgentEvent,
+): void => {
   if (!logger) {
     return;
   }
@@ -242,17 +256,23 @@ const logAgentEvent = (logger: Logger | undefined, event: AgentEvent): void => {
   switch (event.type) {
     case "tool_execution_start":
       logger.info("session.tool_started", {
+        turnId,
+        runId,
         toolName: event.toolName,
         args: event.args,
       });
       break;
     case "tool_execution_end":
       logger.info("session.tool_finished", {
+        turnId,
+        runId,
         toolName: event.toolName,
       });
       break;
     case "message_end":
       logger.debug("session.message_recorded", {
+        turnId,
+        runId,
         role: event.message.role,
       });
       break;

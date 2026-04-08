@@ -7,6 +7,7 @@ import {
   buildTurnPrompt,
   createLogger,
   executePromptInSession,
+  SessionExecutionError,
   loadRuntimeConfig,
   type LoadedRuntimeConfig,
   type Logger,
@@ -899,22 +900,34 @@ const respondInSlackThread = async ({
   logger: Logger;
 }): Promise<void> => {
   const startedAt = Date.now();
+  let turnId: string | undefined;
+  let runId: string | undefined;
   try {
     logger.info("slack.reply_generation_started", {
       promptChars: prompt.length,
     });
-    const { outputText } = await executePromptInSession({
+    const execution = await executePromptInSession({
       ...runtime.runtime,
       toolOptions: runtime.toolOptions,
       sessionsRootDir: runtime.sessions.rootDir,
       sessionId,
       prompt,
       skillTriggerText,
+      turnTrigger: "platform_event",
+      turnInputMetadata: {
+        platform: "slack",
+        scopeKey,
+        channel,
+        threadTs,
+      },
       logger,
       writers: {
         stderr: process.stderr,
       },
     });
+    turnId = execution.turnId;
+    runId = execution.runId;
+    const { outputText } = execution;
 
     const reply = outputText.trim().length > 0
       ? outputText
@@ -933,6 +946,8 @@ const respondInSlackThread = async ({
       durationMs: Date.now() - startedAt,
       replyChars: reply.length,
       sessionId,
+      turnId,
+      runId,
       scopeKey,
       replyTs: response.ts,
     });
@@ -942,6 +957,8 @@ const respondInSlackThread = async ({
       durationMs: Date.now() - startedAt,
       message,
       sessionId,
+      turnId: turnId ?? (error instanceof SessionExecutionError ? error.turnId : undefined),
+      runId: runId ?? (error instanceof SessionExecutionError ? error.runId : undefined),
       scopeKey,
     });
 

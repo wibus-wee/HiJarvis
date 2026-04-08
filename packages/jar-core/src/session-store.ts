@@ -50,6 +50,117 @@ export type SessionEventRecord = {
   event: JarEvent;
 };
 
+export type SessionTurnTrigger =
+  | "user_input"
+  | "platform_event"
+  | "automation"
+  | "spawn_result"
+  | "replay";
+
+export type SessionTurnStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type SessionRunKind =
+  | "act"
+  | "plan"
+  | "retry"
+  | "replay"
+  | "recovery"
+  | "summarize";
+
+export type SessionRunStatus =
+  | "running"
+  | "completed"
+  | "failed"
+  | "aborted";
+
+export type SessionItemType =
+  | "user_input"
+  | "assistant_message"
+  | "thinking"
+  | "plan_step"
+  | "tool_call"
+  | "tool_result"
+  | "retry_notice"
+  | "spawn_call"
+  | "spawn_result"
+  | "compaction"
+  | "note";
+
+export type SessionItemStatus = "delta" | "completed";
+
+export type SessionTurnInput = {
+  promptPreview: string;
+  promptChars: number;
+  promptMessageCount: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type SessionTurnOutput = {
+  outputText: string;
+  outputChars: number;
+};
+
+export type SessionTurn = {
+  turnId: string;
+  sessionId: string;
+  trigger: SessionTurnTrigger;
+  status: SessionTurnStatus;
+  input: SessionTurnInput;
+  output?: SessionTurnOutput;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+};
+
+export type SessionRun = {
+  runId: string;
+  turnId: string;
+  kind: SessionRunKind;
+  sequence: number;
+  status: SessionRunStatus;
+  startedAt: number;
+  completedAt?: number;
+  error?: string;
+};
+
+export type SessionItem = {
+  itemId: string;
+  runId: string;
+  type: SessionItemType;
+  status: SessionItemStatus;
+  payload: Record<string, unknown>;
+  createdAt: number;
+};
+
+export type SessionTurnRecord = {
+  v: 1;
+  type: "turn";
+  sessionId: string;
+  recordedAt: number;
+  turn: SessionTurn;
+};
+
+export type SessionRunRecord = {
+  v: 1;
+  type: "run";
+  sessionId: string;
+  recordedAt: number;
+  run: SessionRun;
+};
+
+export type SessionItemRecord = {
+  v: 1;
+  type: "item";
+  sessionId: string;
+  recordedAt: number;
+  item: SessionItem;
+};
+
 export type SessionPaths = {
   rootDir: string;
   sessionDir: string;
@@ -57,6 +168,9 @@ export type SessionPaths = {
   messagesPath: string;
   snapshotPath: string;
   eventsPath: string;
+  turnsPath: string;
+  runsPath: string;
+  itemsPath: string;
 };
 
 export type OpenSessionOptions = {
@@ -73,6 +187,9 @@ export type SessionHandle = {
   messages: AgentMessage[];
   appendMessage: (message: AgentMessage) => Promise<void>;
   appendEvent: (event: JarEvent) => Promise<void>;
+  appendTurn: (turn: SessionTurn) => Promise<void>;
+  appendRun: (run: SessionRun) => Promise<void>;
+  appendItem: (item: SessionItem) => Promise<void>;
   writeSnapshot: (messages: AgentMessage[]) => Promise<void>;
 };
 
@@ -109,6 +226,9 @@ export const openSession = async (
     messagesPath: path.join(sessionDir, "messages.jsonl"),
     snapshotPath: path.join(sessionDir, "session.json"),
     eventsPath: path.join(sessionDir, "events.jsonl"),
+    turnsPath: path.join(sessionDir, "turns.jsonl"),
+    runsPath: path.join(sessionDir, "runs.jsonl"),
+    itemsPath: path.join(sessionDir, "items.jsonl"),
   };
 
   await mkdir(paths.sessionDir, { recursive: true });
@@ -178,6 +298,48 @@ export const openSession = async (
     });
   };
 
+  const appendTurn = async (turn: SessionTurn): Promise<void> => {
+    await enqueue(async () => {
+      const record: SessionTurnRecord = {
+        v: 1,
+        type: "turn",
+        sessionId,
+        recordedAt: Date.now(),
+        turn,
+      };
+
+      await appendFile(paths.turnsPath, `${JSON.stringify(record)}\n`, "utf8");
+    });
+  };
+
+  const appendRun = async (run: SessionRun): Promise<void> => {
+    await enqueue(async () => {
+      const record: SessionRunRecord = {
+        v: 1,
+        type: "run",
+        sessionId,
+        recordedAt: Date.now(),
+        run,
+      };
+
+      await appendFile(paths.runsPath, `${JSON.stringify(record)}\n`, "utf8");
+    });
+  };
+
+  const appendItem = async (item: SessionItem): Promise<void> => {
+    await enqueue(async () => {
+      const record: SessionItemRecord = {
+        v: 1,
+        type: "item",
+        sessionId,
+        recordedAt: Date.now(),
+        item,
+      };
+
+      await appendFile(paths.itemsPath, `${JSON.stringify(record)}\n`, "utf8");
+    });
+  };
+
   const writeSnapshot = async (currentMessages: AgentMessage[]): Promise<void> => {
     await enqueue(async () => {
       const snapshotRecord: SessionSnapshot = {
@@ -212,6 +374,9 @@ export const openSession = async (
     messages,
     appendMessage,
     appendEvent,
+    appendTurn,
+    appendRun,
+    appendItem,
     writeSnapshot,
   };
 };
@@ -229,7 +394,17 @@ const generateSessionId = (): string => {
   return `sess_${stamp}_${time}_${suffix}`;
 };
 
+export const generateSessionTurnId = (): string => generateRecordId("turn");
+
+export const generateSessionRunId = (): string => generateRecordId("run");
+
+export const generateSessionItemId = (): string => generateRecordId("item");
+
 const pad2 = (value: number): string => value.toString().padStart(2, "0");
+
+const generateRecordId = (prefix: "turn" | "run" | "item"): string => {
+  return `${prefix}_${crypto.randomBytes(6).toString("hex")}`;
+};
 
 const assertValidSessionId = (sessionId: string): void => {
   if (sessionId.trim().length === 0) {

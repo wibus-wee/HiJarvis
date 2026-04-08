@@ -45,12 +45,30 @@ type PromptExecutionWriters = {
   stderr: Pick<NodeJS.WriteStream, "write">;
 };
 
+export type PromptExecutionObserver = {
+  onAttemptFailed?: (failure: {
+    attempt: number;
+    totalAttempts: number;
+    category: PromptErrorCategory;
+    retryable: boolean;
+    message: string;
+  }) => Promise<void> | void;
+  onRetryScheduled?: (event: {
+    attempt: number;
+    totalAttempts: number;
+    nextAttempt: number;
+    delayMs: number;
+    category: PromptErrorCategory;
+  }) => Promise<void> | void;
+};
+
 export const executePromptWithPolicy = async (
   agent: PromptAgent,
   prompt: PromptInput,
   policy: PromptExecutionPolicy,
   writers: PromptExecutionWriters,
   logger?: Logger,
+  observer?: PromptExecutionObserver,
 ): Promise<void> => {
   const totalAttempts = policy.retryAttempts + 1;
 
@@ -67,6 +85,13 @@ export const executePromptWithPolicy = async (
       );
     }
     logger?.warn("prompt.attempt_failed", {
+      attempt: attemptNumber,
+      totalAttempts,
+      category: failure.category,
+      retryable: failure.retryable,
+      message: failure.message,
+    });
+    await observer?.onAttemptFailed?.({
       attempt: attemptNumber,
       totalAttempts,
       category: failure.category,
@@ -90,6 +115,13 @@ export const executePromptWithPolicy = async (
       delayMs,
       nextAttempt,
       totalAttempts,
+      category: failure.category,
+    });
+    await observer?.onRetryScheduled?.({
+      attempt: attemptNumber,
+      totalAttempts,
+      nextAttempt,
+      delayMs,
       category: failure.category,
     });
     await sleep(delayMs);

@@ -16,6 +16,7 @@ export {
   classifyPromptFailure,
   executePromptWithPolicy,
   getRetryDelayMs,
+  type PromptExecutionObserver,
   type PromptAgent,
   type PromptErrorCategory,
   type PromptExecutionPolicy,
@@ -33,12 +34,41 @@ export {
   type SystemPromptInput,
   type TurnPromptInput,
 } from "./prompt-builder.js";
-export { listSessions, openSession } from "./session-store.js";
+export {
+  generateSessionItemId,
+  generateSessionRunId,
+  generateSessionTurnId,
+  listSessions,
+  openSession,
+  type SessionHandle,
+  type SessionItem,
+  type SessionItemRecord,
+  type SessionItemStatus,
+  type SessionItemType,
+  type SessionRun,
+  type SessionRunKind,
+  type SessionRunRecord,
+  type SessionRunStatus,
+  type SessionTurn,
+  type SessionTurnInput,
+  type SessionTurnOutput,
+  type SessionTurnRecord,
+  type SessionTurnStatus,
+  type SessionTurnTrigger,
+} from "./session-store.js";
 export {
   executePromptInSession,
+  SessionExecutionError,
   type SessionPromptOptions,
   type SessionPromptResult,
 } from "./session-executor.js";
+export {
+  countPromptMessages,
+  estimatePromptChars,
+  startSessionExecutionTracker,
+  type SessionExecutionTracker,
+  type SessionExecutionTrackerOptions,
+} from "./session-execution.js";
 export {
   getPromptTextInput,
   injectPromptContextFragments,

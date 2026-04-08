@@ -7,6 +7,7 @@ import {
   createLogger,
   executePromptInSession,
   loadRuntimeConfig,
+  SessionExecutionError,
   stripMemoryExcludedPromptContextFromMessage,
   supportsModelInput,
   type ImageContent,
@@ -604,6 +605,8 @@ const respondInWeChatConversation = async (options: {
   logger: Logger;
 }): Promise<void> => {
   const startedAt = Date.now();
+  let turnId: string | undefined;
+  let runId: string | undefined;
 
   try {
     await options.bot.sendTyping(options.rawMessage.userId);
@@ -614,13 +617,20 @@ const respondInWeChatConversation = async (options: {
   }
 
   try {
-    const { outputText } = await executePromptInSession({
+    const execution = await executePromptInSession({
       ...options.runtime.runtime,
       toolOptions: options.runtime.toolOptions,
       sessionsRootDir: options.runtime.sessions.rootDir,
       sessionId: options.sessionId,
       prompt: options.prompt,
       skillTriggerText: options.skillTriggerText,
+      turnTrigger: "platform_event",
+      turnInputMetadata: {
+        platform: "wechat",
+        conversationKey: options.conversationKey,
+        userId: options.rawMessage.userId,
+        messageType: options.rawMessage.type,
+      },
       logger: options.logger,
       serializeMessage: (message) => {
         return stripMemoryExcludedPromptContextFromMessage(
@@ -631,6 +641,9 @@ const respondInWeChatConversation = async (options: {
         stderr: process.stderr,
       },
     });
+    turnId = execution.turnId;
+    runId = execution.runId;
+    const { outputText } = execution;
 
     const replyText = outputText.trim().length > 0
       ? outputText
@@ -642,6 +655,8 @@ const respondInWeChatConversation = async (options: {
       durationMs: Date.now() - startedAt,
       replyChars: replyText.trim().length,
       sessionId: options.sessionId,
+      turnId,
+      runId,
       conversationKey: options.conversationKey,
     });
   } catch (error) {
@@ -650,6 +665,8 @@ const respondInWeChatConversation = async (options: {
       durationMs: Date.now() - startedAt,
       message: normalizedError.message,
       sessionId: options.sessionId,
+      turnId: turnId ?? (error instanceof SessionExecutionError ? error.turnId : undefined),
+      runId: runId ?? (error instanceof SessionExecutionError ? error.runId : undefined),
       conversationKey: options.conversationKey,
     });
 

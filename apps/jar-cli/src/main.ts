@@ -10,6 +10,7 @@ import {
   loadRuntimeConfig,
   openSession,
   preparePromptWithSkills,
+  startSessionExecutionTracker,
   stripMemoryExcludedPromptContextFromMessage,
 } from "@hijarvis/jar-core";
 import { runRepl } from "@hijarvis/jar-repl-ink";
@@ -64,10 +65,17 @@ const main = async (): Promise<void> => {
         ? { sessionId: cliOptions.sessionId }
         : {}),
     });
+    let activeExecution:
+      | Awaited<ReturnType<typeof startSessionExecutionTracker>>
+      | undefined;
+    let activeOutputText = "";
     const agent = createAgent({
       ...config.runtime,
       compactionEventSink: (event) => {
         void session.appendEvent(event);
+        if (activeExecution) {
+          void activeExecution.recordCompaction(event);
+        }
       },
       tools: createTools(config.toolOptions),
     });
@@ -79,6 +87,15 @@ const main = async (): Promise<void> => {
         return;
       }
       await session.appendEvent(event);
+      if (activeExecution) {
+        await activeExecution.recordEvent(event);
+      }
+      if (
+        event.type === "message_update" &&
+        event.assistantMessageEvent.type === "text_delta"
+      ) {
+        activeOutputText += event.assistantMessageEvent.delta;
+      }
       if (event.type === "message_end") {
         await session.appendMessage(stripMemoryExcludedPromptContextFromMessage(event.message));
       }
@@ -100,12 +117,45 @@ const main = async (): Promise<void> => {
           skills: config.runtime.skills,
           triggerText: input,
         });
-        await executePromptWithPolicy(
-          agent,
-          prepared.prompt,
-          config.runtime.execution,
-          writers,
-        );
+        activeOutputText = "";
+        activeExecution = await startSessionExecutionTracker({
+          session,
+          prompt: prepared.prompt,
+          trigger: "user_input",
+        });
+
+        for (const warning of prepared.warnings) {
+          await activeExecution.recordNote({
+            kind: "skills_warning",
+            message: warning,
+          });
+        }
+
+        try {
+          await executePromptWithPolicy(
+            agent,
+            prepared.prompt,
+            config.runtime.execution,
+            writers,
+            undefined,
+            {
+              onAttemptFailed: async (failure) => {
+                await activeExecution?.recordRetryNotice(failure);
+              },
+              onRetryScheduled: async (event) => {
+                await activeExecution?.recordRetryNotice(event);
+              },
+            },
+          );
+          await activeExecution.complete(activeOutputText);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await activeExecution.fail(message);
+          throw error;
+        } finally {
+          activeExecution = undefined;
+          activeOutputText = "";
+        }
       },
       ...(prompt !== undefined ? { initialPrompt: prompt } : {}),
     });
@@ -126,6 +176,7 @@ const main = async (): Promise<void> => {
       sessionId: cliOptions.sessionId,
       prompt,
       skillTriggerText: prompt,
+      turnTrigger: "user_input",
       writers: {
         stderr: process.stderr,
       },
