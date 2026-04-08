@@ -77,7 +77,7 @@ Responsibilities:
 
 The workspace packages are split as follows:
 
-- `packages/jar-core`: runtime assembly, prompt execution policy, TOML config loading, tool registration, session persistence
+- `packages/jar-core`: runtime assembly (substrate primitives + convenience APIs), prompt execution policy, TOML config loading, tool registration, session persistence
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
 - `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
@@ -111,7 +111,12 @@ Rules:
 
 ## Config Loading Flow
 
-`packages/jar-core/src/config.ts` performs two validation stages for the core runtime:
+`packages/jar-core/src/config.ts` exposes two levels of config loading:
+
+- `loadBaseConfig()`: parses TOML, validates schema, resolves paths, returns `skillsConfig` without resolving skills runtime — suitable for callers that want to control skill discovery separately.
+- `loadRuntimeConfig()`: convenience wrapper that calls `loadBaseConfig()` + `resolveSkillsFromConfig()`, returning a fully resolved config with skills and `systemPromptOverlays` ready to use.
+
+The validation stages are:
 
 1. Parse TOML with `smol-toml`.
 2. Validate structure with `zod`.
@@ -147,24 +152,27 @@ That keeps provider/model metadata aligned with `pi-ai` while still allowing cus
 `packages/jar-core/src/runtime.ts` currently creates a single `pi-agent-core` `Agent` instance per run with:
 
 - `systemPrompt`, assembled through `packages/jar-core/src/prompt-builder.ts`
+- `systemPromptOverlays`: generic `PromptSection[]` fragments appended to the base system prompt (e.g. skills catalog). `createAgent()` does not know about skills — it only receives prompt overlays.
 - resolved `model`
 - `thinkingLevel`
-- built-in tools from `packages/jar-core/src/tools.ts`
+- injected `tools` (caller provides the tool array; `createAgent()` does not create tools itself)
 - `maxRetryDelayMs` derived from config
 - `getApiKey()` that only returns the configured API key for the active provider
 
 Prompt assembly is now split into two layers:
 
-- `buildSystemPrompt()`: owns the final system prompt text handed to `pi-agent-core`. It wraps the configured base prompt and appends runtime overlays such as the discovered skills catalog.
+- `buildSystemPrompt()`: owns the final system prompt text handed to `pi-agent-core`. It wraps the configured base prompt and appends generic `systemPromptOverlays`.
 - `buildTurnPrompt()`: owns adapter-level per-turn text assembly. Adapters such as Slack use it to compose observed context, queued follow-up messages, and the current user request without mutating the system prompt.
 - `resolveSkillPromptContext()`: owns skill discovery for the current turn. It only reacts to `$skill-name` mentions from the trigger text supplied by the caller and returns typed skill fragments.
 - `prompt-context.ts`: owns contextual fragment rendering, prompt injection, and memory-excluded cleanup before persistence or compaction.
+- `getSkillsCatalogOverlays()`: convenience helper that converts a `SkillsRuntime` catalog into `PromptSection[]` for passing to `createAgent()`.
 
-`packages/jar-core/src/session-executor.ts` is the shared session-bound execution seam for non-CLI adapters. It:
+`packages/jar-core/src/session-executor.ts` is the shared session-bound execution seam (convenience API). It:
 
-- creates a fresh `Agent`
+- creates a fresh `Agent` — accepts either pre-built `tools` or `toolOptions` (falls back to `createDefaultTools()`), and merges `systemPromptOverlays` with skill catalog overlays
 - restores the persisted Jar session
 - creates one explicit `turn` and one `run(kind=act)` for the current request
+- optionally injects skills when `skills` is provided; skips skill injection entirely when omitted
 - sanitizes older persisted user messages so previous memory-excluded contextual fragments do not keep accumulating in future context windows
 - appends runtime events/messages back into the session store
 - maps the current execution into structured `items` such as `user_input`, `assistant_message`, `tool_call`, `tool_result`, `retry_notice`, and `compaction`
@@ -172,7 +180,7 @@ Prompt assembly is now split into two layers:
 - executes the prompt using the same retry/timeout policy
 - returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
 
-The current built-in tools are:
+The default tools (via `createDefaultTools()`) are:
 
 - `read_file`
 - `write_file`

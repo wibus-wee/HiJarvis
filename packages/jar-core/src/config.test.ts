@@ -270,15 +270,15 @@ system_prompt = "You are a test agent."
 
   try {
     const config = await loadAgentConfig(configPath);
-    assert.equal(config.runtime.skills.enabled, true);
-    assert.deepEqual(config.runtime.skills.roots, [
+    assert.equal(config.skills.enabled, true);
+    assert.deepEqual(config.skills.roots, [
       path.join(path.dirname(configPath), ".jarvis/skills"),
       path.join(os.homedir(), ".jarvis/skills"),
     ]);
-    assert.equal(config.runtime.skills.maxScanDepth, 6);
-    assert.equal(config.runtime.skills.maxSkills, 2_000);
-    assert.equal(config.runtime.skills.maxCatalogChars, 12_000);
-    assert.equal(config.runtime.skills.maxBodyChars, 20_000);
+    assert.equal(config.skills.maxScanDepth, 6);
+    assert.equal(config.skills.maxSkills, 2_000);
+    assert.equal(config.skills.maxCatalogChars, 12_000);
+    assert.equal(config.skills.maxBodyChars, 20_000);
   } finally {
     await cleanupConfigFile(configPath);
   }
@@ -303,15 +303,15 @@ max_body_chars = 4096
 
   try {
     const config = await loadAgentConfig(configPath);
-    assert.equal(config.runtime.skills.enabled, true);
-    assert.deepEqual(config.runtime.skills.roots, [
+    assert.equal(config.skills.enabled, true);
+    assert.deepEqual(config.skills.roots, [
       path.join(path.dirname(configPath), "team-skills"),
       path.join(os.homedir(), "shared-skills"),
     ]);
-    assert.equal(config.runtime.skills.maxScanDepth, 3);
-    assert.equal(config.runtime.skills.maxSkills, 9);
-    assert.equal(config.runtime.skills.maxCatalogChars, 2_048);
-    assert.equal(config.runtime.skills.maxBodyChars, 4_096);
+    assert.equal(config.skills.maxScanDepth, 3);
+    assert.equal(config.skills.maxSkills, 9);
+    assert.equal(config.skills.maxCatalogChars, 2_048);
+    assert.equal(config.skills.maxBodyChars, 4_096);
   } finally {
     await cleanupConfigFile(configPath);
   }

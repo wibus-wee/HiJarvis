@@ -114,7 +114,7 @@ const main = async (): Promise<void> => {
         writers: { stderr: Pick<NodeJS.WriteStream, "write"> },
       ) => {
         const prepared = await preparePromptWithSkills(input, {
-          skills: config.runtime.skills,
+          skills: config.skills,
           triggerText: input,
         });
         activeOutputText = "";
@@ -171,6 +171,7 @@ const main = async (): Promise<void> => {
   if (cliOptions.sessionId !== undefined) {
     await executePromptInSession({
       ...config.runtime,
+      skills: config.skills,
       toolOptions: config.toolOptions,
       sessionsRootDir: config.sessions.rootDir,
       sessionId: cliOptions.sessionId,
@@ -193,7 +194,7 @@ const main = async (): Promise<void> => {
       renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
     });
     const prepared = await preparePromptWithSkills(prompt, {
-      skills: config.runtime.skills,
+      skills: config.skills,
       triggerText: prompt,
     });
     await executePromptWithPolicy(agent, prepared.prompt, config.runtime.execution, {

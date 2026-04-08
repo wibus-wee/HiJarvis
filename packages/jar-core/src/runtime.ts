@@ -8,10 +8,9 @@ import {
   type CompactionSettings,
 } from "./compaction.js";
 import type { Logger } from "./logger.js";
-import { buildSystemPrompt } from "./prompt-builder.js";
+import { buildSystemPrompt, type PromptSection } from "./prompt-builder.js";
 import { stripMemoryExcludedPromptContextFromHistory } from "./prompt-context.js";
 import type { PromptExecutionPolicy } from "./prompt-executor.js";
-import { type SkillsRuntime } from "./skills.js";
 
 export type RuntimeProviderConfig = {
   apiKey?: string;
@@ -22,7 +21,7 @@ export type JarRuntimeOptions = {
   provider: KnownProvider;
   model: string;
   systemPrompt: string;
-  skills: SkillsRuntime;
+  systemPromptOverlays?: PromptSection[];
   thinkingLevel: ThinkingLevel;
   providerConfig: RuntimeProviderConfig;
   execution: PromptExecutionPolicy;
@@ -38,9 +37,7 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
     config.compaction ?? defaultCompactionSettings;
   const systemPrompt = buildSystemPrompt({
     basePrompt: config.systemPrompt,
-    sections: config.skills.catalog
-      ? [{ body: config.skills.catalog }]
-      : [],
+    sections: config.systemPromptOverlays ?? [],
   });
   const compactionRuntime = {
     model,

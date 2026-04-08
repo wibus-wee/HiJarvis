@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentEvent, AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 
 import type { Logger } from "./logger.js";
 import { stripMemoryExcludedPromptContextFromMessage } from "./prompt-context.js";
@@ -15,8 +15,12 @@ import {
 } from "./session-execution.js";
 import { createAgent, type JarRuntimeOptions } from "./runtime.js";
 import { openSession, type SessionTurnTrigger } from "./session-store.js";
-import { preparePromptWithSkills } from "./skills.js";
-import { createTools, type ToolOptions } from "./tools.js";
+import {
+  getSkillsCatalogOverlays,
+  preparePromptWithSkills,
+  type SkillsRuntime,
+} from "./skills.js";
+import { createDefaultTools, type ToolOptions } from "./tools.js";
 
 type SessionExecutionWriters = {
   stderr: Pick<NodeJS.WriteStream, "write">;
@@ -32,10 +36,12 @@ export type SessionPromptOptions = {
   sessionId: string;
   sessionsRootDir: string;
   systemPrompt: JarRuntimeOptions["systemPrompt"];
-  skills: JarRuntimeOptions["skills"];
+  systemPromptOverlays?: JarRuntimeOptions["systemPromptOverlays"];
+  skills?: SkillsRuntime;
   thinkingLevel: JarRuntimeOptions["thinkingLevel"];
   compaction?: JarRuntimeOptions["compaction"];
-  toolOptions: ToolOptions;
+  tools?: AgentTool[];
+  toolOptions?: ToolOptions;
   providerConfig: JarRuntimeOptions["providerConfig"];
   logger?: Logger;
   serializeMessage?: (message: AgentMessage) => AgentMessage;
@@ -93,11 +99,22 @@ export const executePromptInSession = async (
     model: options.model,
   });
 
+  const resolvedTools = options.tools ?? (
+    options.toolOptions
+      ? createDefaultTools(options.toolOptions)
+      : []
+  );
+  const skillOverlays = getSkillsCatalogOverlays(options.skills);
+  const systemPromptOverlays = [
+    ...(options.systemPromptOverlays ?? []),
+    ...skillOverlays,
+  ];
+
   const agent = createAgent({
     provider: options.provider,
     model: options.model,
     systemPrompt: options.systemPrompt,
-    skills: options.skills,
+    systemPromptOverlays,
     thinkingLevel: options.thinkingLevel,
     providerConfig: options.providerConfig,
     execution: options.execution,
@@ -109,7 +126,7 @@ export const executePromptInSession = async (
         void tracker.recordCompaction(event);
       }
     },
-    tools: createTools(options.toolOptions),
+    tools: resolvedTools,
   });
 
   agent.sessionId = session.sessionId;
@@ -122,7 +139,7 @@ export const executePromptInSession = async (
   const serializeMessage =
     options.serializeMessage ?? stripMemoryExcludedPromptContextFromMessage;
   const preparedPrompt = await preparePromptWithSkills(options.prompt, {
-    skills: options.skills,
+    ...(options.skills === undefined ? {} : { skills: options.skills }),
     ...(options.skillTriggerText === undefined
       ? {}
       : { triggerText: options.skillTriggerText }),

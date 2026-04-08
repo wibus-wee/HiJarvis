@@ -619,6 +619,7 @@ const respondInWeChatConversation = async (options: {
   try {
     const execution = await executePromptInSession({
       ...options.runtime.runtime,
+      skills: options.runtime.skills,
       toolOptions: options.runtime.toolOptions,
       sessionsRootDir: options.runtime.sessions.rootDir,
       sessionId: options.sessionId,

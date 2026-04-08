@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { Logger } from "./logger.js";
+import type { PromptSection } from "./prompt-builder.js";
 import {
   getPromptTextInput,
   injectPromptContextFragments,
@@ -73,6 +74,12 @@ const SKILLS_USAGE_BLOCK = [
   "  - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.",
   "- Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue.",
 ];
+
+export const getSkillsCatalogOverlays = (
+  skills: SkillsRuntime | undefined,
+): PromptSection[] => {
+  return skills?.catalog ? [{ body: skills.catalog }] : [];
+};
 
 export const resolveSkillsRuntime = async (
   input: SkillsConfigInput | undefined,

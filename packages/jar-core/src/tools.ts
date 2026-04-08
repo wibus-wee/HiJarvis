@@ -7,7 +7,7 @@ import type { ToolOptions } from "./tools/shared.js";
 
 export type { ToolOptions } from "./tools/shared.js";
 
-export const createTools = (options: ToolOptions): AgentTool[] => {
+export const createDefaultTools = (options: ToolOptions): AgentTool[] => {
   return [
     createReadFileTool(options) as AgentTool,
     createWriteFileTool(options) as AgentTool,

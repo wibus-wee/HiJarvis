@@ -908,6 +908,7 @@ const respondInSlackThread = async ({
     });
     const execution = await executePromptInSession({
       ...runtime.runtime,
+      skills: runtime.skills,
       toolOptions: runtime.toolOptions,
       sessionsRootDir: runtime.sessions.rootDir,
       sessionId,

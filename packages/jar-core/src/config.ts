@@ -9,6 +9,7 @@ import {
   type CompactionSettings,
 } from "./compaction.js";
 import {
+  getSkillsCatalogOverlays,
   resolveSkillsRuntime,
   type SkillsRuntime,
   type SkillsConfigInput,
@@ -88,14 +89,15 @@ const providerConfigSchema = z.object({
   base_url: z.string().trim().url().optional(),
 }).strict();
 
-export type LoadedRuntimeConfig = {
+export type LoadedBaseConfig = {
   configFilePath: string;
   logging: {
     level: LogLevel;
     stderr: boolean;
     filePath?: string;
   };
-  runtime: Omit<JarRuntimeOptions, "tools"> & { skills: SkillsRuntime };
+  runtime: Omit<JarRuntimeOptions, "tools">;
+  skillsConfig: SkillsConfigInput;
   toolOptions: ToolOptions;
   sessions: {
     rootDir: string;
@@ -103,9 +105,13 @@ export type LoadedRuntimeConfig = {
   platform: Record<string, unknown>;
 };
 
-export const loadRuntimeConfig = async (
+export type LoadedRuntimeConfig = Omit<LoadedBaseConfig, "skillsConfig"> & {
+  skills: SkillsRuntime;
+};
+
+export const loadBaseConfig = async (
   configFilePath: string,
-): Promise<LoadedRuntimeConfig> => {
+): Promise<LoadedBaseConfig> => {
   const absoluteConfigPath = path.resolve(configFilePath);
   const configFileContent = await readFile(absoluteConfigPath, "utf8");
   const parsedToml = parse(configFileContent) as Record<string, unknown>;
@@ -117,10 +123,6 @@ export const loadRuntimeConfig = async (
   const compaction = parseCompactionConfig(parsedConfig.agent);
   const model = parseModel(provider, parsedConfig.agent.model);
   const configDirectory = path.dirname(absoluteConfigPath);
-  const skills = await resolveSkillsRuntime(
-    normalizeSkillsConfig(parsedConfig.skills),
-    configDirectory,
-  );
   const sessionRoot = path.resolve(
     configDirectory,
     parsedConfig.sessions.root_dir ?? ".jar/sessions",
@@ -143,8 +145,8 @@ export const loadRuntimeConfig = async (
       providerConfig: toRuntimeProviderConfig(providerConfig),
       execution,
       compaction,
-      skills,
     },
+    skillsConfig: normalizeSkillsConfig(parsedConfig.skills),
     toolOptions: {
       workspaceRoot: path.resolve(
         configDirectory,
@@ -161,6 +163,29 @@ export const loadRuntimeConfig = async (
       rootDir: sessionRoot,
     },
     platform: parsedConfig.platform,
+  };
+};
+
+export const resolveSkillsFromConfig = async (
+  baseConfig: LoadedBaseConfig,
+): Promise<SkillsRuntime> => {
+  const configDirectory = path.dirname(baseConfig.configFilePath);
+  return resolveSkillsRuntime(baseConfig.skillsConfig, configDirectory);
+};
+
+export const loadRuntimeConfig = async (
+  configFilePath: string,
+): Promise<LoadedRuntimeConfig> => {
+  const baseConfig = await loadBaseConfig(configFilePath);
+  const skills = await resolveSkillsFromConfig(baseConfig);
+  const { skillsConfig: _, ...rest } = baseConfig;
+  return {
+    ...rest,
+    runtime: {
+      ...rest.runtime,
+      systemPromptOverlays: getSkillsCatalogOverlays(skills),
+    },
+    skills,
   };
 };
 
