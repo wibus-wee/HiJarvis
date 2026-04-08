@@ -4,7 +4,7 @@ import {
   compactHistoryNow,
   getUsageInputTokens,
   shouldCompactFromUsage,
-} from "./compaction.js";
+} from "./compaction/index.js";
 import type { LoadedRuntimeConfig } from "./config.js";
 import type { Logger } from "./logger.js";
 import { stripMemoryExcludedPromptContextFromMessage } from "./prompt-context.js";

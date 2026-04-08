@@ -1,0 +1,169 @@
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { Message } from "@mariozechner/pi-ai";
+
+import {
+  estimateMessagesTokens,
+  estimateTextTokens,
+} from "./assembly.js";
+import { compactWithSummaryStrategy } from "./strategy-summary.js";
+import type {
+  CompactionNowResult,
+  CompactionRuntime,
+  CompactionSettings,
+} from "./types.js";
+
+export type {
+  BuildCompactedMessagesInput,
+  CompactionEvent,
+  CompactionKind,
+  CompactionNowResult,
+  CompactionPolicyDecision,
+  CompactionResult,
+  CompactionRuntime,
+  CompactionSettings,
+  SummaryGenerationResult,
+} from "./types.js";
+export { buildCompactedMessages } from "./assembly.js";
+export { getUsageInputTokens, shouldCompactFromUsage, decideCompactionFromUsage } from "./policy.js";
+
+export const defaultCompactionSettings: CompactionSettings = {
+  enabled: true,
+  triggerRatio: 0.9,
+  budgetRatio: 0.9,
+  summaryMaxTokens: 1024,
+};
+
+export const compactHistoryNow = async (
+  messages: AgentMessage[],
+  kind: import("./types.js").CompactionKind,
+  runtime: CompactionRuntime,
+  signal?: AbortSignal,
+): Promise<CompactionNowResult> => {
+  if (!runtime.settings.enabled) {
+    const tokenEstimateAfter = messages.some((message) => !isLlmMessage(message))
+      ? 0
+      : estimateMessagesTokens(messages as Message[]);
+    return {
+      messages: messages as Message[],
+      summaryTokens: 0,
+      tokenEstimateAfter,
+    };
+  }
+
+  if (messages.some((message) => !isLlmMessage(message))) {
+    return {
+      messages: messages as Message[],
+      summaryTokens: 0,
+      tokenEstimateAfter: 0,
+    };
+  }
+
+  const llmMessages = messages as Message[];
+  const result = await compactWithSummaryStrategy(
+    llmMessages,
+    kind,
+    runtime,
+    signal,
+  );
+  return {
+    messages: result.messages,
+    summaryTokens: result.summaryTokens,
+    tokenEstimateAfter: estimateMessagesTokens(result.messages),
+    ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+  };
+};
+
+export const createCompactionTransform = (runtime: CompactionRuntime) => {
+  return async (
+    messages: AgentMessage[],
+    signal?: AbortSignal,
+  ): Promise<AgentMessage[]> => {
+    if (!runtime.settings.enabled) {
+      return messages;
+    }
+
+    if (messages.some((message) => !isLlmMessage(message))) {
+      return messages;
+    }
+
+    const llmMessages = messages as Message[];
+    const lastMessage = llmMessages[llmMessages.length - 1];
+    if (!lastMessage || lastMessage.role === "assistant") {
+      return llmMessages;
+    }
+
+    const systemPromptTokens = estimateTextTokens(runtime.systemPrompt);
+    const contextWindow = runtime.model.contextWindow;
+    const triggerTokens = Math.floor(contextWindow * runtime.settings.triggerRatio);
+
+    if (lastMessage.role === "user") {
+      const baseHistory = llmMessages.slice(0, -1);
+      const baseTokens = estimateMessagesTokens(baseHistory) + systemPromptTokens;
+      if (baseTokens < triggerTokens) {
+        return llmMessages;
+      }
+
+      const result = await compactWithSummaryStrategy(
+        baseHistory,
+        "pre_turn",
+        runtime,
+        signal,
+      );
+      const nextMessages = [...result.messages, lastMessage];
+      applyCompactionInPlace(llmMessages, nextMessages);
+      runtime.onCompaction?.({
+        type: "compaction",
+        kind: "pre_turn",
+        tokenEstimateBefore: baseTokens,
+        tokenEstimateAfter: estimateMessagesTokens(llmMessages),
+        summaryTokens: result.summaryTokens,
+        ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+      }, llmMessages);
+      return llmMessages;
+    }
+
+    const totalTokens = estimateMessagesTokens(llmMessages) + systemPromptTokens;
+    if (totalTokens < triggerTokens) {
+      return llmMessages;
+    }
+
+    const result = await compactWithSummaryStrategy(
+      llmMessages,
+      "mid_turn",
+      runtime,
+      signal,
+    );
+    applyCompactionInPlace(llmMessages, result.messages);
+    runtime.onCompaction?.({
+      type: "compaction",
+      kind: "mid_turn",
+      tokenEstimateBefore: totalTokens,
+      tokenEstimateAfter: estimateMessagesTokens(llmMessages),
+      summaryTokens: result.summaryTokens,
+      ...(result.summaryError ? { summaryError: result.summaryError } : {}),
+    }, llmMessages);
+    return llmMessages;
+  };
+};
+
+const applyCompactionInPlace = (
+  target: Message[],
+  nextMessages: Message[],
+): void => {
+  target.length = 0;
+  target.push(...nextMessages);
+};
+
+const isLlmMessage = (message: AgentMessage | Message): message is Message => {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  if (!("role" in message)) {
+    return false;
+  }
+  return (
+    (message as Message).role === "user" ||
+    (message as Message).role === "assistant" ||
+    (message as Message).role === "toolResult"
+  );
+};

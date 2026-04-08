@@ -7,7 +7,7 @@ import test from "node:test";
 import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
 
 import { loadAgentConfig } from "./config.js";
-import { defaultCompactionSettings } from "./compaction.js";
+import { defaultCompactionSettings } from "./compaction/index.js";
 
 const pickProviderAndModel = (): { provider: KnownProvider; model: string } => {
   const providers = getProviders();

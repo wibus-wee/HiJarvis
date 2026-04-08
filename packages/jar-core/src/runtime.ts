@@ -6,7 +6,7 @@ import {
   defaultCompactionSettings,
   type CompactionEvent,
   type CompactionSettings,
-} from "./compaction.js";
+} from "./compaction/index.js";
 import type { Logger } from "./logger.js";
 import { buildSystemPrompt, type PromptSection } from "./prompt-builder.js";
 import { stripMemoryExcludedPromptContextFromHistory } from "./prompt-context.js";

@@ -5,7 +5,7 @@ import {
   buildCompactedMessages,
   shouldCompactFromUsage,
   type CompactionSettings,
-} from "./compaction.js";
+} from "./index.js";
 import type { Usage } from "@mariozechner/pi-ai";
 
 const SUMMARY_PREFIX =

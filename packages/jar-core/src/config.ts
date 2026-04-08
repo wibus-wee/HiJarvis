@@ -7,7 +7,7 @@ import type { JarRuntimeOptions, RuntimeProviderConfig } from "./runtime.js";
 import {
   defaultCompactionSettings,
   type CompactionSettings,
-} from "./compaction.js";
+} from "./compaction/index.js";
 import {
   getSkillsCatalogOverlays,
   resolveSkillsRuntime,
