@@ -5,8 +5,9 @@ import {
   estimateMessagesTokens,
   estimateTextTokens,
 } from "./assembly.js";
-import { runCompactionPipeline } from "./pipeline.js";
+import { runCompactionPipeline, runPartialCompactionPipeline } from "./pipeline.js";
 import type {
+  CompactionKind,
   CompactionNowResult,
   CompactionRuntime,
   CompactionSettings,
@@ -22,9 +23,12 @@ export type {
   CompactionRuntime,
   CompactionSettings,
   SummaryGenerationResult,
+  PartialCompactionDirection,
+  PartialCompactionResult,
 } from "./types.js";
 export { buildCompactedMessages } from "./assembly.js";
 export { getUsageInputTokens, shouldCompactFromUsage, decideCompactionFromUsage } from "./policy.js";
+export { getSummaryPrompt } from "./prompt.js";
 
 export const defaultCompactionSettings: CompactionSettings = {
   enabled: true,
@@ -35,7 +39,7 @@ export const defaultCompactionSettings: CompactionSettings = {
 
 export const compactHistoryNow = async (
   messages: AgentMessage[],
-  kind: import("./types.js").CompactionKind,
+  kind: CompactionKind,
   runtime: CompactionRuntime,
   signal?: AbortSignal,
 ): Promise<CompactionNowResult> => {
@@ -156,6 +160,62 @@ export const createCompactionTransform = (runtime: CompactionRuntime) => {
     }, llmMessages);
     return llmMessages;
   };
+};
+
+export const partialCompactHistoryNow = async (
+  messages: AgentMessage[],
+  splitIndex: number,
+  direction: import("./types.js").PartialCompactionDirection,
+  runtime: CompactionRuntime,
+  signal?: AbortSignal,
+): Promise<import("./types.js").PartialCompactionResult> => {
+  if (!runtime.settings.enabled) {
+    return {
+      messages: messages as Message[],
+      summaryText: null,
+      summaryTokens: 0,
+      direction,
+      splitIndex,
+      stageCount: 0,
+      stages: [],
+      appliedStages: [],
+      boundary: {
+        kind: direction === "from" ? "post_turn" : "pre_turn",
+        summaryIncluded: false,
+        summaryMessageCount: 0,
+        preservedTailMessageCount: 0,
+        preservedUserMessageCount: 0,
+      },
+    };
+  }
+
+  if (messages.some((message) => !isLlmMessage(message))) {
+    return {
+      messages: messages as Message[],
+      summaryText: null,
+      summaryTokens: 0,
+      direction,
+      splitIndex,
+      stageCount: 0,
+      stages: [],
+      appliedStages: [],
+      boundary: {
+        kind: direction === "from" ? "post_turn" : "pre_turn",
+        summaryIncluded: false,
+        summaryMessageCount: 0,
+        preservedTailMessageCount: 0,
+        preservedUserMessageCount: 0,
+      },
+    };
+  }
+
+  return runPartialCompactionPipeline(
+    messages as Message[],
+    splitIndex,
+    direction,
+    runtime,
+    signal,
+  );
 };
 
 const applyCompactionInPlace = (

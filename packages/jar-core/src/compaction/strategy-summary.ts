@@ -14,6 +14,7 @@ export const compactWithSummaryStrategy = async (
   history: Message[],
   kind: CompactionKind,
   runtime: CompactionRuntime,
+  promptVariant: import("./types.js").SummaryPromptVariant = "full",
   signal?: AbortSignal,
 ): Promise<CompactionResult> => {
   const systemPromptTokens = estimateTextTokens(runtime.systemPrompt);
@@ -28,6 +29,7 @@ export const compactWithSummaryStrategy = async (
         strippedHistory,
         runtime,
         systemPromptTokens,
+        promptVariant,
         signal,
       );
       summaryText = generated.summaryText;

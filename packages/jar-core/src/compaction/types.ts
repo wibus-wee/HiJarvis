@@ -26,6 +26,7 @@ export type CompactionEvent = {
 };
 
 export type CompactionStageName =
+  | "snip"
   | "lightweight"
   | "summary"
   | "assembly";
@@ -79,6 +80,8 @@ export type SummaryGenerationResult = {
   summaryError?: string;
 };
 
+export type SummaryPromptVariant = "full" | "partial_from" | "partial_up_to";
+
 export type CompactionResult = {
   messages: Message[];
   summaryText: string | null;
@@ -104,6 +107,21 @@ export type BuildCompactedMessagesInput = {
   settings: CompactionSettings;
   contextWindow: number;
   systemPromptTokens: number;
+};
+
+export type PartialCompactionDirection = "from" | "up_to";
+
+export type PartialCompactionResult = {
+  messages: Message[];
+  summaryText: string | null;
+  summaryTokens: number;
+  direction: PartialCompactionDirection;
+  splitIndex: number;
+  stageCount: number;
+  stages: CompactionStageEvent[];
+  appliedStages: CompactionStageName[];
+  boundary: CompactionBoundary;
+  summaryError?: string;
 };
 
 export type CompactionTransform = (

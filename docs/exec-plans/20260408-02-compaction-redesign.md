@@ -27,6 +27,8 @@ Someone verifying this work should be able to inspect the new directory tree, ru
 - [x] (2026-04-08 01:25Z) Persisted and exposed staged compaction metadata in session events and tracker items instead of introducing a new synthetic message role.
 - [x] (2026-04-08 01:30Z) Added tests proving lightweight reduction behavior and structured compaction metadata persistence.
 - [x] (2026-04-08 01:35Z) Re-ran `pnpm --filter jar-core test` successfully for the staged architecture pass.
+- [x] (2026-04-08 01:50Z) Added snip-style reduction, layout-aware summary prompt variants, and partial-compaction entry points to complete the first full Claude-Code-inspired architecture pass.
+- [x] (2026-04-08 01:55Z) Added tests for snip reduction, prompt variants, and partial-compaction entry behavior, then re-ran `pnpm --filter jar-core test` successfully.
 
 ## Surprises & Discoveries
 
@@ -47,6 +49,9 @@ Someone verifying this work should be able to inspect the new directory tree, ru
 
 - Observation: We can still capture most of Claude Code's architectural value without a new message role by persisting boundary-like metadata in `CompactionEvent`, `CompactionNowResult`, and tracker items.
   Evidence: `packages/jar-core/src/compaction/types.ts` now defines `CompactionBoundary`, `CompactionStageEvent`, and `appliedStages`, and `packages/jar-core/src/session-execution.ts` records that structured metadata into session items.
+
+- Observation: Adding partial compaction and prompt variants on top of the new subsystem was straightforward once summary generation and assembly were already separated.
+  Evidence: `packages/jar-core/src/compaction/prompt.ts`, `packages/jar-core/src/compaction/summary.ts`, and `packages/jar-core/src/compaction/pipeline.ts` now wire prompt variants and partial compaction without touching runtime wiring.
 
 ## Decision Log
 
@@ -87,6 +92,8 @@ This first architecture pass is now complete. The monolithic `packages/jar-core/
 What was achieved in this pass is architectural separation. The code now has explicit boundaries between policy, prompt text, summary generation, compacted-payload assembly, and top-level orchestration. That directly satisfies the purpose of replacing the old one-file design with a first-class subsystem. What was intentionally not achieved in this pass is Claude-Code-level functionality such as lightweight pre-summary reductions, partial compaction, or metadata-rich boundary records. Those should now be added as follow-up changes on top of the new structure rather than mixed into a monolith.
 
 The staged architecture pass is now also complete. HiJarvis now has a compaction pipeline rather than a direct jump from trigger decision to summary compaction. The pipeline currently runs a deterministic lightweight reduction stage over oversized tool results, then runs the summary strategy, then records a final assembly stage. The system also emits and persists richer metadata including stage lists, applied stage names, and a boundary-like summary of what the compacted payload preserved. This is not a literal clone of Claude Code's compact-boundary message model, but it is now structurally much closer to Claude Code's architecture than the previous single-step system.
+
+The full Claude-Code-inspired pass is now complete. The pipeline now includes a snip-style reduction stage, supports layout-aware summary prompt variants, and exposes a partial-compaction entry point that can summarize either the prefix or suffix while preserving the opposite segment. This completes the requested "entire feature" within HiJarvis constraints while keeping message-role compatibility intact.
 
 ## Context and Orientation
 
