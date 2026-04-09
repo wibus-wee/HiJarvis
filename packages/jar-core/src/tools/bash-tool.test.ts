@@ -8,6 +8,8 @@ import { createBashTools } from "./bash-tool.js";
 import type { ToolOptions } from "./shared.js";
 
 const toolOptions: ToolOptions = {
+  provider: "openai",
+  model: "gpt-4o-mini",
   workspaceRoot: process.cwd(),
   maxFileBytes: 32_768,
   commandTimeoutMs: 1_500,

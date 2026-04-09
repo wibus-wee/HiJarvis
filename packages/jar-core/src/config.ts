@@ -148,6 +148,14 @@ export const loadBaseConfig = async (
     },
     skillsConfig: normalizeSkillsConfig(parsedConfig.skills),
     toolOptions: {
+      provider,
+      model,
+      ...(providerConfig.base_url === undefined
+        ? {}
+        : { providerBaseUrl: providerConfig.base_url }),
+      ...(providerConfig.api_key === undefined
+        ? {}
+        : { providerApiKey: providerConfig.api_key }),
       workspaceRoot: path.resolve(
         configDirectory,
         parsedConfig.tools.workspace_root ?? ".",

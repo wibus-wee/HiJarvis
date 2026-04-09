@@ -13,6 +13,7 @@ Jar currently documents these built-in local tools:
 - `bash_output`
 - `bash_kill`
 - `web_fetch`
+- `web_search`
 
 The tool list is built in `createTools()` and passed into the agent during startup.
 
@@ -24,6 +25,7 @@ Implementation is now split by responsibility:
 - `packages/jar-core/src/tools/patch-tool.ts`: `apply_patch`, patch parsing, and patch application
 - `packages/jar-core/src/tools/bash-tool.ts`: `bash`, `bash_output`, and `bash_kill`
 - `packages/jar-core/src/tools/web-fetch-tool.ts`: `web_fetch`
+- `packages/jar-core/src/tools/web-search-tool.ts`: `web_search`
 
 The path confinement and patch parsing helpers also have targeted tests in:
 
@@ -39,6 +41,7 @@ The current tool layer follows a narrow UNIX-style shape:
 - apply human-readable patches
 - run shell commands
 - fetch remote text-like content
+- search the web and inspect fetched pages
 
 Everything else is intentionally out of scope for now:
 
@@ -46,7 +49,103 @@ Everything else is intentionally out of scope for now:
 - no directory listing tool
 - no glob search tool
 - no image input/output tools
-- no search engine or crawler orchestration
+
+Jar now includes a provider-aware `web_search` tool. Its current behavior is:
+
+- when `agent.provider = "openai"`, Jar calls the OpenAI Responses `web_search` tool directly
+- when a different provider is selected, Jar keeps the same tool schema but intentionally throws from the non-OpenAI branch until a provider-specific implementation is added
+
+## `web_search`
+
+Searches the web, opens returned results, traverses page links, finds text inside the active page, and can emit a synthetic SVG snapshot of the currently open page.
+
+### Parameters
+
+One or more action arrays may be provided per call. The tool executes them in
+this fixed order: `search_query`, `image_query`, `open`, `click`, `find`,
+`screenshot`.
+
+```json
+{
+  "search_query": [
+    {
+      "q": "Jarvis architecture docs",
+      "recency": 7,
+      "domains": ["example.com"]
+    }
+  ],
+  "response_length": "short"
+}
+```
+
+Other action forms use the same schema surface:
+
+```json
+{
+  "image_query": [
+    {
+      "q": "retro computer photos"
+    }
+  ]
+}
+```
+
+```json
+{
+  "open": [
+    {
+      "ref_id": "result-1"
+    }
+  ]
+}
+```
+
+```json
+{
+  "click": [
+    {
+      "ref_id": "page-1",
+      "id": 2
+    }
+  ]
+}
+```
+
+```json
+{
+  "find": [
+    {
+      "ref_id": "page-1",
+      "pattern": "installation"
+    }
+  ]
+}
+```
+
+```json
+{
+  "screenshot": [
+    {
+      "ref_id": "page-1",
+      "pageno": 0
+    }
+  ]
+}
+```
+
+### Behavior
+
+- `search_query` and `image_query` trigger new searches and append new `result-<n>` references
+- OpenAI searches use the configured `agent.model`, `provider.<name>.api_key`, and optional `provider.<name>.base_url`
+- `open` accepts either a direct URL or a previously returned `result-<n>` reference and returns a new `page-<n>` ref_id
+- opened HTML pages are converted into readable text and link identifiers `id` (numeric)
+- `click`, `find`, and `screenshot` require the `page-<n>` ref_id returned by `open`
+- `screenshot` returns a synthetic `image/svg+xml` snapshot built from fetched page text, not a browser-rendered bitmap
+
+### Current Boundary
+
+- non-OpenAI providers intentionally route to a stub extension seam in `runNonOpenAISearch()`
+- page interaction state is scoped to the tool instance; it exists within the current agent run, not as durable session storage
 
 ## `read_file`
 

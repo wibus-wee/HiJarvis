@@ -8,7 +8,7 @@ import {
   stripSummaryMessages,
 } from "./assembly.js";
 import { summarizeHistory } from "./summary.js";
-import type { CompactionKind, CompactionResult, CompactionRuntime } from "./types.js";
+import type { CompactionKind, CompactionRuntime, SummaryCompactionResult } from "./types.js";
 
 export const compactWithSummaryStrategy = async (
   history: Message[],
@@ -16,12 +16,13 @@ export const compactWithSummaryStrategy = async (
   runtime: CompactionRuntime,
   promptVariant: import("./types.js").SummaryPromptVariant = "full",
   signal?: AbortSignal,
-): Promise<CompactionResult> => {
+): Promise<SummaryCompactionResult> => {
   const systemPromptTokens = estimateTextTokens(runtime.systemPrompt);
   const strippedHistory = stripSummaryMessages(history);
   const existingSummary = extractSummaryFromMessages(history);
   let summaryText: string | null = existingSummary;
   let summaryError: string | undefined;
+  let retryCount: number | undefined;
 
   if (!summaryText) {
     try {
@@ -33,6 +34,7 @@ export const compactWithSummaryStrategy = async (
         signal,
       );
       summaryText = generated.summaryText;
+      retryCount = generated.retryCount;
     } catch (error) {
       summaryError = error instanceof Error ? error.message : String(error);
       summaryText = "(summary unavailable)";
@@ -64,5 +66,6 @@ export const compactWithSummaryStrategy = async (
     summaryText,
     summaryTokens,
     ...(summaryError ? { summaryError } : {}),
+    ...(retryCount !== undefined ? { retryCount } : {}),
   };
 };

@@ -3,6 +3,7 @@ import { createBashTools } from "./tools/bash-tool.js";
 import { createReadFileTool, createWriteFileTool } from "./tools/file-tools.js";
 import { createApplyPatchTool } from "./tools/patch-tool.js";
 import { createWebFetchTool } from "./tools/web-fetch-tool.js";
+import { createWebSearchTool } from "./tools/web-search-tool.js";
 import type { ToolOptions } from "./tools/shared.js";
 
 export type { ToolOptions } from "./tools/shared.js";
@@ -14,5 +15,6 @@ export const createDefaultTools = (options: ToolOptions): AgentTool[] => {
     createApplyPatchTool(options) as AgentTool,
     ...createBashTools(options),
     createWebFetchTool(options) as AgentTool,
+    createWebSearchTool(options) as AgentTool,
   ];
 };

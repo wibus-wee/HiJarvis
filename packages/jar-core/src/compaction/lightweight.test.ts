@@ -28,7 +28,10 @@ test("applyLightweightReduction compacts oversized tool results before summary s
   const reduced = result.messages[1];
   assert.ok(reduced);
   assert.equal(reduced.role, "toolResult");
-  assert.match(reduced.content[0]?.text ?? "", /tool result compacted/);
+  const firstContent = reduced.content[0];
+  assert.equal(firstContent?.type, "text");
+  const text = firstContent?.type === "text" ? firstContent.text : "";
+  assert.match(text, /tool result compacted/);
 });
 
 test("applyLightweightReduction leaves small tool results unchanged", () => {

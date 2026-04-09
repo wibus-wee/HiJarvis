@@ -138,6 +138,8 @@ root_dir = ".jar/sessions"
 
 Inactive provider tables are allowed. They are ignored until selected by `agent.provider`.
 
+The built-in `web_search` tool reads the same active provider selection. Today the OpenAI branch is implemented against the Responses `web_search` tool, while non-OpenAI branches intentionally remain extension seams in `packages/jar-core/src/tools/web-search-tool.ts`.
+
 ### `[platform.slack]`
 
 - `bot_name`: Slack gateway 显示名，占位字段。默认：`"jarvis"`。
@@ -249,6 +251,7 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - `packages/jar-core/src/session-executor.ts` emits session/tool summary logs without streaming every token delta.
 - `packages/jar-core/src/runtime.ts` forwards `agent.retry_max_delay_ms` to `Agent.maxRetryDelayMs`.
 - `packages/jar-core/src/runtime.ts` passes `provider.<name>.api_key` through `Agent.getApiKey()` for the active provider only.
+- `packages/jar-core/src/config.ts` also forwards the active provider name, model, `provider.<name>.api_key`, and optional `provider.<name>.base_url` into `toolOptions` so provider-aware tools such as `web_search` can branch correctly.
 - Tool registration is handled in `packages/jar-core/src/tools.ts`.
 - Built-in tool behavior and restrictions are documented in [Tools](./tools.md).
 

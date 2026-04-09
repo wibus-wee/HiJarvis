@@ -6,6 +6,8 @@ import type { ToolOptions } from "./shared.js";
 import { convertHtmlToMarkdown, createWebFetchTool } from "./web-fetch-tool.js";
 
 const toolOptions: ToolOptions = {
+  provider: "openai",
+  model: "gpt-4o-mini",
   workspaceRoot: path.join(path.sep, "tmp", "jar-workspace"),
   maxFileBytes: 32_768,
   commandTimeoutMs: 30_000,

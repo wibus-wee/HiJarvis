@@ -1,6 +1,12 @@
 import path from "node:path";
 
+import type { KnownProvider } from "@mariozechner/pi-ai";
+
 export type ToolOptions = {
+  provider: KnownProvider;
+  model: string;
+  providerBaseUrl?: string;
+  providerApiKey?: string;
   workspaceRoot: string;
   maxFileBytes: number;
   commandTimeoutMs: number;

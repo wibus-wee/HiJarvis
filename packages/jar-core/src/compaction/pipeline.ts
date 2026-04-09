@@ -17,6 +17,7 @@ import type {
   CompactionRuntime,
   CompactionStageEvent,
   PartialCompactionResult,
+  SummaryCompactionResult,
 } from "./types.js";
 
 export const runCompactionPipeline = async (
@@ -69,7 +70,7 @@ export const runCompactionPipeline = async (
     ...(lightweight.notes ? { notes: lightweight.notes } : {}),
   });
 
-  const summaryResult = await compactWithSummaryStrategy(
+  const summaryResult: SummaryCompactionResult = await compactWithSummaryStrategy(
     lightweight.messages,
     kind,
     runtime,
@@ -146,7 +147,7 @@ export const runPartialCompactionPipeline = async (
     ...(lightweight.notes ? { notes: lightweight.notes } : {}),
   });
 
-  const summaryResult = await compactWithSummaryStrategy(
+  const summaryResult: SummaryCompactionResult = await compactWithSummaryStrategy(
     lightweight.messages,
     direction === "from" ? "post_turn" : "pre_turn",
     runtime,
@@ -196,8 +197,8 @@ export const runPartialCompactionPipeline = async (
     stages,
     appliedStages: stages.filter((stage) => stage.applied).map((stage) => stage.stage),
     boundary,
-    retryCount: summaryResult.retryCount,
     artifacts,
+    ...(summaryResult.retryCount !== undefined ? { retryCount: summaryResult.retryCount } : {}),
     ...(summaryResult.summaryError ? { summaryError: summaryResult.summaryError } : {}),
   };
 };

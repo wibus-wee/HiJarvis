@@ -207,6 +207,7 @@ export const partialCompactHistoryNow = async (
         preservedTailMessageCount: 0,
         preservedUserMessageCount: 0,
       },
+      artifacts: [],
     };
   }
 
@@ -227,6 +228,7 @@ export const partialCompactHistoryNow = async (
         preservedTailMessageCount: 0,
         preservedUserMessageCount: 0,
       },
+      artifacts: [],
     };
   }
 

@@ -26,6 +26,7 @@ export type CompactionEvent = {
   stages?: CompactionStageEvent[];
   appliedStages?: CompactionStageName[];
   boundary?: CompactionBoundary;
+  artifacts?: CompactionArtifact[];
 };
 
 export type CompactionStageName =
@@ -108,6 +109,7 @@ export type CompactionResult = {
   summaryText: string | null;
   summaryTokens: number;
   summaryError?: string;
+  retryCount?: number;
   stages: CompactionStageEvent[];
   appliedStages: CompactionStageName[];
   boundary: CompactionBoundary;
@@ -115,6 +117,14 @@ export type CompactionResult = {
   partialDirection?: PartialCompactionDirection;
   partialSplitIndex?: number;
   artifacts: CompactionArtifact[];
+};
+
+export type SummaryCompactionResult = {
+  messages: Message[];
+  summaryText: string | null;
+  summaryTokens: number;
+  summaryError?: string;
+  retryCount?: number;
 };
 
 export type LightweightReductionResult = {
