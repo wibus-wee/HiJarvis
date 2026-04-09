@@ -4,6 +4,9 @@ import { SUMMARY_PREFIX } from "./prompt.js";
 import type { BuildCompactedMessagesInput } from "./types.js";
 
 const MID_TURN_TOOL_TAIL_MAX_TOKENS = 4096;
+const APPROX_BYTES_PER_TOKEN = 4;
+const RESIZED_IMAGE_BYTES_ESTIMATE = 7_373;
+const ITEM_SEPARATOR_BYTES = 1;
 
 export const buildCompactedMessages = (
   input: BuildCompactedMessagesInput,
@@ -71,30 +74,11 @@ export const estimateMessagesTokens = (messages: Message[]): number =>
   messages.reduce((sum, message) => sum + estimateMessageTokens(message), 0);
 
 export const estimateMessageTokens = (message: Message): number => {
-  if (message.role === "user") {
-    return estimateTextTokens(extractUserText(message));
+  const bytes = estimateMessageBytes(message);
+  if (bytes <= 0) {
+    return 0;
   }
-
-  if (message.role === "assistant") {
-    const text = message.content
-      .map((item) => {
-        if (item.type === "text") {
-          return item.text;
-        }
-        if (item.type === "thinking") {
-          return item.thinking;
-        }
-        if (item.type === "toolCall") {
-          const payload = JSON.stringify(item.arguments ?? {});
-          return `${item.name} ${payload}`;
-        }
-        return "";
-      })
-      .join("\n");
-    return estimateTextTokens(text);
-  }
-
-  return estimateTextTokens(extractToolResultText(message));
+  return estimateTokensFromBytes(bytes);
 };
 
 export const estimateTextTokens = (value: string): number => {
@@ -102,7 +86,7 @@ export const estimateTextTokens = (value: string): number => {
   if (trimmed.length === 0) {
     return 0;
   }
-  return Math.ceil(trimmed.length / 4);
+  return estimateTokensFromBytes(estimateUtf8Bytes(value));
 };
 
 export const normalizeSummaryText = (summaryText: string | null): string | null => {
@@ -254,11 +238,11 @@ const extractToolResultText = (message: Message): string => {
 export { extractToolResultText };
 
 const truncateText = (value: string, maxTokens: number): string => {
-  const maxChars = Math.max(0, maxTokens * 4);
-  if (value.length <= maxChars) {
+  const maxBytes = Math.max(0, maxTokens * APPROX_BYTES_PER_TOKEN);
+  if (estimateUtf8Bytes(value) <= maxBytes) {
     return value;
   }
-  return value.slice(0, maxChars).trimEnd();
+  return truncateTextByBytes(value, maxBytes).trimEnd();
 };
 
 const hasToolCallContent = (message: Message): boolean => {
@@ -267,4 +251,95 @@ const hasToolCallContent = (message: Message): boolean => {
   }
 
   return message.content.some((item) => item.type === "toolCall");
+};
+
+const estimateMessageBytes = (message: Message): number => {
+  if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return estimateUtf8Bytes(message.content);
+    }
+
+    return sumItemBytes(message.content, (item) => {
+      if (item.type === "text") {
+        return estimateUtf8Bytes(item.text);
+      }
+      if (item.type === "image") {
+        return RESIZED_IMAGE_BYTES_ESTIMATE;
+      }
+      return 0;
+    });
+  }
+
+  if (message.role === "assistant") {
+    return sumItemBytes(message.content, (item) => {
+      if (item.type === "text") {
+        return estimateUtf8Bytes(item.text);
+      }
+      if (item.type === "thinking") {
+        return estimateUtf8Bytes(item.thinking);
+      }
+      if (item.type === "toolCall") {
+        const payload = JSON.stringify(item.arguments ?? {});
+        return estimateUtf8Bytes(`${item.name} ${payload}`);
+      }
+      return 0;
+    });
+  }
+
+  if (message.role === "toolResult") {
+    return sumItemBytes(message.content, (item) => {
+      if (item.type === "text") {
+        return estimateUtf8Bytes(item.text);
+      }
+      if (item.type === "image") {
+        return RESIZED_IMAGE_BYTES_ESTIMATE;
+      }
+      return 0;
+    });
+  }
+
+  return 0;
+};
+
+const sumItemBytes = <T>(
+  items: T[],
+  estimateItem: (item: T) => number,
+): number => {
+  let total = 0;
+  for (let index = 0; index < items.length; index += 1) {
+    if (index > 0) {
+      total += ITEM_SEPARATOR_BYTES;
+    }
+    total += estimateItem(items[index]!);
+  }
+  return total;
+};
+
+const estimateUtf8Bytes = (value: string): number => Buffer.byteLength(value, "utf8");
+
+const estimateTokensFromBytes = (bytes: number): number =>
+  Math.ceil(bytes / APPROX_BYTES_PER_TOKEN);
+
+const truncateTextByBytes = (value: string, maxBytes: number): string => {
+  if (maxBytes <= 0 || value.length === 0) {
+    return "";
+  }
+
+  if (estimateUtf8Bytes(value) <= maxBytes) {
+    return value;
+  }
+
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const slice = value.slice(0, mid);
+    if (estimateUtf8Bytes(slice) <= maxBytes) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return value.slice(0, low);
 };
