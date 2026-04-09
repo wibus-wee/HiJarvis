@@ -7,14 +7,11 @@ import path from "node:path";
  *   <logDir>/wechat-sdk-YYYY-MM-DD.log
  */
 
-function resolveLogDir(): string {
-  const env = process.env.WECHAT_SDK_LOG_DIR?.trim()
-    || process.env.WECHAT_LOG_DIR?.trim();
-  if (env) return env;
+function resolveDefaultLogDir(): string {
   return path.join(os.tmpdir(), "wechat-sdk");
 }
 
-const MAIN_LOG_DIR = resolveLogDir();
+let mainLogDir = resolveDefaultLogDir();
 const SUBSYSTEM = "wechat-sdk";
 const RUNTIME = "node";
 const RUNTIME_VERSION = process.versions.node;
@@ -33,15 +30,7 @@ const LEVEL_IDS: Record<string, number> = {
 
 const DEFAULT_LOG_LEVEL = "INFO";
 
-function resolveMinLevel(): number {
-  const env = process.env.WECHAT_SDK_LOG_LEVEL?.toUpperCase()
-    || process.env.WECHAT_LOG_LEVEL?.toUpperCase()
-    || process.env.OPENCLAW_LOG_LEVEL?.toUpperCase();
-  if (env && env in LEVEL_IDS) return LEVEL_IDS[env];
-  return LEVEL_IDS[DEFAULT_LOG_LEVEL];
-}
-
-let minLevelId = resolveMinLevel();
+let minLevelId = LEVEL_IDS[DEFAULT_LOG_LEVEL];
 
 /** Dynamically change the minimum log level at runtime. */
 export function setLogLevel(level: string): void {
@@ -50,6 +39,12 @@ export function setLogLevel(level: string): void {
     throw new Error(`Invalid log level: ${level}. Valid levels: ${Object.keys(LEVEL_IDS).join(", ")}`);
   }
   minLevelId = LEVEL_IDS[upper];
+}
+
+export function setLogDir(dir?: string): void {
+  const trimmed = dir?.trim();
+  mainLogDir = trimmed ? trimmed : resolveDefaultLogDir();
+  logDirEnsured = false;
 }
 
 /** Shift a Date into local time so toISOString() renders local clock digits. */
@@ -67,7 +62,7 @@ function localDateKey(now: Date): string {
 
 function resolveMainLogPath(): string {
   const dateKey = localDateKey(new Date());
-  return path.join(MAIN_LOG_DIR, `wechat-sdk-${dateKey}.log`);
+  return path.join(mainLogDir, `wechat-sdk-${dateKey}.log`);
 }
 
 let logDirEnsured = false;
@@ -112,7 +107,7 @@ function writeLog(level: string, message: string, accountId?: string): void {
   });
   try {
     if (!logDirEnsured) {
-      fs.mkdirSync(MAIN_LOG_DIR, { recursive: true });
+      fs.mkdirSync(mainLogDir, { recursive: true });
       logDirEnsured = true;
     }
     fs.appendFileSync(resolveMainLogPath(), `${entry}\n`, "utf-8");

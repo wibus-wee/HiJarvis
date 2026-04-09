@@ -12,10 +12,10 @@
 - 消息发送：`sendMessageWeixin`、`sendWeixinMediaFile`、`StreamingMarkdownFilter`
 - 入站解析：`weixinMessageToMsgContext`、`setContextToken`、`getContextToken`
 
-**环境变量**
-- `WECHAT_SDK_ROUTE_TAG` / `WECHAT_ROUTE_TAG`：注入 `SKRouteTag` 请求头
-- `WECHAT_SDK_LOG_DIR` / `WECHAT_LOG_DIR`：日志目录
-- `WECHAT_SDK_STATE_DIR` / `WECHAT_STATE_DIR`：状态目录（context token 与本地缓存）
+**配置方式**
+- `routeTag` 通过 API 参数传入（例如 `getUpdates({ ... , routeTag })`）
+- 日志目录通过 `setLogDir()` 设置
+- 状态目录通过 `setStateDir()` 设置
 
 **与原插件差异（行为变化）**
 - 不再读取 `openclaw.json` 的 `routeTag`，仅支持通过 SDK 参数 `routeTag` 或环境变量注入。
@@ -50,3 +50,10 @@ if (result.connected && result.botToken) {
   });
 }
 ```
+
+**接入方需要负责的事项**
+- 账户存储（accountId、token、baseUrl、userId）
+- 长轮询监控（`getUpdates` + 游标持久化）
+- context token 持久化（`setContextToken` / `getContextToken`）
+- 媒体下载/解密管线（如需要）
+- 授权或 pairing 逻辑（自定义 allowlist 或权限策略）

@@ -1,13 +1,14 @@
 import os from "node:os";
 import path from "node:path";
 
-/** Resolve the OpenClaw state directory (mirrors core logic in src/infra). */
+let stateDirOverride: string | undefined;
+
+export function setStateDir(dir?: string): void {
+  const trimmed = dir?.trim();
+  stateDirOverride = trimmed ? trimmed : undefined;
+}
+
+/** Resolve the SDK state directory. */
 export function resolveStateDir(): string {
-  return (
-    process.env.WECHAT_SDK_STATE_DIR?.trim() ||
-    process.env.WECHAT_STATE_DIR?.trim() ||
-    process.env.OPENCLAW_STATE_DIR?.trim() ||
-    process.env.CLAWDBOT_STATE_DIR?.trim() ||
-    path.join(os.homedir(), ".wechat-sdk")
-  );
+  return stateDirOverride ?? path.join(os.homedir(), ".wechat-sdk");
 }

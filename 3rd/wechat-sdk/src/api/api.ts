@@ -100,19 +100,10 @@ function buildCommonHeaders(): Record<string, string> {
   return headers;
 }
 
-function resolveRouteTag(routeTag?: string): string | undefined {
-  const trimmed = routeTag?.trim();
-  if (trimmed) return trimmed;
-  const env = process.env.WECHAT_SDK_ROUTE_TAG?.trim()
-    || process.env.WECHAT_ROUTE_TAG?.trim()
-    || process.env.ILINK_ROUTE_TAG?.trim();
-  return env || undefined;
-}
-
 function buildCommonHeadersWithRouteTag(routeTag?: string): Record<string, string> {
   const headers = buildCommonHeaders();
-  const resolved = resolveRouteTag(routeTag);
-  if (resolved) headers.SKRouteTag = resolved;
+  const trimmed = routeTag?.trim();
+  if (trimmed) headers.SKRouteTag = trimmed;
   return headers;
 }
 

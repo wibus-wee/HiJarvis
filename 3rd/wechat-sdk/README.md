@@ -40,13 +40,22 @@ if (result.connected && result.botToken) {
 }
 ```
 
-## Environment Variables
+## Configuration
 
-- `WECHAT_SDK_ROUTE_TAG` / `WECHAT_ROUTE_TAG`: send `SKRouteTag` header
-- `WECHAT_SDK_LOG_DIR` / `WECHAT_LOG_DIR`: log directory
-- `WECHAT_SDK_STATE_DIR` / `WECHAT_STATE_DIR`: state directory
+- `routeTag` is passed via API options
+- log directory via `setLogDir()`
+- state directory via `setStateDir()`
 
 ## Notes
 
 - `sendMessageWeixin` currently uses `text` only.
-- Plugin-only files remain in this folder but are excluded from SDK builds.
+
+## Integration Responsibilities
+
+This SDK does not provide framework glue. Integrators must implement:
+
+- Account storage (accountId, token, baseUrl, userId)
+- Long-poll monitor loop (`getUpdates` + cursor persistence)
+- Context token persistence (`setContextToken` / `getContextToken`)
+- Media download/decrypt pipeline (if needed)
+- Authorization or pairing logic (own allowlist or policy)
