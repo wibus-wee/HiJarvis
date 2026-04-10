@@ -2,7 +2,6 @@ import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
 import {
   compactHistoryNow,
-  createSnapshotBoundary,
   getUsageInputTokens,
   shouldCompactFromUsage,
 } from "./compaction/index.js";
@@ -98,7 +97,6 @@ export const executePromptInSession = async (
     ...agentConfig,
     tools: createDefaultTools(toolOptions),
     ...(options.logger ? { logger: options.logger } : {}),
-    compactionBoundary: session.compactionBoundary,
     compactionEventSink: (event) => {
       void session.appendEvent(event);
       if (tracker) {
@@ -161,7 +159,6 @@ export const executePromptInSession = async (
     model: agent.state.model,
     systemPrompt: agent.state.systemPrompt,
     settings: compactionSettings,
-    recentSkillNames: preparedPrompt.injectedSkills,
     ...(agentConfig.providerConfig.apiKey
       ? { apiKey: agentConfig.providerConfig.apiKey }
       : {}),
@@ -192,12 +189,7 @@ export const executePromptInSession = async (
       signal,
     );
     agent.state.messages = result.messages;
-    const snapshotBoundary = createSnapshotBoundary("post_turn", result.messages);
-    session.compactionBoundary = snapshotBoundary;
-    await session.writeSnapshot(
-      agent.state.messages.map(serializeMessage),
-      snapshotBoundary,
-    );
+    await session.writeSnapshot(agent.state.messages.map(serializeMessage));
 
     const inputTokens = getUsageInputTokens(message.usage);
     const compactionEvent: CompactionEvent = {
@@ -207,18 +199,9 @@ export const executePromptInSession = async (
       tokenEstimateAfter: result.tokenEstimateAfter,
       summaryTokens: result.summaryTokens,
       ...(result.summaryError ? { summaryError: result.summaryError } : {}),
-      ...(result.strategy === undefined ? {} : { strategy: result.strategy }),
-      ...(result.partialDirection === undefined
-        ? {}
-        : { partialDirection: result.partialDirection }),
-      ...(result.partialSplitIndex === undefined
-        ? {}
-        : { partialSplitIndex: result.partialSplitIndex }),
-      ...(result.artifacts === undefined ? {} : { artifacts: result.artifacts }),
       ...(result.stageCount === undefined ? {} : { stageCount: result.stageCount }),
       ...(result.stages === undefined ? {} : { stages: result.stages }),
       ...(result.appliedStages === undefined ? { } : { appliedStages: result.appliedStages }),
-      ...(result.boundary === undefined ? {} : { boundary: result.boundary }),
     };
     await session.appendEvent(compactionEvent);
     if (tracker) {
@@ -247,10 +230,7 @@ export const executePromptInSession = async (
     }
 
     if (event.type === "agent_end") {
-      await session.writeSnapshot(
-        agent.state.messages.map(serializeMessage),
-        session.compactionBoundary,
-      );
+      await session.writeSnapshot(agent.state.messages.map(serializeMessage));
     }
 
     logAgentEvent(logger, tracker.turnId, tracker.runId, event);

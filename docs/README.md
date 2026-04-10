@@ -2,7 +2,7 @@
 
 - [Configuration](./configuration.md): `jar.toml` layout, provider selection, and runtime behavior.
 - [Agent Runtime](./agent-runtime.md): workspace startup flow, source-first package boundaries, session-bound turn/run/item execution, model resolution, and event handling.
-- [Compaction Architecture](./compaction-architecture.md): snapshot-backed boundary, staged compaction pipeline, automatic partial compaction, PTL retry, artifact restoration, and runtime/session integration.
+- [Compaction Architecture](./compaction-architecture.md): simplified staged compaction pipeline, snapshot-based recovery, PTL retry, and runtime/session integration.
 - [Exec Plans](./exec-plans/): living implementation plans for major refactors and features, including subsystem redesign work such as compaction.
 - [Skills](./skills.md): skill discovery roots, catalog rendering, explicit per-turn skill injection, and persistence rules.
 - [Slack Gateway](./slack-gateway.md): Slack Socket Mode gateway, thread/session mapping, and observed channel context rules.

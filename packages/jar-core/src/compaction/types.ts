@@ -19,14 +19,9 @@ export type CompactionEvent = {
   tokenEstimateAfter: number;
   summaryTokens: number;
   summaryError?: string;
-  strategy?: "full" | "partial";
-  partialDirection?: PartialCompactionDirection;
-  partialSplitIndex?: number;
   stageCount?: number;
   stages?: CompactionStageEvent[];
   appliedStages?: CompactionStageName[];
-  boundary?: CompactionBoundary;
-  artifacts?: CompactionArtifact[];
 };
 
 export type CompactionStageName =
@@ -43,33 +38,12 @@ export type CompactionStageEvent = {
   notes?: string;
 };
 
-export type CompactionBoundary = {
-  kind: CompactionKind;
-  summaryIncluded: boolean;
-  summaryMessageCount: number;
-  preservedTailMessageCount: number;
-  preservedUserMessageCount: number;
-};
-
-export type CompactionArtifact =
-  | {
-      kind: "tool_state";
-      label: string;
-      content: string;
-    }
-  | {
-      kind: "skill_state";
-      label: string;
-      content: string;
-    };
-
 export type CompactionRuntime = {
   model: Model<any>;
   systemPrompt: string;
   settings: CompactionSettings;
   apiKey?: string;
   logger?: Logger;
-  recentSkillNames?: string[];
   onCompaction?: (event: CompactionEvent, messages: Message[]) => void;
 };
 
@@ -78,14 +52,9 @@ export type CompactionNowResult = {
   summaryTokens: number;
   summaryError?: string;
   tokenEstimateAfter: number;
-  strategy?: "full" | "partial";
-  partialDirection?: PartialCompactionDirection;
-  partialSplitIndex?: number;
   stageCount?: number;
   stages?: CompactionStageEvent[];
   appliedStages?: CompactionStageName[];
-  boundary?: CompactionBoundary;
-  artifacts?: CompactionArtifact[];
 };
 
 export type CompactionPolicyDecision = {
@@ -102,8 +71,6 @@ export type SummaryGenerationResult = {
   retryCount?: number;
 };
 
-export type SummaryPromptVariant = "full" | "partial_from" | "partial_up_to";
-
 export type CompactionResult = {
   messages: Message[];
   summaryText: string | null;
@@ -112,11 +79,6 @@ export type CompactionResult = {
   retryCount?: number;
   stages: CompactionStageEvent[];
   appliedStages: CompactionStageName[];
-  boundary: CompactionBoundary;
-  strategy: "full" | "partial";
-  partialDirection?: PartialCompactionDirection;
-  partialSplitIndex?: number;
-  artifacts: CompactionArtifact[];
 };
 
 export type SummaryCompactionResult = {
@@ -142,23 +104,6 @@ export type BuildCompactedMessagesInput = {
   settings: CompactionSettings;
   contextWindow: number;
   systemPromptTokens: number;
-};
-
-export type PartialCompactionDirection = "from" | "up_to";
-
-export type PartialCompactionResult = {
-  messages: Message[];
-  summaryText: string | null;
-  summaryTokens: number;
-  direction: PartialCompactionDirection;
-  splitIndex: number;
-  stageCount: number;
-  stages: CompactionStageEvent[];
-  appliedStages: CompactionStageName[];
-  boundary: CompactionBoundary;
-  summaryError?: string;
-  retryCount?: number;
-  artifacts: CompactionArtifact[];
 };
 
 export type CompactionTransform = (

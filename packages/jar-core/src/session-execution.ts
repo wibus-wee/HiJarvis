@@ -221,18 +221,9 @@ export const startSessionExecutionTracker = async (
           tokenEstimateAfter: event.tokenEstimateAfter,
           summaryTokens: event.summaryTokens,
           ...(event.summaryError === undefined ? {} : { summaryError: event.summaryError }),
-          ...(event.strategy === undefined ? {} : { strategy: event.strategy }),
-          ...(event.partialDirection === undefined
-            ? {}
-            : { partialDirection: event.partialDirection }),
-          ...(event.partialSplitIndex === undefined
-            ? {}
-            : { partialSplitIndex: event.partialSplitIndex }),
-          ...(event.artifacts === undefined ? {} : { artifacts: event.artifacts }),
           ...(event.stageCount === undefined ? {} : { stageCount: event.stageCount }),
           ...(event.stages === undefined ? {} : { stages: event.stages }),
           ...(event.appliedStages === undefined ? {} : { appliedStages: event.appliedStages }),
-          ...(event.boundary === undefined ? {} : { boundary: event.boundary }),
         },
       });
     },

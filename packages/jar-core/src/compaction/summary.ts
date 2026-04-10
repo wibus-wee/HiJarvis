@@ -10,7 +10,6 @@ import {
 import type {
   CompactionRuntime,
   SummaryGenerationResult,
-  SummaryPromptVariant,
 } from "./types.js";
 
 const MAX_SUMMARY_RETRIES = 3;
@@ -19,7 +18,6 @@ export const summarizeHistory = async (
   messages: Message[],
   runtime: CompactionRuntime,
   systemPromptTokens: number,
-  variant: SummaryPromptVariant = "full",
   signal?: AbortSignal,
 ): Promise<SummaryGenerationResult> => {
   const contextWindow = runtime.model.contextWindow;
@@ -29,7 +27,7 @@ export const summarizeHistory = async (
   );
   const summaryPromptMessage: Message = {
     role: "user",
-    content: getSummaryPrompt(variant),
+    content: getSummaryPrompt(),
     timestamp: Date.now(),
   };
 

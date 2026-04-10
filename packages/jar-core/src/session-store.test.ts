@@ -1,12 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
 import type { Message } from "@mariozechner/pi-ai";
 
-import { createSummaryMessage } from "./compaction/assembly.js";
 import { listSessions, openSession } from "./session-store.js";
 
 test("openSession persists messages and snapshots", async () => {
@@ -36,7 +35,6 @@ test("openSession persists messages and snapshots", async () => {
 
     assert.equal(reopened.messages.length, 1);
     assert.deepEqual(reopened.messages[0], message);
-    assert.equal(reopened.compactionBoundary, null);
 
     const sessions = await listSessions(rootDir);
     assert.equal(sessions.length, 1);
@@ -46,7 +44,7 @@ test("openSession persists messages and snapshots", async () => {
   }
 });
 
-test("openSession persists snapshot-backed compaction boundary", async () => {
+test("openSession loads legacy v2 snapshots after boundary removal", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-session-"));
   try {
     const session = await openSession({
@@ -55,18 +53,8 @@ test("openSession persists snapshot-backed compaction boundary", async () => {
       model: "gpt-4o-mini",
     });
 
-    const messages: Message[] = [
-      { role: "user", content: "older", timestamp: 1 },
-      createSummaryMessage("summary"),
-      { role: "user", content: "latest", timestamp: 2 },
-    ];
-
-    await session.writeSnapshot(messages, {
-      kind: "post_turn",
-      messageIndex: 2,
-      summaryMessageIndex: 1,
-      recordedAt: Date.now(),
-    });
+    const messages: Message[] = [{ role: "user", content: "older", timestamp: 1 }];
+    await writeLegacySnapshot(session.paths.snapshotPath, session.sessionId, messages);
 
     const reopened = await openSession({
       rootDir,
@@ -75,8 +63,7 @@ test("openSession persists snapshot-backed compaction boundary", async () => {
       model: "gpt-4o-mini",
     });
 
-    assert.equal(reopened.compactionBoundary?.kind, "post_turn");
-    assert.equal(reopened.compactionBoundary?.summaryMessageIndex, 1);
+    assert.deepEqual(reopened.messages, messages);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
@@ -190,20 +177,32 @@ test("openSession persists compaction events with staged metadata", async () => 
           tokenEstimateAfter: 4_500,
         },
       ],
-      boundary: {
-        kind: "post_turn",
-        summaryIncluded: true,
-        summaryMessageCount: 1,
-        preservedTailMessageCount: 0,
-        preservedUserMessageCount: 2,
-      },
     });
 
     const events = await readFile(session.paths.eventsPath, "utf8");
     assert.match(events, /"stageCount":3/);
     assert.match(events, /"appliedStages":\["snip","summary","assembly"\]/);
-    assert.match(events, /"summaryIncluded":true/);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+const writeLegacySnapshot = async (
+  snapshotPath: string,
+  sessionId: string,
+  messages: Message[],
+): Promise<void> => {
+  await writeFile(snapshotPath, `${JSON.stringify({
+    v: 2,
+    sessionId,
+    updatedAt: Date.now(),
+    lastSequence: 0,
+    messages,
+    compactionBoundary: {
+      kind: "post_turn",
+      messageIndex: 0,
+      summaryMessageIndex: null,
+      recordedAt: Date.now(),
+    },
+  }, null, 2)}\n`, "utf8");
+};

@@ -4,7 +4,6 @@ import { getModels, type KnownProvider, type Model } from "@mariozechner/pi-ai";
 import {
   createCompactionTransform,
   defaultCompactionSettings,
-  getMessagesAfterBoundary,
   type CompactionEvent,
   type CompactionSettings,
 } from "./compaction/index.js";
@@ -29,7 +28,6 @@ export type JarRuntimeOptions = {
   compaction?: CompactionSettings;
   logger?: Logger;
   compactionEventSink?: (event: CompactionEvent) => void;
-  compactionBoundary?: import("./session-store.js").SessionCompactionBoundary | null;
   tools: AgentTool[];
 };
 
@@ -76,11 +74,7 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
     },
   });
   agent.transformContext = async (messages, signal) => {
-    const boundaryMessages = getMessagesAfterBoundary(
-      messages,
-      config.compactionBoundary,
-    );
-    const sanitizedMessages = stripMemoryExcludedPromptContextFromHistory(boundaryMessages);
+    const sanitizedMessages = stripMemoryExcludedPromptContextFromHistory(messages);
     return compactContext(sanitizedMessages, signal);
   };
 
