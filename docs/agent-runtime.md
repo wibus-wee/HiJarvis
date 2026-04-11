@@ -27,10 +27,10 @@ Slack gateway 的流程不同：
 
 1. Starts an HTTP server in `apps/jar-slack/src/main.ts`.
 2. Loads the same `jar.toml` through `packages/jar-core/src/config.ts`.
-3. Starts a Socket Mode connection using Slack Web API credentials.
-4. Handles `app_mention` and DM message events.
-5. On a new `@mention`, subscribes the Slack thread, collects a bounded window of top-level channel messages before the mention, and composes an observed-context prompt.
-6. On follow-up messages inside a subscribed Slack thread, routes the message into the same Jar session without rebuilding channel history.
+3. Iterates `platform.slack.identities.*` and starts one Slack Socket Mode runtime per configured identity.
+4. Each Slack runtime handles `app_mention` and message events for its own bot connection.
+5. On a new `@mention`, the current Slack identity subscribes the thread, collects a bounded window of top-level channel messages before the mention, and composes an observed-context prompt.
+6. On follow-up messages inside a subscribed Slack thread, the current identity routes the message into that identity's Jar session without rebuilding channel history.
 7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
 8. Persists transcript/event/snapshot data plus session-scoped turn/run/item records through the same `packages/jar-core/src/session-store.ts`.
 9. Emits summary logs through `packages/jar-core/src/logger.ts` so the request path is readable without replaying raw events.
@@ -39,8 +39,8 @@ Telegram gateway 则是：
 
 1. Starts an HTTP health server in `apps/jar-telegram/src/main.ts`.
 2. Loads the same `jar.toml` through `packages/jar-core/src/config.ts`.
-3. Starts a grammY bot in long polling mode.
-4. Handles all private chat messages, plus group messages that explicitly mention the bot or reply to a bot message.
+3. Iterates `platform.telegram.identities.*` and starts one grammY bot per configured identity.
+4. Each Telegram bot handles all private chat messages, plus group messages that explicitly mention that bot or reply to that bot's message.
 5. Coalesces rapid follow-up messages per chat/topic in memory so long-running LLM turns do not interleave.
 6. Builds a Telegram prompt from the current message, optional reply context, and any skipped messages.
 7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
@@ -180,6 +180,10 @@ Prompt assembly is now split into two layers:
 - emits summary logs for prompt/tool boundaries
 - executes the prompt using the retry/timeout policy from `config.agent.execution`
 - returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
+
+Identity-aware routing now sits above sessions. `packages/jar-core/src/entity-routing.ts` defines stable Jarvis entities and explicit platform identities. A normal platform turn first resolves the ingress platform identity, then reads the entity bound to that identity, then derives the correct local thread session for that identity on that platform. This means continuity is still stored in sessions, but sessions no longer have to double as the product's identity layer and no gateway needs a fake “default entity” shortcut.
+
+`packages/jar-core/src/session-executor.ts` now also exposes a side-query execution path. A side query is a one-shot read against an existing entity thread. It uses the target session's current messages as context, but it does not append user/assistant messages back into that target session transcript and does not write a fresh snapshot there. This keeps `/btw`-style questions from contaminating the main working thread.
 
 The default tools (via `createDefaultTools()`) are:
 

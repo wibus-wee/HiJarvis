@@ -8,8 +8,9 @@
 
 - 私聊里，用户发来的文本消息直接进入 Jar runtime；
 - 群聊 / 超级群里，只处理显式 `@mention` 或 reply-to-bot 的消息；
-- 一个 Telegram chat/topic 对应一个 Jar session；
+- 一个 Telegram chat/topic 对应某个 Jarvis entity 在 Telegram 上的局部 Jar session；
 - assistant 回复通过 Telegram draft/message streaming 发送。
+- 支持 `/btw <entity> <question>` 侧问，不污染目标 thread 的主历史。
 
 第一版明确**不做**：
 
@@ -20,7 +21,7 @@
 
 ## 当前形态
 
-`apps/jar-telegram` 是一个单独的 Node.js daemon，基于 `grammy` long polling 接收 update。
+`apps/jar-telegram` 是一个单独的 Node.js daemon，但它现在是一个 Telegram identity supervisor，而不是单 bot daemon。它会为 `platform.telegram.identities.*` 下的每个配置启动一个独立的 Telegram bot。
 
 入口是：
 
@@ -30,11 +31,12 @@
 服务会：
 
 1. 读取 `jar.toml`
-2. 启动 grammY bot 和 long polling runner
-3. 过滤可处理的 Telegram 消息
-4. 将同一 chat/topic 的突发消息合并进内存队列
-5. 把消息映射到 Jar session
-6. 流式把 assistant 输出发回 Telegram
+2. 读取 `platform.telegram.identities.*`
+3. 为每个 Telegram identity 启动一个独立的 grammY bot 和 long polling runner
+4. 过滤可处理的 Telegram 消息
+5. 将同一 chat/topic 的突发消息合并进各 identity 自己的内存队列
+6. 先把消息路由到当前 Telegram identity，再映射到该 identity 绑定 entity 的局部 Jar session
+7. 流式把 assistant 输出发回 Telegram
 
 ## 运行方式
 
@@ -44,31 +46,36 @@
 pnpm dev:telegram
 ```
 
-显式指定配置文件和健康检查端口：
+显式指定配置文件：
 
 ```bash
-pnpm --filter @hijarvis/jar-telegram dev -- --config ./jar.toml --port 3101
-```
-
-健康检查：
-
-```bash
-curl http://127.0.0.1:3001/healthz
+pnpm --filter @hijarvis/jar-telegram dev -- --config ./jar.toml
 ```
 
 ## 配置来源
 
-Telegram gateway 现在优先从 `jar.toml` 的 `[platform.telegram]` 读取配置。
+Telegram gateway 现在优先从 `jar.toml` 的 `platform.telegram.identities.*` 读取配置。
 
 推荐形态：
 
 ```toml
-[platform.telegram]
+[entities.jarvis]
+display_name = "Jarvis"
+
+[entities.pm]
+display_name = "PM Jarvis"
+
+[platform.telegram.identities.telegram_main]
+entity = "jarvis"
 bot_token = "123456:telegram-bot-token"
 allowed_chat_ids = [123456789, "-1009876543210"]
 allowed_usernames = ["wibus"]
-host = "0.0.0.0"
-port = 3001
+
+[platform.telegram.identities.telegram_pm]
+entity = "pm"
+bot_token = "654321:telegram-bot-token"
+allowed_chat_ids = [987654321]
+allowed_usernames = ["wibus"]
 
 [logging]
 level = "info"
@@ -82,16 +89,16 @@ file_path = ".jar/logs/runtime.log"
 TELEGRAM_BOT_TOKEN=123456:telegram-bot-token
 JARVIS_TELEGRAM_ALLOWED_CHAT_IDS=123456789,-1009876543210
 JARVIS_TELEGRAM_ALLOWED_USERNAMES=wibus,jarvisuser
-JARVIS_TELEGRAM_HOST=0.0.0.0
-JARVIS_TELEGRAM_PORT=3001
 ```
 
 说明：
 
-- `allowed_chat_ids` 适合个人助理场景，用来限制 bot 只服务指定 chat。
-- `allowed_usernames` 适合个人助理场景，用来限制 bot 只响应指定 username。
+- `allowed_chat_ids` 适合 identity 级访问控制，用来限制某个 Telegram bot 只服务指定 chat。
+- `allowed_usernames` 适合 identity 级访问控制，用来限制某个 Telegram bot 只响应指定 username。
 - `JARVIS_TELEGRAM_ALLOWED_CHAT_IDS` 使用逗号分隔。
 - `JARVIS_TELEGRAM_ALLOWED_USERNAMES` 使用逗号分隔，支持写成带 `@` 或不带 `@`。
+
+这些环境变量是全进程级 override，不适合长期用于多 bot 生产配置。真正的多 bot 配置应直接写进 `jar.toml`。
 
 ## 触发规则
 
@@ -108,6 +115,25 @@ JARVIS_TELEGRAM_PORT=3001
 
 第一版不会因为“之前 bot 回过一次”就自动订阅整个群聊上下文。
 
+## Entity 与 Session 映射
+
+Telegram gateway 现在区分三层：
+
+- `platform identity`：真实 Telegram bot 身份，例如 `telegram_main`
+- `entity`：该 Telegram bot 绑定的 Jarvis 身份，例如 `jarvis` 或 `pm`
+- `session`：该 identity 在某个 Telegram chat/topic 上的局部持续线程
+
+普通 Telegram 消息不再进入默认 entity。它们总是进入当前 Telegram bot identity 绑定的 entity。
+
+`/btw <entity> <question>` 会触发 side query：
+
+1. 解析目标 entity
+2. 查找该 entity 最近活跃的 identity-bound thread session
+3. 只读地运行一轮短答
+4. 把结果回到当前 Telegram chat
+
+side query 不会把这次问答写入目标 thread 的正式 transcript。
+
 ## Session 映射
 
 Telegram chat/topic 会映射成：
@@ -122,17 +148,18 @@ telegram:{chatId}
 telegram:{chatId}:{messageThreadId}
 ```
 
-Jar 本地 session id 会进一步转成 filesystem-safe 形态：
+Jar 本地 session id 会进一步转成带 identity 前缀的 filesystem-safe 形态：
 
 ```text
-telegram__{chatId}
-telegram__{chatId}__{messageThreadId}
+identity__telegram_main__telegram__chat__{chatId}
+identity__telegram_main__telegram__chat__{chatId}__thread__{messageThreadId}
 ```
 
 这样可以保证：
 
-- 私聊一个 chat 对应一个 session
+- 同一个 Telegram identity 的一个 chat 对应一个 session
 - 群聊 topic 可以独立维护上下文
+- 不同 Telegram bots 即使进入同一个群聊坐标，也不会共享 session
 
 ## 上下文组装
 

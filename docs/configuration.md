@@ -31,7 +31,7 @@ Both commands run via `tsx`, and internal packages such as `@hijarvis/jar-core` 
 
 ## Config Layout
 
-`jar.toml` uses seven top-level tables:
+`jar.toml` uses eight top-level tables:
 
 ```toml
 [agent]
@@ -48,6 +48,13 @@ retry_initial_delay_ms = 1000
 retry_backoff_multiplier = 2
 retry_max_delay_ms = 30000
 
+[entities.jarvis]
+display_name = "Jarvis"
+
+[entities.pm]
+display_name = "PM Jarvis"
+system_prompt = "You are PM Jarvis."
+
 [agent.compaction]
 enabled = true
 trigger_ratio = 0.9
@@ -58,21 +65,33 @@ summary_max_tokens = 1024
 api_key = "replace-me"
 base_url = "https://api.openai.com/v1"
 
-[platform.slack]
-bot_name = "jarvis"
+[platform.slack.identities.slack_main]
+entity = "jarvis"
 bot_token = "xoxb-replace-me"
+app_token = "xapp-replace-me"
 signing_secret = "replace-me"
 context_lookback_minutes = 15
 context_message_limit = 12
-host = "0.0.0.0"
-port = 3000
 
-[platform.telegram]
+[platform.slack.identities.slack_pm]
+entity = "pm"
+bot_token = "xoxb-replace-me-2"
+app_token = "xapp-replace-me-2"
+signing_secret = "replace-me-2"
+context_lookback_minutes = 15
+context_message_limit = 12
+
+[platform.telegram.identities.telegram_main]
+entity = "jarvis"
 bot_token = "123456:replace-me"
 allowed_chat_ids = [123456789]
 allowed_usernames = ["wibus"]
-host = "0.0.0.0"
-port = 3001
+
+[platform.telegram.identities.telegram_pm]
+entity = "pm"
+bot_token = "654321:replace-me"
+allowed_chat_ids = [987654321]
+allowed_usernames = ["wibus"]
 
 [platform.wechat]
 base_url = "https://api-bot.hzxww.net"
@@ -129,6 +148,15 @@ root_dir = ".jar/sessions"
 
 `mid_turn` 下用于保留最小 tool tail 的预算现在是内部固定值，不再暴露为配置项。
 
+### `[entities.<id>]`
+
+`entities` 定义稳定的 Jarvis 实体。它们不是 session，也不是某个平台里的 bot 凭证。实体只负责名字和 prompt 身份；它不再声明自己“在哪些平台出现”。真正出现在 Slack 或 Telegram 上的是 `platform.<platform>.identities.<identity>`。
+
+- `display_name`: 可选的人类可读名称。默认使用 `<id>`。
+- `system_prompt`: 可选的 entity 级 prompt 覆盖。未配置时继承 `[agent].system_prompt`。
+
+`entities` 现在必须显式配置。Jar 不再偷偷制造默认 entity，因为普通平台消息必须通过某个真实 platform identity 进入系统，而不是通过一个抽象默认身份进入。
+
 ### `[provider.<name>]`
 
 - `api_key`: optional provider API key. If omitted, `pi-ai` falls back to provider-specific environment variables.
@@ -142,45 +170,44 @@ The built-in `web_search` tool reads the same active provider selection. Today t
 
 ### `[platform.slack]`
 
-- `bot_name`: Slack gateway 显示名，占位字段。默认：`"jarvis"`。
+### `[platform.slack.identities.<identity_id>]`
+
+每个 Slack identity 代表一个真实 Slack bot/app 身份。一个 identity 绑定一个 entity，并拥有自己独立的 Socket Mode 凭证、观察窗口和会话命名空间。
+
+- `entity`: 该 Slack bot 绑定到哪个 Jarvis entity。
 - `bot_token`: Slack bot token。用于 Socket Mode + Web API 调用。
 - `app_token`: Slack app-level token (xapp-...)。Socket Mode 必需。
-- `signing_secret`: Slack signing secret，用于请求校验与 SDK 初始化。
-- `context_lookback_minutes`: 当某个 channel scope 里还没有 Jarvis 的上一轮回复时，bootstrap fallback 向前回看顶层消息的时间窗。默认：`15`。
+- `signing_secret`: Slack signing secret，用于 SDK 初始化。
+- `context_lookback_minutes`: 当该 bot 在某个 channel scope 里还没有上一轮回复时，bootstrap fallback 向前回看顶层消息的时间窗。默认：`15`。
 - `context_message_limit`: 每一轮 channel-scope prompt 里，最多带入多少条顶层 channel 消息。默认：`12`。
-- `host`: 健康检查 HTTP 服务监听 host。默认：`"0.0.0.0"`。
-- `port`: 健康检查 HTTP 服务监听端口。默认：`3000`。
-
-Slack gateway 现在默认优先读 `jar.toml` 里的 `[platform.slack]`。
+Slack gateway 现在读取 `jar.toml` 里的 `platform.slack.identities.*`，并为每个 identity 启动一个独立的 Slack runtime state。
 
 这些环境变量仍然可以覆盖对应配置：
 
 - `SLACK_BOT_TOKEN`
 - `SLACK_APP_TOKEN`
 - `SLACK_SIGNING_SECRET`
-- `JARVIS_SLACK_BOT_NAME`
 - `JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES`
 - `JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT`
-- `HOST`
-- `PORT`
 
 ### `[platform.telegram]`
 
-- `bot_token`: Telegram bot token。
-- `allowed_chat_ids`: 可选 chat id allowlist。配置后，bot 只会处理这些 chat 的消息。
-- `allowed_usernames`: 可选 username allowlist。配置后，bot 只会处理这些发送者发来的消息。
-- `host`: Telegram health check HTTP 服务监听 host。默认：`"0.0.0.0"`。
-- `port`: Telegram health check HTTP 服务监听端口。默认：`3001`。
+### `[platform.telegram.identities.<identity_id>]`
 
-Telegram gateway 默认使用 long polling，而不是 webhook。
+每个 Telegram identity 代表一个真实 Telegram bot token。一个 identity 绑定一个 entity，并维护自己独立的 allowlist 和会话命名空间。
+
+- `entity`: 该 Telegram bot 绑定到哪个 Jarvis entity。
+- `bot_token`: Telegram bot token。
+- `allowed_chat_ids`: 可选 chat id allowlist。配置后，这个 bot 只会处理这些 chat 的消息。
+- `allowed_usernames`: 可选 username allowlist。配置后，这个 bot 只会处理这些发送者发来的消息。
+
+Telegram gateway 默认使用 long polling，而不是 webhook，并且现在以 `platform.telegram.identities.*` 作为真实多 bot 配置入口。
 
 这些环境变量可以覆盖对应配置：
 
 - `TELEGRAM_BOT_TOKEN`
 - `JARVIS_TELEGRAM_ALLOWED_CHAT_IDS`
 - `JARVIS_TELEGRAM_ALLOWED_USERNAMES`
-- `JARVIS_TELEGRAM_HOST`
-- `JARVIS_TELEGRAM_PORT`
 
 ### `[platform.wechat]`
 

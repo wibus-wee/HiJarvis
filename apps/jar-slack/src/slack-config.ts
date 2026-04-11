@@ -2,48 +2,48 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 
-const slackPlatformSchema = z.object({
-  bot_name: nonEmptyString.optional(),
+const slackIdentitySchema = z.object({
+  entity: nonEmptyString,
   bot_token: nonEmptyString.optional(),
   app_token: nonEmptyString.optional(),
   signing_secret: nonEmptyString.optional(),
   context_lookback_minutes: z.number().int().positive().optional(),
   context_message_limit: z.number().int().positive().optional(),
-  host: nonEmptyString.optional(),
-  port: z.number().int().positive().optional(),
+}).strict();
+
+const slackPlatformSchema = z.object({
+  identities: z.record(nonEmptyString, slackIdentitySchema),
 }).strict();
 
 const defaultContextLookbackMinutes = 15;
 const defaultContextMessageLimit = 12;
 
-export type SlackPlatformConfig = {
-  botName?: string;
+export type SlackPlatformIdentityConfig = {
+  id: string;
+  entityId: string;
   botToken?: string;
   appToken?: string;
   signingSecret?: string;
   contextLookbackMinutes: number;
   contextMessageLimit: number;
-  host?: string;
-  port?: number;
 };
 
 export const parseSlackPlatformConfig = (
   platform: Record<string, unknown>,
-): SlackPlatformConfig => {
+): Record<string, SlackPlatformIdentityConfig> => {
   const parsed = slackPlatformSchema.parse(platform.slack ?? {});
 
-  return {
-    ...(parsed.bot_name === undefined ? {} : { botName: parsed.bot_name }),
-    ...(parsed.bot_token === undefined ? {} : { botToken: parsed.bot_token }),
-    ...(parsed.app_token === undefined ? {} : { appToken: parsed.app_token }),
-    ...(parsed.signing_secret === undefined
+  return Object.fromEntries(Object.entries(parsed.identities).map(([id, identity]) => [id, {
+    id,
+    entityId: identity.entity,
+    ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
+    ...(identity.app_token === undefined ? {} : { appToken: identity.app_token }),
+    ...(identity.signing_secret === undefined
       ? {}
-      : { signingSecret: parsed.signing_secret }),
+      : { signingSecret: identity.signing_secret }),
     contextLookbackMinutes:
-      parsed.context_lookback_minutes ?? defaultContextLookbackMinutes,
+      identity.context_lookback_minutes ?? defaultContextLookbackMinutes,
     contextMessageLimit:
-      parsed.context_message_limit ?? defaultContextMessageLimit,
-    ...(parsed.host === undefined ? {} : { host: parsed.host }),
-    ...(parsed.port === undefined ? {} : { port: parsed.port }),
-  };
+      identity.context_message_limit ?? defaultContextMessageLimit,
+  } satisfies SlackPlatformIdentityConfig]));
 };

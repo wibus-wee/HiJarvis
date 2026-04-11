@@ -29,10 +29,24 @@ const pickProviderAndModel = (): { provider: KnownProvider; model: string } => {
   throw new Error("No models available for any provider");
 };
 
-const writeConfigFile = async (content: string): Promise<string> => {
+const defaultIdentityConfig = `
+
+[entities.jarvis]
+display_name = "Jarvis"
+
+[platform.telegram.identities.telegram_main]
+entity = "jarvis"
+bot_token = "123456:test-token"
+`;
+
+const writeConfigFile = async (
+  content: string,
+  options?: { withIdentityDefaults?: boolean },
+): Promise<string> => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jar-config-"));
   const configPath = path.join(tempDir, "jar.toml");
-  await writeFile(configPath, content, "utf8");
+  const finalContent = `${content}${options?.withIdentityDefaults === false ? "" : defaultIdentityConfig}`;
+  await writeFile(configPath, finalContent, "utf8");
   return configPath;
 };
 
@@ -144,6 +158,8 @@ system_prompt = "You are a test agent."
   try {
     const config = await loadAgentConfig(configPath);
     assert.deepEqual(config.toolOptions, {
+      provider,
+      model,
       workspaceRoot: path.dirname(configPath),
       maxFileBytes: 32_768,
       commandTimeoutMs: 30_000,
@@ -176,6 +192,8 @@ max_web_response_bytes = 16384
   try {
     const config = await loadAgentConfig(configPath);
     assert.deepEqual(config.toolOptions, {
+      provider,
+      model,
       workspaceRoot: path.join(path.dirname(configPath), "workspace"),
       maxFileBytes: 4_096,
       commandTimeoutMs: 45_000,
@@ -356,6 +374,131 @@ tail_ratio = 0.5
     await assert.rejects(
       () => loadAgentConfig(configPath),
       /Invalid TOML config:\nagent\.compaction: Unrecognized key: "tail_ratio"/,
+    );
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig requires explicit entities and platform identities", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+`, { withIdentityDefaults: false });
+
+  try {
+    await assert.rejects(
+      () => loadAgentConfig(configPath),
+      /At least one entity must be configured/,
+    );
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads configured platform identities", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[entities.jarvis]
+display_name = "Jarvis"
+
+[entities.pm]
+display_name = "PM Jarvis"
+system_prompt = "You are PM Jarvis."
+
+[platform.slack.identities.slack_main]
+entity = "jarvis"
+bot_token = "xoxb-main"
+app_token = "xapp-main"
+signing_secret = "main-secret"
+
+[platform.slack.identities.slack_pm]
+entity = "pm"
+bot_token = "xoxb-pm"
+app_token = "xapp-pm"
+signing_secret = "pm-secret"
+
+[platform.telegram.identities.telegram_main]
+entity = "jarvis"
+bot_token = "123456:telegram-token"
+allowed_chat_ids = [123456789]
+allowed_usernames = ["wibus"]
+`, { withIdentityDefaults: false });
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.entities.jarvis, {
+      id: "jarvis",
+      displayName: "Jarvis",
+    });
+    assert.deepEqual(config.entities.pm, {
+      id: "pm",
+      displayName: "PM Jarvis",
+      systemPrompt: "You are PM Jarvis.",
+    });
+    assert.deepEqual(config.platformIdentities.slack_main, {
+      id: "slack_main",
+      platform: "slack",
+      entityId: "jarvis",
+      botToken: "xoxb-main",
+      appToken: "xapp-main",
+      signingSecret: "main-secret",
+      contextLookbackMinutes: 15,
+      contextMessageLimit: 12,
+    });
+    assert.deepEqual(config.platformIdentities.slack_pm, {
+      id: "slack_pm",
+      platform: "slack",
+      entityId: "pm",
+      botToken: "xoxb-pm",
+      appToken: "xapp-pm",
+      signingSecret: "pm-secret",
+      contextLookbackMinutes: 15,
+      contextMessageLimit: 12,
+    });
+    assert.deepEqual(config.platformIdentities.telegram_main, {
+      id: "telegram_main",
+      platform: "telegram",
+      entityId: "jarvis",
+      botToken: "123456:telegram-token",
+      allowedChatIds: ["123456789"],
+      allowedUsernames: ["wibus"],
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig rejects platform identities that reference unknown entities", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[entities.jarvis]
+display_name = "Jarvis A"
+
+[platform.slack.identities.slack_main]
+entity = "missing"
+bot_token = "xoxb-main"
+app_token = "xapp-main"
+signing_secret = "main-secret"
+`, { withIdentityDefaults: false });
+
+  try {
+    await assert.rejects(
+      () => loadAgentConfig(configPath),
+      /references unknown entity "missing"/,
     );
   } finally {
     await cleanupConfigFile(configPath);

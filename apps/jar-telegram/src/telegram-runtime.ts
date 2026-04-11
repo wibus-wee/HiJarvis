@@ -1,4 +1,3 @@
-import { createServer } from "node:http";
 import path from "node:path";
 import process from "node:process";
 
@@ -7,9 +6,13 @@ import { run, type RunnerHandle } from "@grammyjs/runner";
 import { stream, type StreamFlavor } from "@grammyjs/stream";
 import {
   createLogger,
+  executeSideQueryInSession,
+  findMostRecentThreadForEntity,
+  resolveIdentityThread,
   executePromptInSession,
   loadRuntimeConfig,
   SessionExecutionError,
+  type LoadedTelegramIdentityConfig,
   type LoadedRuntimeConfig,
   type Logger,
 } from "@hijarvis/jar-core";
@@ -23,27 +26,23 @@ import { z } from "zod";
 
 import {
   buildTelegramPrompt,
-  createTelegramSessionId,
+  parseTelegramSideQueryCommand,
   type TelegramMessage,
   type TelegramReplyContext,
 } from "./telegram-prompt.js";
 import {
   parseTelegramPlatformConfig,
-  type TelegramPlatformConfig,
+  type TelegramPlatformIdentityConfig,
 } from "./telegram-config.js";
 
 const telegramGatewayEnvSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().trim().min(1).optional(),
   JARVIS_TELEGRAM_ALLOWED_CHAT_IDS: z.string().trim().min(1).optional(),
   JARVIS_TELEGRAM_ALLOWED_USERNAMES: z.string().trim().min(1).optional(),
-  JARVIS_TELEGRAM_HOST: z.string().trim().min(1).optional(),
-  JARVIS_TELEGRAM_PORT: z.coerce.number().int().positive().optional(),
 });
 
 type TelegramGatewayRuntimeOptions = {
   configPath: string;
-  host?: string;
-  port?: number;
 };
 
 type TelegramGatewayEnv = z.infer<typeof telegramGatewayEnvSchema>;
@@ -97,8 +96,9 @@ type ConversationQueueState = {
 };
 
 type TelegramGatewayState = {
+  identityConfig: LoadedTelegramIdentityConfig;
   runtime: LoadedRuntimeConfig;
-  telegramConfig: TelegramPlatformConfig;
+  telegramConfig: TelegramPlatformIdentityConfig;
   logger: Logger;
   identity: TelegramIdentity;
   allowedChatIds?: Set<string>;
@@ -111,8 +111,6 @@ type AsyncIteratorWaiter = {
   reject: (error: Error) => void;
 };
 
-const defaultHost = "0.0.0.0";
-const defaultPort = 3001;
 const queueEntryTtlMs = 60_000;
 const maxQueueSize = 20;
 
@@ -120,68 +118,65 @@ export const startTelegramGateway = async (
   options: TelegramGatewayRuntimeOptions,
 ): Promise<void> => {
   const runtimeConfig = await loadRuntimeConfig(options.configPath);
-  const telegramConfig = parseTelegramPlatformConfig(runtimeConfig.platform);
   const logger = createLogger(runtimeConfig.logging).child({
     component: "telegram_gateway",
   });
   const env = loadTelegramGatewayEnv(process.env);
-  const botToken = resolveTelegramBotToken(telegramConfig, env);
-
-  const bot = new Bot<TelegramGatewayContext>(botToken);
-  bot.api.config.use(autoRetry());
-  bot.use(stream());
-
-  const me = await bot.api.getMe();
-  const allowedChatIds = resolveAllowedChatIds(telegramConfig, env);
-  const allowedUsernames = resolveAllowedUsernames(telegramConfig, env);
-  const state: TelegramGatewayState = {
-    runtime: runtimeConfig,
-    telegramConfig,
-    logger,
-    identity: {
-      botId: me.id,
-      ...(me.username === undefined ? {} : { username: me.username }),
-    },
-    ...(allowedChatIds === undefined ? {} : { allowedChatIds }),
-    ...(allowedUsernames === undefined ? {} : { allowedUsernames }),
-    queues: new Map<string, ConversationQueueState>(),
-  };
-
-  logger.info("telegram.gateway_initialized", {
-    configPath: path.resolve(options.configPath),
-    botId: me.id,
-    botUsername: me.username,
-    allowedChatCount: allowedChatIds?.size ?? 0,
-    allowedUsernameCount: allowedUsernames?.size ?? 0,
-    logLevel: runtimeConfig.logging.level,
-    logToStderr: runtimeConfig.logging.stderr,
-    logFilePath: runtimeConfig.logging.filePath,
-  });
-
-  registerTelegramHandlers(bot, state);
-  const runner = run(bot);
-  registerShutdownHandlers(runner, logger);
-
-  startHealthServer({
-    host:
-      options.host ??
-      env.JARVIS_TELEGRAM_HOST ??
-      telegramConfig.host ??
-      defaultHost,
-    port:
-      options.port ??
-      env.JARVIS_TELEGRAM_PORT ??
-      telegramConfig.port ??
-      defaultPort,
-    logger,
-  });
-
-  process.stdout.write(
-    `Jar Telegram gateway running in long polling mode using ${path.resolve(options.configPath)}\n`,
+  const telegramConfigs = parseTelegramPlatformConfig(runtimeConfig.platform);
+  const identities = Object.values(runtimeConfig.platformIdentities).filter(
+    (identity): identity is LoadedTelegramIdentityConfig => identity.platform === "telegram",
   );
-  logger.info("telegram.gateway_started", {
-    configPath: path.resolve(options.configPath),
-  });
+
+  for (const identityConfig of identities) {
+    const telegramConfig = telegramConfigs[identityConfig.id];
+    if (telegramConfig === undefined) {
+      throw new Error(`Missing Telegram runtime config for identity \"${identityConfig.id}\"`);
+    }
+
+    const botToken = resolveTelegramBotToken(telegramConfig, env);
+    const bot = new Bot<TelegramGatewayContext>(botToken);
+    bot.api.config.use(autoRetry());
+    bot.use(stream());
+
+    const me = await bot.api.getMe();
+    const allowedChatIds = resolveAllowedChatIds(telegramConfig, env);
+    const allowedUsernames = resolveAllowedUsernames(telegramConfig, env);
+    const state: TelegramGatewayState = {
+      identityConfig,
+      runtime: runtimeConfig,
+      telegramConfig,
+      logger: logger.child({ identityId: identityConfig.id, entityId: identityConfig.entityId }),
+      identity: {
+        botId: me.id,
+        ...(me.username === undefined ? {} : { username: me.username }),
+      },
+      ...(allowedChatIds === undefined ? {} : { allowedChatIds }),
+      ...(allowedUsernames === undefined ? {} : { allowedUsernames }),
+      queues: new Map<string, ConversationQueueState>(),
+    };
+
+    state.logger.info("telegram.gateway_initialized", {
+      configPath: path.resolve(options.configPath),
+      botId: me.id,
+      botUsername: me.username,
+      allowedChatCount: allowedChatIds?.size ?? 0,
+      allowedUsernameCount: allowedUsernames?.size ?? 0,
+      logLevel: runtimeConfig.logging.level,
+      logToStderr: runtimeConfig.logging.stderr,
+      logFilePath: runtimeConfig.logging.filePath,
+    });
+
+    registerTelegramHandlers(bot, state);
+    const runner = run(bot);
+    registerShutdownHandlers(runner, state.logger);
+
+    process.stdout.write(
+      `Jar Telegram identity ${identityConfig.id} running in long polling mode using ${path.resolve(options.configPath)}\n`,
+    );
+    state.logger.info("telegram.gateway_started", {
+      configPath: path.resolve(options.configPath),
+    });
+  }
 };
 
 const registerTelegramHandlers = (
@@ -198,6 +193,57 @@ const registerTelegramHandlers = (
       "Jar Telegram gateway is ready. Send a private message, or mention/reply to the bot in a group.",
       createReplyOptions(messageContext),
     );
+  });
+
+  bot.command("btw", async (context) => {
+    const messageContext = context as TelegramMessageContext;
+    if (!isAllowedChat(messageContext.chat.id, state)) {
+      return;
+    }
+
+    const text = readTelegramMessageText(messageContext.msg);
+    if (!text) {
+      await messageContext.reply("Usage: /btw <entity> <question>", createReplyOptions(messageContext));
+      return;
+    }
+
+    const parsed = parseTelegramSideQueryCommand(text);
+    if (parsed === null) {
+      await messageContext.reply("Usage: /btw <entity> <question>", createReplyOptions(messageContext));
+      return;
+    }
+
+      try {
+        const thread = await findMostRecentThreadForEntity(state.runtime, parsed.entityId);
+        if (thread === null) {
+          await messageContext.reply(
+            `I could not find an active thread for ${parsed.entityId}.`,
+          createReplyOptions(messageContext),
+        );
+        return;
+      }
+
+      const result = await executeSideQueryInSession({
+        config: state.runtime,
+        entityId: parsed.entityId,
+        sourceSessionId: thread.sessionId,
+        prompt: parsed.question,
+        logger: state.logger.child({
+          command: "btw",
+          entityId: parsed.entityId,
+          sourceSessionId: thread.sessionId,
+        }),
+      });
+      await messageContext.reply(
+        result.outputText.trim().length > 0
+          ? result.outputText
+          : "I do not have a short side answer for that right now.",
+        createReplyOptions(messageContext),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await messageContext.reply(`Side query failed: ${message}`, createReplyOptions(messageContext));
+    }
   });
 
   bot.on("message", async (context) => {
@@ -294,7 +340,7 @@ const registerTelegramHandlers = (
 };
 
 const resolveTelegramBotToken = (
-  telegramConfig: TelegramPlatformConfig,
+  telegramConfig: TelegramPlatformIdentityConfig,
   env: TelegramGatewayEnv,
 ): string => {
   const botToken =
@@ -308,7 +354,7 @@ const resolveTelegramBotToken = (
 };
 
 const resolveAllowedChatIds = (
-  telegramConfig: TelegramPlatformConfig,
+  telegramConfig: TelegramPlatformIdentityConfig,
   env: TelegramGatewayEnv,
 ): Set<string> | undefined => {
   if (env.JARVIS_TELEGRAM_ALLOWED_CHAT_IDS) {
@@ -329,7 +375,7 @@ const resolveAllowedChatIds = (
 };
 
 const resolveAllowedUsernames = (
-  telegramConfig: TelegramPlatformConfig,
+  telegramConfig: TelegramPlatformIdentityConfig,
   env: TelegramGatewayEnv,
 ): Set<string> | undefined => {
   if (env.JARVIS_TELEGRAM_ALLOWED_USERNAMES) {
@@ -583,13 +629,19 @@ const handleQueueEntry = async (
   entry: QueueEntry,
   skipped: TelegramMessageSeed[],
 ): Promise<void> => {
-  const sessionKey = entry.message.threadId === undefined
-    ? `telegram:${entry.message.chatId}`
-    : `telegram:${entry.message.chatId}:${entry.message.threadId}`;
-  const sessionId = createTelegramSessionId(sessionKey);
+  const sessionScope = entry.message.threadId === undefined
+    ? `chat:${entry.message.chatId}`
+    : `chat:${entry.message.chatId}:thread:${entry.message.threadId}`;
+  const routed = resolveIdentityThread(state.runtime, {
+    identityId: state.identityConfig.id,
+    platform: "telegram",
+    scope: sessionScope,
+  });
+  const sessionId = routed.sessionId;
   const requestLogger = state.logger.child({
     conversationKey,
     sessionId,
+    entityId: routed.entity.id,
     chatId: entry.message.chatId,
     messageId: entry.message.messageId,
     trigger: entry.kind,
@@ -800,34 +852,6 @@ const registerShutdownHandlers = (
 
   process.once("SIGINT", stopRunner);
   process.once("SIGTERM", stopRunner);
-};
-
-const startHealthServer = (options: {
-  host: string;
-  port: number;
-  logger?: Logger;
-}): void => {
-  const server = createServer((request, response) => {
-    if (request.method === "GET" && request.url === "/healthz") {
-      response.statusCode = 200;
-      response.setHeader("content-type", "application/json; charset=utf-8");
-      response.end(JSON.stringify({ ok: true }));
-      return;
-    }
-
-    response.statusCode = 404;
-    response.end("Not found");
-  });
-
-  server.listen(options.port, options.host, () => {
-    options.logger?.info("telegram.health_server_started", {
-      host: options.host,
-      port: options.port,
-    });
-    process.stdout.write(
-      `Telegram health check listening on http://${options.host}:${options.port}\n`,
-    );
-  });
 };
 
 const toError = (error: unknown): Error => {

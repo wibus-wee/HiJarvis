@@ -48,6 +48,11 @@ const skillsConfigSchema = z.object({
   max_body_chars: z.number().int().positive().optional(),
 }).strict();
 
+const entityConfigSchema = z.object({
+  display_name: nonEmptyString.optional(),
+  system_prompt: nonEmptyString.optional(),
+}).strict();
+
 const rawConfigSchema = z.object({
   agent: z.object({
     provider: nonEmptyString,
@@ -80,6 +85,7 @@ const rawConfigSchema = z.object({
     max_web_response_bytes: z.number().int().positive().optional(),
   }).strict().default({}),
   skills: skillsConfigSchema.default({}),
+  entities: z.record(nonEmptyString, entityConfigSchema).default({}),
 }).strict();
 
 type RawConfig = z.infer<typeof rawConfigSchema>;
@@ -102,12 +108,46 @@ export type LoadedBaseConfig = {
   sessions: {
     rootDir: string;
   };
+  entities: Record<string, LoadedEntityConfig>;
+  platformIdentities: Record<string, LoadedPlatformIdentityConfig>;
   platform: Record<string, unknown>;
 };
 
 export type LoadedRuntimeConfig = Omit<LoadedBaseConfig, "skillsConfig"> & {
   skills: SkillsRuntime;
 };
+
+export type EntitySurface = "slack" | "telegram";
+
+export type LoadedEntityConfig = {
+  id: string;
+  displayName: string;
+  systemPrompt?: string;
+};
+
+export type LoadedSlackIdentityConfig = {
+  id: string;
+  platform: "slack";
+  entityId: string;
+  botToken?: string;
+  appToken?: string;
+  signingSecret?: string;
+  contextLookbackMinutes: number;
+  contextMessageLimit: number;
+};
+
+export type LoadedTelegramIdentityConfig = {
+  id: string;
+  platform: "telegram";
+  entityId: string;
+  botToken?: string;
+  allowedChatIds?: string[];
+  allowedUsernames?: string[];
+};
+
+export type LoadedPlatformIdentityConfig =
+  | LoadedSlackIdentityConfig
+  | LoadedTelegramIdentityConfig;
 
 export const loadBaseConfig = async (
   configFilePath: string,
@@ -170,6 +210,11 @@ export const loadBaseConfig = async (
     sessions: {
       rootDir: sessionRoot,
     },
+    entities: normalizeEntitiesConfig(parsedConfig.entities),
+    platformIdentities: normalizePlatformIdentities(
+      parsedConfig.platform,
+      normalizeEntitiesConfig(parsedConfig.entities),
+    ),
     platform: parsedConfig.platform,
   };
 };
@@ -261,6 +306,135 @@ const parseExecutionConfig = (
   }
 
   return execution;
+};
+
+const normalizeEntitiesConfig = (
+  entities: RawConfig["entities"],
+): Record<string, LoadedEntityConfig> => {
+  const entries = Object.entries(entities);
+  if (entries.length === 0) {
+    throw new Error("Invalid TOML config:\nAt least one entity must be configured");
+  }
+
+  return Object.fromEntries(entries.map(([id, entity]) => [id, {
+    id,
+    displayName: entity.display_name ?? id,
+    ...(entity.system_prompt === undefined ? {} : { systemPrompt: entity.system_prompt }),
+  } satisfies LoadedEntityConfig]));
+};
+
+const slackIdentitySchema = z.object({
+  entity: nonEmptyString,
+  bot_token: nonEmptyString.optional(),
+  app_token: nonEmptyString.optional(),
+  signing_secret: nonEmptyString.optional(),
+  context_lookback_minutes: z.number().int().positive().optional(),
+  context_message_limit: z.number().int().positive().optional(),
+}).strict();
+
+const telegramIdentitySchema = z.object({
+  entity: nonEmptyString,
+  bot_token: nonEmptyString.optional(),
+  allowed_chat_ids: z.array(z.union([z.number().int(), nonEmptyString])).optional(),
+  allowed_usernames: z.array(nonEmptyString).optional(),
+}).strict();
+
+const defaultSlackContextLookbackMinutes = 15;
+const defaultSlackContextMessageLimit = 12;
+
+const normalizePlatformIdentities = (
+  platform: RawConfig["platform"],
+  entities: Record<string, LoadedEntityConfig>,
+): Record<string, LoadedPlatformIdentityConfig> => {
+  const identities: Record<string, LoadedPlatformIdentityConfig> = {};
+
+  const slackRaw = platform.slack;
+  if (slackRaw !== undefined) {
+    const parsed = z.object({
+      identities: z.record(nonEmptyString, slackIdentitySchema),
+    }).strict().safeParse(slackRaw);
+    if (!parsed.success) {
+      throw new Error(`Invalid TOML config:\n${formatIssues(parsed.error.issues, "platform.slack")}`);
+    }
+
+    for (const [id, identity] of Object.entries(parsed.data.identities)) {
+      assertIdentityEntityExists(id, identity.entity, entities);
+      identities[id] = {
+        id,
+        platform: "slack",
+        entityId: identity.entity,
+        ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
+        ...(identity.app_token === undefined ? {} : { appToken: identity.app_token }),
+        ...(identity.signing_secret === undefined ? {} : { signingSecret: identity.signing_secret }),
+        contextLookbackMinutes:
+          identity.context_lookback_minutes ?? defaultSlackContextLookbackMinutes,
+        contextMessageLimit:
+          identity.context_message_limit ?? defaultSlackContextMessageLimit,
+      };
+    }
+  }
+
+  const telegramRaw = platform.telegram;
+  if (telegramRaw !== undefined) {
+    const parsed = z.object({
+      identities: z.record(nonEmptyString, telegramIdentitySchema),
+    }).strict().safeParse(telegramRaw);
+    if (!parsed.success) {
+      throw new Error(
+        `Invalid TOML config:\n${formatIssues(parsed.error.issues, "platform.telegram")}`,
+      );
+    }
+
+    for (const [id, identity] of Object.entries(parsed.data.identities)) {
+      assertIdentityEntityExists(id, identity.entity, entities);
+      identities[id] = {
+        id,
+        platform: "telegram",
+        entityId: identity.entity,
+        ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
+        ...(identity.allowed_chat_ids === undefined
+          ? {}
+          : { allowedChatIds: identity.allowed_chat_ids.map((value) => String(value)) }),
+        ...(identity.allowed_usernames === undefined
+          ? {}
+          : {
+            allowedUsernames: identity.allowed_usernames.map((value) =>
+              value.replace(/^@/, "").toLowerCase()
+            ),
+          }),
+      };
+    }
+  }
+
+  if (Object.keys(identities).length === 0) {
+    throw new Error("Invalid TOML config:\nAt least one platform identity must be configured");
+  }
+
+  return identities;
+};
+
+const assertIdentityEntityExists = (
+  identityId: string,
+  entityId: string,
+  entities: Record<string, LoadedEntityConfig>,
+): void => {
+  if (entities[entityId] !== undefined) {
+    return;
+  }
+
+  throw new Error(
+    `Invalid TOML config:\nplatform identity \"${identityId}\" references unknown entity \"${entityId}\"`,
+  );
+};
+
+const formatIssues = (
+  issues: Array<{ path: PropertyKey[]; message: string }>,
+  prefix: string,
+): string => {
+  return issues.map((issue) => {
+    const suffix = issue.path.length > 0 ? `.${issue.path.join(".")}` : "";
+    return `${prefix}${suffix}: ${issue.message}`;
+  }).join("\n");
 };
 
 const parseCompactionConfig = (

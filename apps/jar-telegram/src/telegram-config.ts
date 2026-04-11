@@ -2,42 +2,45 @@ import { z } from "zod";
 
 const nonEmptyString = z.string().trim().min(1);
 
-const telegramPlatformSchema = z.object({
+const telegramIdentitySchema = z.object({
+  entity: nonEmptyString,
   bot_token: nonEmptyString.optional(),
   allowed_chat_ids: z.array(z.union([z.number().int(), nonEmptyString])).optional(),
   allowed_usernames: z.array(nonEmptyString).optional(),
-  host: nonEmptyString.optional(),
-  port: z.number().int().positive().optional(),
 }).strict();
 
-export type TelegramPlatformConfig = {
+const telegramPlatformSchema = z.object({
+  identities: z.record(nonEmptyString, telegramIdentitySchema),
+}).strict();
+
+export type TelegramPlatformIdentityConfig = {
+  id: string;
+  entityId: string;
   botToken?: string;
   allowedChatIds?: string[];
   allowedUsernames?: string[];
-  host?: string;
-  port?: number;
 };
 
 export const parseTelegramPlatformConfig = (
   platform: Record<string, unknown>,
-): TelegramPlatformConfig => {
+): Record<string, TelegramPlatformIdentityConfig> => {
   const parsed = telegramPlatformSchema.parse(platform.telegram ?? {});
 
-  return {
-    ...(parsed.bot_token === undefined ? {} : { botToken: parsed.bot_token }),
-    ...(parsed.allowed_chat_ids === undefined
+  return Object.fromEntries(Object.entries(parsed.identities).map(([id, identity]) => [id, {
+    id,
+    entityId: identity.entity,
+    ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
+    ...(identity.allowed_chat_ids === undefined
       ? {}
       : {
-        allowedChatIds: parsed.allowed_chat_ids.map((value) => String(value)),
+        allowedChatIds: identity.allowed_chat_ids.map((value) => String(value)),
       }),
-    ...(parsed.allowed_usernames === undefined
+    ...(identity.allowed_usernames === undefined
       ? {}
       : {
-        allowedUsernames: parsed.allowed_usernames.map((value) =>
+        allowedUsernames: identity.allowed_usernames.map((value) =>
           value.replace(/^@/, "").toLowerCase()
         ),
       }),
-    ...(parsed.host === undefined ? {} : { host: parsed.host }),
-    ...(parsed.port === undefined ? {} : { port: parsed.port }),
-  };
+  } satisfies TelegramPlatformIdentityConfig]));
 };

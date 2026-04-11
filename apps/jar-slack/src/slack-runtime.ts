@@ -1,4 +1,3 @@
-import { createServer } from "node:http";
 import path from "node:path";
 import process from "node:process";
 
@@ -6,9 +5,13 @@ import { App, LogLevel } from "@slack/bolt";
 import {
   buildTurnPrompt,
   createLogger,
+  executeSideQueryInSession,
+  findMostRecentThreadForEntity,
+  resolveIdentityThread,
   executePromptInSession,
   SessionExecutionError,
   loadRuntimeConfig,
+  type LoadedSlackIdentityConfig,
   type LoadedRuntimeConfig,
   type Logger,
 } from "@hijarvis/jar-core";
@@ -17,29 +20,26 @@ import { z } from "zod";
 import {
   buildSubscribedThreadPrompt,
   createSlackReplyPayload,
-  createSlackSessionId,
   formatCurrentMessageBlock,
   formatChannelContextBlock,
   formatQueuedMessagesBlock,
   type SlackMessage,
 } from "./slack-prompt.js";
-import { parseSlackPlatformConfig, type SlackPlatformConfig } from "./slack-config.js";
+import {
+  parseSlackPlatformConfig,
+  type SlackPlatformIdentityConfig,
+} from "./slack-config.js";
 
 const slackGatewayEnvSchema = z.object({
   SLACK_BOT_TOKEN: z.string().trim().min(1).optional(),
   SLACK_APP_TOKEN: z.string().trim().min(1).optional(),
   SLACK_SIGNING_SECRET: z.string().trim().min(1).optional(),
-  JARVIS_SLACK_BOT_NAME: z.string().trim().min(1).optional(),
   JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES: z.coerce.number().int().positive().optional(),
   JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().positive().optional(),
-  PORT: z.coerce.number().int().positive().optional(),
-  HOST: z.string().trim().min(1).optional(),
 });
 
 type SlackGatewayRuntimeOptions = {
   configPath: string;
-  host?: string;
-  port?: number;
 };
 
 type SlackGatewayEnv = z.infer<typeof slackGatewayEnvSchema>;
@@ -141,10 +141,11 @@ type ThreadQueueState = {
 };
 
 type SlackGatewayState = {
+  identityConfig: LoadedSlackIdentityConfig;
   identity: SlackGatewayIdentity;
   observedContextLimits: ObservedContextLimits;
   runtime: LoadedRuntimeConfig;
-  slackConfig: SlackPlatformConfig;
+  slackConfig: SlackPlatformIdentityConfig;
   logger: Logger;
   slackClient: App["client"];
   subscriptions: Set<string>;
@@ -155,8 +156,6 @@ type SlackGatewayState = {
   seenMessages: Map<string, number>;
 };
 
-const defaultHost = "0.0.0.0";
-const defaultPort = 3000;
 const queueEntryTtlMs = 60_000;
 const maxQueueSize = 20;
 const seenEventTtlMs = 5 * 60_000;
@@ -166,83 +165,79 @@ export const startSlackGateway = async (
   options: SlackGatewayRuntimeOptions,
 ): Promise<void> => {
   const runtimeConfig = await loadRuntimeConfig(options.configPath);
-  const slackConfig = parseSlackPlatformConfig(runtimeConfig.platform);
   const logger = createLogger(runtimeConfig.logging).child({
     component: "slack_gateway",
   });
   const env = loadSlackGatewayEnv(process.env);
-  const tokens = resolveSlackTokens(slackConfig, env);
-
-  const observedContextLimits = {
-    lookbackMinutes:
-      env.JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES ??
-      slackConfig.contextLookbackMinutes,
-    maxMessages:
-      env.JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT ??
-      slackConfig.contextMessageLimit,
-  };
-
-  const app = new App({
-    token: tokens.botToken,
-    appToken: tokens.appToken,
-    signingSecret: tokens.signingSecret,
-    socketMode: true,
-    logLevel: LogLevel.INFO,
-  });
-
-  const identity = await resolveBotIdentity(app);
-  const state: SlackGatewayState = {
-    identity,
-    observedContextLimits,
-    runtime: runtimeConfig,
-    slackConfig,
-    logger,
-    slackClient: app.client,
-    subscriptions: new Set<string>(),
-    queues: new Map<string, ThreadQueueState>(),
-    lastReplyTsByScope: new Map<string, string>(),
-    userCache: new Map<string, string>(),
-    seenEvents: new Map<string, number>(),
-    seenMessages: new Map<string, number>(),
-  };
-
-  logger.info("slack.gateway_initialized", {
-    configPath: path.resolve(options.configPath),
-    botUserId: identity.botUserId,
-    contextLookbackMinutes: observedContextLimits.lookbackMinutes,
-    contextMessageLimit: observedContextLimits.maxMessages,
-    logLevel: runtimeConfig.logging.level,
-    logToStderr: runtimeConfig.logging.stderr,
-    logFilePath: runtimeConfig.logging.filePath,
-  });
-
-  registerSlackHandlers(app, state);
-
-  await app.start();
-  startHealthServer({
-    host:
-      options.host ??
-      env.HOST ??
-      slackConfig.host ??
-      defaultHost,
-    port:
-      options.port ??
-      env.PORT ??
-      slackConfig.port ??
-      defaultPort,
-    logger,
-  });
-
-  process.stdout.write(
-    `Jar Slack gateway running in Socket Mode using ${path.resolve(options.configPath)}\n`,
+  const slackConfigs = parseSlackPlatformConfig(runtimeConfig.platform);
+  const identities = Object.values(runtimeConfig.platformIdentities).filter(
+    (identity): identity is LoadedSlackIdentityConfig => identity.platform === "slack",
   );
-  logger.info("slack.gateway_started", {
-    configPath: path.resolve(options.configPath),
-  });
+
+  for (const identityConfig of identities) {
+    const slackConfig = slackConfigs[identityConfig.id];
+    if (slackConfig === undefined) {
+      throw new Error(`Missing Slack runtime config for identity \"${identityConfig.id}\"`);
+    }
+
+    const tokens = resolveSlackTokens(slackConfig, env);
+    const observedContextLimits = {
+      lookbackMinutes:
+        env.JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES ??
+        slackConfig.contextLookbackMinutes,
+      maxMessages:
+        env.JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT ??
+        slackConfig.contextMessageLimit,
+    };
+
+    const app = new App({
+      token: tokens.botToken,
+      appToken: tokens.appToken,
+      signingSecret: tokens.signingSecret,
+      socketMode: true,
+      logLevel: LogLevel.INFO,
+    });
+
+    const identity = await resolveBotIdentity(app);
+    const state: SlackGatewayState = {
+      identityConfig,
+      identity,
+      observedContextLimits,
+      runtime: runtimeConfig,
+      slackConfig,
+      logger: logger.child({ identityId: identityConfig.id, entityId: identityConfig.entityId }),
+      slackClient: app.client,
+      subscriptions: new Set<string>(),
+      queues: new Map<string, ThreadQueueState>(),
+      lastReplyTsByScope: new Map<string, string>(),
+      userCache: new Map<string, string>(),
+      seenEvents: new Map<string, number>(),
+      seenMessages: new Map<string, number>(),
+    };
+
+    state.logger.info("slack.gateway_initialized", {
+      configPath: path.resolve(options.configPath),
+      botUserId: identity.botUserId,
+      contextLookbackMinutes: observedContextLimits.lookbackMinutes,
+      contextMessageLimit: observedContextLimits.maxMessages,
+      logLevel: runtimeConfig.logging.level,
+      logToStderr: runtimeConfig.logging.stderr,
+      logFilePath: runtimeConfig.logging.filePath,
+    });
+
+    registerSlackHandlers(app, state);
+    await app.start();
+    process.stdout.write(
+      `Jar Slack identity ${identityConfig.id} running in Socket Mode using ${path.resolve(options.configPath)}\n`,
+    );
+    state.logger.info("slack.gateway_started", {
+      configPath: path.resolve(options.configPath),
+    });
+  }
 };
 
 const resolveSlackTokens = (
-  slackConfig: SlackPlatformConfig,
+  slackConfig: SlackPlatformIdentityConfig,
   env: SlackGatewayEnv,
 ): SlackGatewayTokens => {
   const botToken =
@@ -483,11 +478,17 @@ const handleQueueEntry = async (
   entry: QueueEntry,
   skipped: SlackMessageSeed[],
 ): Promise<void> => {
-  const sessionId = createSlackSessionId(`slack:${scopeKey}`);
+  const routed = resolveIdentityThread(state.runtime, {
+    identityId: state.identityConfig.id,
+    platform: "slack",
+    scope: scopeKey,
+  });
+  const sessionId = routed.sessionId;
   const requestLogger = state.logger.child({
     scopeKey,
     scopeKind: entry.scopeKind,
     sessionId,
+    entityId: routed.entity.id,
     channel: entry.channel,
     threadTs: entry.threadTs,
     requestKind: entry.kind,
@@ -510,6 +511,21 @@ const handleQueueEntry = async (
       requestLogger,
     )
     : buildSubscribedThreadPrompt(current, skippedMessages);
+
+  const sideQuery = parseSlackSideQuery(current.text);
+  if (sideQuery !== null) {
+    await respondWithSlackSideQuery({
+      runtime: state.runtime,
+      channel: entry.channel,
+      threadTs: entry.threadTs,
+      scopeKey,
+      client: state,
+      entityId: sideQuery.entityId,
+      question: sideQuery.question,
+      logger: requestLogger,
+    });
+    return;
+  }
 
   await respondInSlackThread({
     runtime: state.runtime,
@@ -874,6 +890,23 @@ const stripBotMention = (text: string, botUserId: string): string => {
   return text.replace(mention, "").trim();
 };
 
+const parseSlackSideQuery = (
+  text: string,
+): { entityId: string; question: string } | null => {
+  const match = text.trim().match(/^\/btw\s+(\S+)\s+([\s\S]+)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const entityId = match[1]?.trim();
+  const question = match[2]?.trim();
+  if (!entityId || !question) {
+    return null;
+  }
+
+  return { entityId, question };
+};
+
 const includesBotMention = (text: string, botUserId: string): boolean => {
   return text.includes(`<@${botUserId}>`);
 };
@@ -970,6 +1003,50 @@ const respondInSlackThread = async ({
   }
 };
 
+const respondWithSlackSideQuery = async (options: {
+  runtime: LoadedRuntimeConfig;
+  channel: string;
+  threadTs: string;
+  scopeKey: string;
+  client: SlackGatewayState;
+  entityId: string;
+  question: string;
+  logger: Logger;
+}): Promise<void> => {
+  try {
+    const thread = await findMostRecentThreadForEntity(options.runtime, options.entityId);
+    const reply = thread === null
+      ? `I could not find an active thread for ${options.entityId}.`
+      : (await executeSideQueryInSession({
+        config: options.runtime,
+        entityId: options.entityId,
+        sourceSessionId: thread.sessionId,
+        prompt: options.question,
+        logger: options.logger.child({
+          command: "btw",
+          entityId: options.entityId,
+          sourceSessionId: thread.sessionId,
+        }),
+      })).outputText.trim() || "I do not have a short side answer for that right now.";
+
+    const response = await options.client.slackClient.chat.postMessage({
+      channel: options.channel,
+      thread_ts: options.threadTs,
+      ...createSlackReplyPayload(reply),
+    });
+    if (response.ts) {
+      options.client.lastReplyTsByScope.set(options.scopeKey, response.ts);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await options.client.slackClient.chat.postMessage({
+      channel: options.channel,
+      thread_ts: options.threadTs,
+      ...createSlackReplyPayload(`Side query failed: ${message}`),
+    });
+  }
+};
+
 const buildSlackSkillTriggerText = (
   currentMessage: SlackMessage,
   skipped: SlackMessage[],
@@ -1063,32 +1140,4 @@ const loadSlackGatewayEnv = (
   rawEnv: NodeJS.ProcessEnv,
 ): SlackGatewayEnv => {
   return slackGatewayEnvSchema.parse(rawEnv);
-};
-
-const startHealthServer = (options: {
-  host: string;
-  port: number;
-  logger?: Logger;
-}): void => {
-  const server = createServer((request, response) => {
-    if (request.method === "GET" && request.url === "/healthz") {
-      response.statusCode = 200;
-      response.setHeader("content-type", "application/json; charset=utf-8");
-      response.end(JSON.stringify({ ok: true }));
-      return;
-    }
-
-    response.statusCode = 404;
-    response.end("Not found");
-  });
-
-  server.listen(options.port, options.host, () => {
-    options.logger?.info("slack.health_server_started", {
-      host: options.host,
-      port: options.port,
-    });
-    process.stdout.write(
-      `Slack health check listening on http://${options.host}:${options.port}\n`,
-    );
-  });
 };

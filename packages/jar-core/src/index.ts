@@ -87,15 +87,35 @@ export {
   loadBaseConfig,
   loadRuntimeConfig,
   resolveSkillsFromConfig,
+  type LoadedEntityConfig,
   type LoadedAgentConfig,
   type LoadedBaseConfig,
+  type LoadedPlatformIdentityConfig,
+  type LoadedSlackIdentityConfig,
+  type LoadedTelegramIdentityConfig,
   type LoadedRuntimeConfig,
 } from "./config.js";
 
+export {
+  createEphemeralSideQuerySessionId,
+  findMostRecentIdentityThread,
+  findMostRecentThreadForEntity,
+  getEntityById,
+  getPlatformIdentityById,
+  parseIdentitySessionId,
+  resolveIdentitySessionId,
+  resolveIdentityThread,
+  sessionBelongsToIdentity,
+  type IdentityTarget,
+  type RoutedIdentityThread,
+} from "./entity-routing.js";
+
 // --- Convenience: session execution ---
 export {
+  executeSideQueryInSession,
   executePromptInSession,
   SessionExecutionError,
+  type SideQueryResult,
   type SessionPromptOptions,
   type SessionPromptResult,
 } from "./session-executor.js";

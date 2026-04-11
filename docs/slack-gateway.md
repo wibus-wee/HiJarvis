@@ -8,7 +8,8 @@
 
 - 在 Slack channel 中 `@mention` Jarvis 时，把请求导入 Jar runtime；
 - 所有回复统一进入 Slack thread；
-- 顶层 channel mention 和 thread follow-up 各自映射到独立的 Jar session。
+- 顶层 channel mention 和 thread follow-up 各自映射到某个 Jarvis entity 在 Slack 上的局部 thread session。
+- 支持显式 `/btw <entity> <question>` 侧问，不污染目标 thread 的主历史。
 
 这意味着第一版明确**不做**：
 
@@ -20,7 +21,7 @@
 
 ## 当前形态
 
-`apps/jar-slack` 是一个单独的 Node.js daemon，通过 Slack Socket Mode 接收事件。
+`apps/jar-slack` 是一个单独的 Node.js daemon，但它现在是一个 Slack identity supervisor，而不是单 bot daemon。它会为 `platform.slack.identities.*` 下的每个配置启动一个独立的 Slack Socket Mode runtime。
 
 入口是：
 
@@ -30,12 +31,13 @@
 服务会：
 
 1. 读取 `jar.toml`
-2. 启动 Slack Socket Mode 连接
-3. 先把 Slack transport event 归一化成 canonical message
-4. 在内存里维护线程订阅、scope reply timestamp、event dedupe、message dedupe 与队列状态
-5. 把 Slack scope 映射到 Jar session
-6. 在回复发回 Slack 前，把模型原始 Markdown 组织成 Slack `markdown` blocks
-7. 输出一层面向开发排障的摘要日志
+2. 读取 `platform.slack.identities.*`
+3. 为每个 Slack identity 启动一条独立的 Socket Mode 连接
+4. 先把 Slack transport event 归一化成 canonical message
+5. 在每个 identity 自己的内存态里维护线程订阅、scope reply timestamp、event dedupe、message dedupe 与队列状态
+6. 先把 Slack scope 路由到当前 Slack identity，再映射到该 identity 绑定 entity 的局部 Jar session
+7. 在回复发回 Slack 前，把模型原始 Markdown 组织成 Slack `markdown` blocks
+8. 输出一层面向开发排障的摘要日志
 
 ## 运行方式
 
@@ -45,23 +47,17 @@
 pnpm dev:slack
 ```
 
-显式指定配置文件和健康检查端口：
+显式指定配置文件：
 
 ```bash
-pnpm --filter @hijarvis/jar-slack dev -- --config ./jar.toml --port 3100
-```
-
-健康检查：
-
-```bash
-curl http://127.0.0.1:3000/healthz
+pnpm --filter @hijarvis/jar-slack dev -- --config ./jar.toml
 ```
 
 如果你已经在 `jar.toml` 里配置了 `[logging].file_path`，开发时建议直接 `tail -f` 这个文件，而不是只盯着 Slack thread 本身。当前默认是 `stderr` 走 `pino-pretty`，文件走 `pino` JSONL。
 
 ## 配置来源
 
-Slack gateway 现在优先从 `jar.toml` 的 `[platform.slack]` 读取配置。
+Slack gateway 现在优先从 `jar.toml` 的 `platform.slack.identities.*` 读取配置。
 
 Socket Mode 需要在 Slack App 设置里开启，并生成 `xapp-...` app-level token。这个 token 必须带 `connections:write` 权限，用来调用 `apps.connections.open` 建立 WebSocket 连接。启用后不需要配置 `request_url`，但仍需勾选所需的 Event Subscriptions。
 
@@ -73,20 +69,32 @@ Socket Mode 需要在 Slack App 设置里开启，并生成 `xapp-...` app-level
 
 - manifest 不会替你创建 `xapp-...` app-level token。
 - `connections:write` 不属于 bot scopes，不能放在 `oauth_config.scopes.bot` 里。
-- 仍需在 Slack 后台的 `Basic Information > App-Level Tokens` 里单独生成带 `connections:write` 的 token，并填到 `platform.slack.app_token` 或 `SLACK_APP_TOKEN`。
+- 仍需在 Slack 后台的 `Basic Information > App-Level Tokens` 里单独生成带 `connections:write` 的 token，并填到 `platform.slack.identities.<identity>.app_token` 或 `SLACK_APP_TOKEN`。
 
 推荐形态：
 
 ```toml
-[platform.slack]
-bot_name = "jarvis"
+[entities.jarvis]
+display_name = "Jarvis"
+
+[entities.pm]
+display_name = "PM Jarvis"
+
+[platform.slack.identities.slack_main]
+entity = "jarvis"
 bot_token = "xoxb-..."
 app_token = "xapp-..."
 signing_secret = "..."
 context_lookback_minutes = 15
 context_message_limit = 12
-host = "0.0.0.0"
-port = 3000
+
+[platform.slack.identities.slack_pm]
+entity = "pm"
+bot_token = "xoxb-..."
+app_token = "xapp-..."
+signing_secret = "..."
+context_lookback_minutes = 15
+context_message_limit = 12
 
 [logging]
 level = "info"
@@ -107,20 +115,17 @@ SLACK_SIGNING_SECRET=...
 Jar Slack gateway 自己支持的 override：
 
 ```bash
-JARVIS_SLACK_BOT_NAME=jarvis
 JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES=15
 JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT=12
-HOST=0.0.0.0
-PORT=3000
 ```
 
 说明：
 
-- `JARVIS_SLACK_BOT_NAME`：覆盖 `platform.slack.bot_name`。
 - `JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES`：当 channel scope 里还没有 Jarvis 上一轮回复时，bootstrap fallback 的回看时间窗。
 - `JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT`：每轮 channel-scope prompt 最多带入多少条顶层消息。
-- `HOST` / `PORT`：覆盖健康检查 HTTP 服务监听地址。
 - `SLACK_APP_TOKEN` 对应的是 app-level token，不是 bot token；创建时需要勾选 `connections:write`。
+
+这些环境变量是全进程级 override，不适合长期用于多 identity 生产配置。真正的多 bot 配置应直接写进 `jar.toml`，否则多个 Slack identity 会被同一套环境变量覆盖。
 
 ## 运行日志
 
@@ -198,6 +203,34 @@ Slack gateway 现在明确把输入处理拆成三层：
 
 当前实现直接忽略 Slack DM。只有 channel 顶层 mention 和已订阅 thread 内的后续消息会进入 Jar runtime。
 
+## Entity 与 Session 映射
+
+Slack gateway 现在不再把 Slack scope 直接当成“Jarvis 自己”。
+
+真实形态是：
+
+- `platform identity`：真实 Slack bot/app 身份，例如 `slack_main`
+- `entity`：该 Slack bot 绑定的 Jarvis 身份，例如 `jarvis` 或 `pm`
+- `scope`：Slack channel/thread 上的一个局部表面坐标
+- `session`：该 identity 在该 scope 上的本地持续 thread
+
+普通消息不再路由到默认 entity。它们总是路由到当前 Slack runtime identity 绑定的 entity。
+
+如果用户发送：
+
+```text
+/btw jarvis-a what are you working on?
+```
+
+Slack gateway 会：
+
+1. 解析目标 entity
+2. 查找该 entity 最近活跃的 identity-bound thread session
+3. 运行 side query
+4. 把短答发回当前 Slack thread
+
+这次 side query 不会写入目标 thread 的正常 transcript。
+
 ## Session 映射
 
 顶层 channel scope 统一编码成：
@@ -212,18 +245,19 @@ thread scope 统一编码成：
 slack:thread:{channelId}:{threadTs}
 ```
 
-最终会转换成 Jar session id，例如：
+最终会转换成带 identity 前缀的 Jar session id，例如：
 
 ```text
-slack__channel__{channelId}
-slack__thread__{channelId}__{threadTs}
+identity__slack_main__slack__channel__{channelId}
+identity__slack_main__slack__thread__{channelId}__{threadTs}
 ```
 
 这样做的目的：
 
 - 保持可读性
 - 避免直接把 `/` 之类的平台分隔符带入本地文件路径
-- 保证“一个 Slack scope = 一个 Jar session”
+- 保证“同一个 Slack identity 上的一个 scope = 一个 Jar session”
+- 保证不同 Slack bot 即使落在同一个 channel/thread 坐标，也不会共享 session
 
 ## 上下文组装
 

@@ -6,6 +6,10 @@ import {
   shouldCompactFromUsage,
 } from "./compaction/index.js";
 import type { LoadedRuntimeConfig } from "./config.js";
+import {
+  createEphemeralSideQuerySessionId,
+  getEntityById,
+} from "./entity-routing.js";
 import type { Logger } from "./logger.js";
 import { stripMemoryExcludedPromptContextFromMessage } from "./prompt-context.js";
 import {
@@ -44,6 +48,12 @@ export type SessionPromptResult = {
   sessionId: string;
   turnId: string;
   runId: string;
+};
+
+export type SideQueryResult = {
+  outputText: string;
+  entityId: string;
+  sourceSessionId: string;
 };
 
 export class SessionExecutionError extends Error {
@@ -287,6 +297,63 @@ export const executePromptInSession = async (
     sessionId: session.sessionId,
     turnId: tracker.turnId,
     runId: tracker.runId,
+  };
+};
+
+export const executeSideQueryInSession = async (options: {
+  config: LoadedRuntimeConfig;
+  entityId: string;
+  sourceSessionId: string;
+  prompt: PromptInput;
+  logger?: Logger;
+}): Promise<SideQueryResult> => {
+  const { config } = options;
+  const entity = getEntityById(config, options.entityId);
+  if (entity === undefined) {
+    throw new Error(`Unknown Jarvis entity \"${options.entityId}\"`);
+  }
+
+  const agentConfig = config.agent;
+  const { toolOptions, sessions } = config;
+  const sourceSession = await openSession({
+    rootDir: sessions.rootDir,
+    sessionId: options.sourceSessionId,
+    provider: agentConfig.provider,
+    model: agentConfig.model,
+  });
+
+  const ephemeralSessionId = createEphemeralSideQuerySessionId(entity.id);
+  const agent = createAgent({
+    ...agentConfig,
+    ...(entity.systemPrompt === undefined ? {} : { systemPrompt: entity.systemPrompt }),
+    tools: [],
+    ...(options.logger ? { logger: options.logger } : {}),
+  });
+  agent.sessionId = ephemeralSessionId;
+  agent.state.messages = sourceSession.messages;
+
+  let outputText = "";
+  agent.subscribe((event) => {
+    if (
+      event.type === "message_update" &&
+      event.assistantMessageEvent.type === "text_delta"
+    ) {
+      outputText += event.assistantMessageEvent.delta;
+    }
+  });
+
+  await executePromptWithPolicy(
+    agent,
+    options.prompt,
+    agentConfig.execution,
+    defaultWriters,
+    options.logger,
+  );
+
+  return {
+    outputText,
+    entityId: entity.id,
+    sourceSessionId: sourceSession.sessionId,
   };
 };
 

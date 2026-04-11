@@ -16,6 +16,18 @@ retry_backoff_multiplier = 2
 # Optional. Upper bound for retry wait and provider-suggested retry delays.
 retry_max_delay_ms = 30000
 
+[entities.jarvis]
+# Optional. Human-readable name shown by surfaces when addressing this entity.
+display_name = "Jarvis"
+# Optional. Override the base system prompt for this entity only.
+# system_prompt = "You are Jarvis, a focused personal assistant."
+
+[entities.pm]
+# Optional. A second entity that can be bound to its own real platform identities.
+display_name = "PM Jarvis"
+# Optional. Override the base system prompt for this entity only.
+# system_prompt = "You are PM Jarvis, a product-focused assistant."
+
 [agent.compaction]
 # Optional. Toggle auto-compaction for long-running sessions.
 enabled = true
@@ -32,35 +44,45 @@ api_key = "replace-me"
 # Optional. Useful for OpenAI-compatible gateways, local models, or proxies.
 base_url = "https://api.openai.com/v1"
 
-[platform.slack]
-# Optional. Display name used by the Slack gateway.
-bot_name = "jarvis"
-# Optional. Slack bot token. Environment variables may still override this.
+[platform.slack.identities.slack_main]
+# Required. Bind this real Slack bot identity to one entity.
+entity = "jarvis"
+# Optional. Slack bot token. Environment variables may still override this process-wide.
 bot_token = "xoxb-replace-me"
 # Optional. Slack app-level token for Socket Mode (xapp-...).
 app_token = "xapp-replace-me"
-# Optional. Slack signing secret. Environment variables may still override this.
+# Optional. Slack signing secret. Environment variables may still override this process-wide.
 signing_secret = "replace-me"
-# Optional. Bootstrap lookback window for a channel scope that has not seen a Jarvis reply yet.
+# Optional. Bootstrap lookback window for a channel scope that has not seen a reply from this identity yet.
 context_lookback_minutes = 15
 # Optional. Maximum number of top-level channel messages injected for each channel-scope turn.
 context_message_limit = 12
-# Optional. HTTP bind host for the Slack health check server.
-host = "0.0.0.0"
-# Optional. HTTP bind port for the Slack health check server.
-port = 3000
 
-[platform.telegram]
+[platform.slack.identities.slack_pm]
+# Optional. A second real Slack bot identity bound to a different entity.
+entity = "pm"
+bot_token = "xoxb-replace-me-2"
+app_token = "xapp-replace-me-2"
+signing_secret = "replace-me-2"
+context_lookback_minutes = 15
+context_message_limit = 12
+
+[platform.telegram.identities.telegram_main]
+# Required. Bind this real Telegram bot identity to one entity.
+entity = "jarvis"
 # Optional. Telegram bot token.
 bot_token = "123456:replace-me"
-# Optional. Restrict the bot to a fixed set of chat ids.
+# Optional. Restrict this bot to a fixed set of chat ids.
 allowed_chat_ids = [123456789]
-# Optional. Restrict the bot to a fixed set of Telegram usernames.
+# Optional. Restrict this bot to a fixed set of Telegram usernames.
 allowed_usernames = ["wibus"]
-# Optional. HTTP bind host for the Telegram health check server.
-host = "0.0.0.0"
-# Optional. HTTP bind port for the Telegram health check server.
-port = 3001
+
+[platform.telegram.identities.telegram_pm]
+# Optional. A second real Telegram bot identity bound to a different entity.
+entity = "pm"
+bot_token = "654321:replace-me"
+allowed_chat_ids = [987654321]
+allowed_usernames = ["wibus"]
 
 [platform.wechat]
 # Optional. Override the iLink API base URL.
