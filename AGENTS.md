@@ -12,7 +12,6 @@
 │   ├── jar-cli - a CLI interface with a readline loop
 │   ├── jar-slack - a Slack bot
 │   ├── jar-telegram - a Telegram bot
-│   └── jar-wechat - a WeChat bot
 ├── docs
 │   └── exec-plans - living implementation plans for large refactors and features
 ├── packages
