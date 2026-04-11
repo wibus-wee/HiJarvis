@@ -50,7 +50,7 @@ Verification: `pnpm -r tsc --noEmit` reports zero type errors after all changes.
 - [x] (2026-04-08) Renamed `LoadedBaseConfig.runtime` / `LoadedRuntimeConfig.runtime` → `.agent`. Updated `config.ts`, `config.test.ts`.
 - [x] (2026-04-08) Applied `defaultCompactionSettings` at `loadBaseConfig` time, removed silent fallback in `createAgent` and `session-executor`.
 - [x] (2026-04-08) Replaced `SessionPromptOptions` with slim type taking `config: LoadedRuntimeConfig`. Fixed double skills injection inside `executePromptInSession`. Removed `writers` parameter.
-- [x] (2026-04-08) Updated all four call sites: `telegram-runtime.ts`, `slack-runtime.ts`, `wechat-runtime.ts`, `jar-cli/main.ts`.
+- [x] (2026-04-08) Updated all runtime call sites present at the time: `telegram-runtime.ts`, `slack-runtime.ts`, `wechat-runtime.ts`, `jar-cli/main.ts`.
 - [x] (2026-04-08) Updated `index.ts` exports (`createTools` alias removed, export `SessionPromptOptions`).
 - [x] (2026-04-08) Ran `pnpm -r tsc --noEmit` — zero errors.
 - [x] (2026-04-08) Updated docs (`agent-runtime.md`, `configuration.md`).
@@ -93,7 +93,7 @@ Verification: `pnpm -r tsc --noEmit` reports zero type errors after all changes.
 
 ## Context and Orientation
 
-The repository is a monorepo with one library package (`packages/jar-core`) and four application packages (`apps/jar-cli`, `apps/jar-slack`, `apps/jar-telegram`, `apps/jar-wechat`). TypeScript is compiled with `tsc`; tests run with `node:test`.
+The repository is a monorepo with one library package (`packages/jar-core`) and application packages such as `apps/jar-cli`, `apps/jar-slack`, and `apps/jar-telegram`. TypeScript is compiled with `tsc`; tests run with `node:test`.
 
 Key files modified by this plan:
 
@@ -104,7 +104,6 @@ Key files modified by this plan:
 - `packages/jar-core/src/index.ts` — public exports.
 - `apps/jar-telegram/src/telegram-runtime.ts` — call site.
 - `apps/jar-slack/src/slack-runtime.ts` — call site.
-- `apps/jar-wechat/src/wechat-runtime.ts` — call site.
 - `apps/jar-cli/src/main.ts` — call sites (two: REPL path and session path).
 
 ## Plan of Work

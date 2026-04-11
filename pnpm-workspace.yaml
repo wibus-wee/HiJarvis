@@ -2,5 +2,3 @@ packages:
   - packages/*
   - apps/*
   - 3rd/*
-patchedDependencies:
-  '@pinixai/weixin-bot@1.2.0': patches/@pinixai__weixin-bot@1.2.0.patch

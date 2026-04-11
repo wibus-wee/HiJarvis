@@ -4,10 +4,7 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  '@pinixai/weixin-bot@1.2.0':
-    hash: dc0add06fcef91e8d5a1d3f3750b9d2c4d31329130dfd03f720954471b0b289a
-    path: patches/@pinixai__weixin-bot@1.2.0.patch
+patchedDependencies: {}
 
 importers:
 
@@ -101,21 +98,6 @@ importers:
       grammy:
         specifier: ^1.42.0
         version: 1.42.0
-      tsx:
-        specifier: ^4.21.0
-        version: 4.21.0
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
-
-  apps/jar-wechat:
-    dependencies:
-      '@hijarvis/jar-core':
-        specifier: workspace:*
-        version: link:../../packages/jar-core
-      '@pinixai/weixin-bot':
-        specifier: ^1.2.0
-        version: 1.2.0(patch_hash=dc0add06fcef91e8d5a1d3f3750b9d2c4d31329130dfd03f720954471b0b289a)
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -576,10 +558,6 @@ packages:
 
   '@mistralai/mistralai@1.14.1':
     resolution: {integrity: sha512-IiLmmZFCCTReQgPAT33r7KQ1nYo5JPdvGkrkZqA8qQ2qB1GHgs5LoP5K2ICyrjnpw2n8oSxMM/VP+liiKcGNlQ==}
-
-  '@pinixai/weixin-bot@1.2.0':
-    resolution: {integrity: sha512-NqazkkVK3ncnF/R+jP/GeOxG5Vr7iECXB8OZsaZJcKyjdYDzUs9ijbiVQzIflWVl4l7fNM/uQgrlrbxdrt0yNQ==}
-    engines: {node: '>=22'}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -3065,8 +3043,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-
-  '@pinixai/weixin-bot@1.2.0(patch_hash=dc0add06fcef91e8d5a1d3f3750b9d2c4d31329130dfd03f720954471b0b289a)': {}
 
   '@pinojs/redact@0.4.0': {}
 

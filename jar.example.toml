@@ -84,18 +84,6 @@ bot_token = "654321:replace-me"
 allowed_chat_ids = [987654321]
 allowed_usernames = ["wibus"]
 
-[platform.wechat]
-# Optional. Override the iLink API base URL.
-base_url = "https://api-bot.hzxww.net"
-# Optional. Persist WeChat bot credentials in a project-local file.
-token_path = ".jar/wechat/credentials.json"
-# Optional. Coalesce rapid consecutive WeChat messages into one Jar turn.
-coalesce_window_ms = 2500
-# Optional. HTTP bind host for the WeChat health check server.
-host = "0.0.0.0"
-# Optional. HTTP bind port for the WeChat health check server.
-port = 3002
-
 [logging]
 # Optional. Summary log verbosity: error, warn, info, or debug.
 level = "info"
