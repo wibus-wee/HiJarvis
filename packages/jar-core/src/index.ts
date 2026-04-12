@@ -124,18 +124,6 @@ export {
   type LoadedRuntimeConfig,
 } from "./config.js";
 
-export {
-  findMostRecentIdentityThread,
-  getEntityById,
-  getPlatformIdentityById,
-  parseIdentitySessionId,
-  resolveIdentitySessionId,
-  resolveIdentityThread,
-  sessionBelongsToIdentity,
-  type IdentityTarget,
-  type RoutedIdentityThread,
-} from "./entity-routing.js";
-
 // --- Ingress and execution services ---
 export {
   buildDefaultSkillTriggerText,

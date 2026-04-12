@@ -168,7 +168,7 @@ Prompt assembly is now split into two layers:
 
 `packages/jar-core/src/ingress.ts` owns the normalized command types and `/btw` parsing. CLI `--thread`, the Ink REPL, Slack, and Telegram all route `/btw <question>` through the same ingress path so the answer reads from the current live in-memory parent thread state without appending a normal persisted turn.
 
-Identity-aware routing now sits above persistence. Adapters provide structured platform scopes; `packages/jar-core/src/ingress.ts` converts those scopes into stable local thread ids. The persistence model keeps thread/lane terminology and does not require adapters to call a separate routing helper before execution.
+Identity-aware routing now sits above persistence. Adapters provide structured platform scopes; `packages/jar-core/src/ingress.ts` converts those scopes into stable local thread ids. The persistence model keeps thread/lane terminology and does not require a separate routing module before execution.
 
 The current runtime keeps a narrow side-question live-thread registry so `/btw` can ask a one-shot side question from the parent's current in-memory state instead of replaying only persisted lane state. `/btw` is intentionally not a persisted fork, child lane, or multi-turn bubble.
 
