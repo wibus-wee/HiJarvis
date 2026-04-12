@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
+import type { ExecutionAuditStore } from "./persistence.js";
 import type { Logger } from "./logger.js";
-import type { ConversationHandle } from "./lanes/index.js";
 import {
   generateThreadItemId,
   generateThreadRunId,
@@ -22,7 +22,8 @@ import type { PromptErrorCategory, PromptInput } from "./prompt-executor.js";
 const promptPreviewLimit = 2_000;
 
 export type ThreadExecutionTrackerOptions = {
-  session: ConversationHandle;
+  threadId: string;
+  auditStore: ExecutionAuditStore;
   prompt: PromptInput;
   trigger: ThreadTurnTrigger;
   logger?: Logger;
@@ -57,7 +58,7 @@ export const startThreadExecutionTracker = async (
   const now = Date.now();
   const turn: ThreadTurn = {
     turnId: generateThreadTurnId(),
-    threadId: options.session.threadId,
+    threadId: options.threadId,
     trigger: options.trigger,
     status: "running",
     input: buildTurnInput(options.prompt, options.turnInputMetadata),
@@ -73,9 +74,9 @@ export const startThreadExecutionTracker = async (
     startedAt: now,
   };
 
-  await options.session.appendTurn(turn);
-  await options.session.appendRun(run);
-  await options.session.appendItem({
+  await options.auditStore.appendTurn(options.threadId, turn);
+  await options.auditStore.appendRun(options.threadId, run);
+  await options.auditStore.appendItem(options.threadId, {
     itemId: generateThreadItemId(),
     runId: run.runId,
     type: "user_input",
@@ -92,7 +93,7 @@ export const startThreadExecutionTracker = async (
   let settled = false;
 
   const appendItem = async (item: Omit<ThreadItem, "itemId" | "runId" | "createdAt">) => {
-    await options.session.appendItem({
+    await options.auditStore.appendItem(options.threadId, {
       itemId: generateThreadItemId(),
       runId: run.runId,
       ...item,
@@ -107,12 +108,12 @@ export const startThreadExecutionTracker = async (
     settled = true;
     const completedAt = Date.now();
 
-    await options.session.appendRun({
+    await options.auditStore.appendRun(options.threadId, {
       ...run,
       status: "completed",
       completedAt,
     });
-    await options.session.appendTurn({
+    await options.auditStore.appendTurn(options.threadId, {
       ...turn,
       status: "completed",
       completedAt,
@@ -130,13 +131,13 @@ export const startThreadExecutionTracker = async (
     settled = true;
     const completedAt = Date.now();
 
-    await options.session.appendRun({
+    await options.auditStore.appendRun(options.threadId, {
       ...run,
       status: "failed",
       completedAt,
       error: message,
     });
-    await options.session.appendTurn({
+    await options.auditStore.appendTurn(options.threadId, {
       ...turn,
       status: "failed",
       completedAt,

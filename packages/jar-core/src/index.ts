@@ -79,13 +79,10 @@ export {
 export {
   captureLiveThreadForSideQuestion,
   executeSideQuestion,
-  maybeExecuteSideQuestionCommand,
   normalizeSideQuestionPromptToMessages,
-  parseSideQuestionCommand,
   registerLiveThreadForSideQuestion,
   unregisterLiveThreadForSideQuestion,
   updateLiveThreadCaptureForSideQuestion,
-  type ParsedSideQuestionCommand,
   type SideQuestionResult,
   type SideQuestionLiveThreadCapture,
 } from "./side-question/index.js";
@@ -139,13 +136,40 @@ export {
   type RoutedIdentityThread,
 } from "./entity-routing.js";
 
-// --- Convenience: session execution ---
+// --- Ingress and execution services ---
 export {
-  executePromptInSession,
-  ThreadExecutionError,
-  type ThreadPromptOptions,
-  type ThreadPromptResult,
-} from "./thread-executor.js";
+  buildDefaultSkillTriggerText,
+  buildThreadIdFromScope,
+  buildTurnInputMetadata,
+  parseSideQuestionCommand,
+  type IngressCommand,
+  type IngressObservedMessage,
+  type IngressScope,
+  type IngressSource,
+  type LocalThreadScope,
+  type MessageIngressCommand,
+  type ParsedSideQuestionCommand,
+  type RoutedScope,
+  type SideQuestionIngressCommand,
+  type SlackScope,
+  type TelegramScope,
+} from "./ingress.js";
+export {
+  executeIngressCommand,
+  IngressExecutionError,
+  maybeExecuteSideQuestionIngress,
+  type IngressResult,
+  type MessageIngressResult,
+  type SideQuestionIngressResult,
+} from "./execution-service.js";
+export type {
+  AppendConversationMessageInput,
+  ApplyCheckpointInput,
+  ConversationStateStore,
+  EventLogStore,
+  ExecutionAuditStore,
+  MaterializedConversationState,
+} from "./persistence.js";
 
 // --- Convenience: skills ---
 export {

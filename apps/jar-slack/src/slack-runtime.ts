@@ -4,12 +4,13 @@ import process from "node:process";
 import { App, LogLevel } from "@slack/bolt";
 import {
   buildTurnPrompt,
+  buildThreadIdFromScope,
   createLogger,
-  maybeExecuteSideQuestionCommand,
-  resolveIdentityThread,
-  executePromptInSession,
-  ThreadExecutionError,
+  executeIngressCommand,
+  IngressExecutionError,
   loadRuntimeConfig,
+  maybeExecuteSideQuestionIngress,
+  type MessageIngressCommand,
   type LoadedSlackIdentityConfig,
   type LoadedRuntimeConfig,
   type Logger,
@@ -477,17 +478,25 @@ const handleQueueEntry = async (
   entry: QueueEntry,
   skipped: SlackMessageSeed[],
 ): Promise<void> => {
-  const routed = resolveIdentityThread(state.runtime, {
-    identityId: state.identityConfig.id,
+  const threadId = buildThreadIdFromScope({
     platform: "slack",
-    scope: scopeKey,
+    identityId: state.identityConfig.id,
+    scope: entry.scopeKind === "thread"
+      ? {
+        kind: "slack",
+        channelId: entry.channel,
+        threadTs: entry.threadTs,
+      }
+      : {
+        kind: "slack",
+        channelId: entry.channel,
+      },
   });
-  const threadId = routed.threadId;
   const requestLogger = state.logger.child({
     scopeKey,
     scopeKind: entry.scopeKind,
     threadId,
-    entityId: routed.entity.id,
+    entityId: state.identityConfig.entityId,
     channel: entry.channel,
     threadTs: entry.threadTs,
     requestKind: entry.kind,
@@ -511,10 +520,14 @@ const handleQueueEntry = async (
     )
     : buildSubscribedThreadPrompt(current, skippedMessages);
 
-  const sideQuestion = await maybeExecuteSideQuestionCommand({
+  const sideQuestion = await maybeExecuteSideQuestionIngress({
     config: state.runtime,
     parentThreadId: threadId,
     input: current.text,
+    source: {
+      platform: "slack",
+      identityId: state.identityConfig.id,
+    },
     logger: requestLogger,
   });
 
@@ -524,8 +537,8 @@ const handleQueueEntry = async (
       channel: entry.channel,
       threadTs: entry.threadTs,
       scopeKey,
-      reply: sideQuestion.outputText.trim().length > 0
-        ? sideQuestion.outputText
+      reply: sideQuestion.result.outputText.trim().length > 0
+        ? sideQuestion.result.outputText
         : "I do not have a side-question reply.",
       logger: requestLogger,
       threadId,
@@ -928,20 +941,48 @@ const respondInSlackThread = async ({
     logger.info("slack.reply_generation_started", {
       promptChars: prompt.length,
     });
-    const execution = await executePromptInSession({
+    const execution = await executeIngressCommand({
       config: runtime,
-      threadId,
-      prompt,
-      skillTriggerText,
-      turnTrigger: "platform_event",
-      turnInputMetadata: {
-        platform: "slack",
-        scopeKey,
-        channel,
-        threadTs,
-      },
       logger,
+      command: {
+        kind: "message",
+        source: {
+          platform: "slack",
+          identityId: client.identityConfig.id,
+        },
+        routing: {
+          platform: "slack",
+          identityId: client.identityConfig.id,
+          scope: scopeKey.startsWith("channel:") && threadTs === scopeKey.replace(/^channel:/, "")
+            ? {
+              kind: "slack",
+              channelId: channel,
+            }
+            : {
+              kind: "slack",
+              channelId: channel,
+              threadTs,
+            },
+        },
+        message: {
+          text: skillTriggerText,
+        },
+        prompt,
+        skillTriggerText,
+        audit: {
+          trigger: "platform_event",
+          triggerKind: "slack_message",
+          metadata: {
+            scopeKey,
+            channel,
+            threadTs,
+          },
+        },
+      } satisfies MessageIngressCommand,
     });
+    if (execution.kind !== "message") {
+      throw new Error("Slack reply generation expected a message execution result.");
+    }
     turnId = execution.turnId;
     runId = execution.runId;
     const { outputText } = execution;
@@ -975,8 +1016,8 @@ const respondInSlackThread = async ({
       durationMs: Date.now() - startedAt,
       message,
       threadId,
-      turnId: turnId ?? (error instanceof ThreadExecutionError ? error.turnId : undefined),
-      runId: runId ?? (error instanceof ThreadExecutionError ? error.runId : undefined),
+      turnId: turnId ?? (error instanceof IngressExecutionError ? error.turnId : undefined),
+      runId: runId ?? (error instanceof IngressExecutionError ? error.runId : undefined),
       scopeKey,
     });
 

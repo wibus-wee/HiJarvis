@@ -158,18 +158,10 @@ export const openConversationHandle = async (
       }, null, 2)}\n`, "utf8");
     },
     flush: async () => {
-      const stats = await appendTapeRecord(tape, {
-        type: "lane.checkpoint",
-        payload: {
-          headMessages: messages,
-          sourceOffsets: [],
-        },
-      });
       await writeFile(headPath, `${JSON.stringify({
         v: 1,
         threadId: options.threadId,
         laneId,
-        checkpointOffset: stats.offset,
         messages,
       }, null, 2)}\n`, "utf8");
     },

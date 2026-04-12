@@ -5,14 +5,14 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { run, type RunnerHandle } from "@grammyjs/runner";
 import { stream, type StreamFlavor } from "@grammyjs/stream";
 import {
+  buildThreadIdFromScope,
   createLogger,
-  executeSideQuestion,
-  maybeExecuteSideQuestionCommand,
   parseSideQuestionCommand,
-  resolveIdentityThread,
-  executePromptInSession,
+  executeIngressCommand,
   loadRuntimeConfig,
-  ThreadExecutionError,
+  IngressExecutionError,
+  maybeExecuteSideQuestionIngress,
+  type MessageIngressCommand,
   type LoadedTelegramIdentityConfig,
   type LoadedRuntimeConfig,
   type Logger,
@@ -194,7 +194,14 @@ const registerTelegramHandlers = (
     }
 
     const text = readTelegramMessageText(messageContext.msg);
-    const parsed = text ? parseSideQuestionCommand(text) : null;
+    const parsed = text ? parseSideQuestionCommand({
+      input: text,
+      parentThreadId: "preview",
+      source: {
+        platform: "telegram",
+        identityId: state.identityConfig.id,
+      },
+    }) : null;
     if (parsed === null) {
       await messageContext.reply("Usage: /btw <question>", createReplyOptions(messageContext));
       return;
@@ -209,31 +216,48 @@ const registerTelegramHandlers = (
       return;
     }
 
-    const sessionScope = normalized.threadId === undefined
-      ? `chat:${normalized.chatId}`
-      : `chat:${normalized.chatId}:thread:${normalized.threadId}`;
-    const routed = resolveIdentityThread(state.runtime, {
-      identityId: state.identityConfig.id,
+    const threadId = buildThreadIdFromScope({
       platform: "telegram",
-      scope: sessionScope,
+      identityId: state.identityConfig.id,
+      scope: normalized.threadId === undefined
+        ? {
+          kind: "telegram",
+          chatId: normalized.chatId,
+        }
+        : {
+          kind: "telegram",
+          chatId: normalized.chatId,
+          messageThreadId: String(normalized.threadId),
+        },
     });
     const requestLogger = state.logger.child({
       conversationKey: buildConversationKey(normalized.chatId, normalized.threadId),
-      threadId: routed.threadId,
-      entityId: routed.entity.id,
+      threadId,
+      entityId: state.identityConfig.entityId,
       chatId: normalized.chatId,
       messageId: normalized.messageId,
       trigger: "side_question",
     });
 
     try {
-      const result = await executeSideQuestion({
+      const result = await executeIngressCommand({
         config: state.runtime,
-        parentThreadId: routed.threadId,
-        question: parsed.question,
-        skillTriggerText: parsed.question,
+        command: {
+          kind: "side_question",
+          source: {
+            platform: "telegram",
+            identityId: state.identityConfig.id,
+          },
+          parentThreadId: threadId,
+          question: {
+            text: parsed.question.text,
+          },
+        },
         logger: requestLogger,
       });
+      if (result.kind !== "side_question") {
+        throw new Error("Telegram /btw expected a side-question execution result.");
+      }
       await messageContext.reply(
         result.outputText.trim().length > 0
           ? result.outputText
@@ -243,7 +267,7 @@ const registerTelegramHandlers = (
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       requestLogger.error("telegram.side_question_failed", {
-        threadId: routed.threadId,
+        threadId,
         chatId: normalized.chatId,
         messageId: normalized.messageId,
         message,
@@ -525,7 +549,11 @@ const readTelegramMessageText = (
 };
 
 export const isTelegramSideQuestionCommand = (text: string | undefined): boolean => {
-  return text !== undefined && parseSideQuestionCommand(text) !== null;
+  return text !== undefined && parseSideQuestionCommand({
+    input: text,
+    parentThreadId: "preview",
+    source: { platform: "telegram" },
+  }) !== null;
 };
 
 const stripBotMention = (
@@ -668,16 +696,24 @@ const handleQueueEntry = async (
   const sessionScope = entry.message.threadId === undefined
     ? `chat:${entry.message.chatId}`
     : `chat:${entry.message.chatId}:thread:${entry.message.threadId}`;
-  const routed = resolveIdentityThread(state.runtime, {
-    identityId: state.identityConfig.id,
+  const threadId = buildThreadIdFromScope({
     platform: "telegram",
-    scope: sessionScope,
+    identityId: state.identityConfig.id,
+    scope: entry.message.threadId === undefined
+      ? {
+        kind: "telegram",
+        chatId: entry.message.chatId,
+      }
+      : {
+        kind: "telegram",
+        chatId: entry.message.chatId,
+        messageThreadId: String(entry.message.threadId),
+      },
   });
-  const threadId = routed.threadId;
   const requestLogger = state.logger.child({
     conversationKey,
     threadId,
-    entityId: routed.entity.id,
+    entityId: state.identityConfig.entityId,
     chatId: entry.message.chatId,
     messageId: entry.message.messageId,
     trigger: entry.kind,
@@ -698,17 +734,21 @@ const handleQueueEntry = async (
     promptChars: prompt.length,
   });
 
-  const sideQuestion = await maybeExecuteSideQuestionCommand({
+  const sideQuestion = await maybeExecuteSideQuestionIngress({
     config: state.runtime,
     parentThreadId: threadId,
     input: current.text,
+    source: {
+      platform: "telegram",
+      identityId: state.identityConfig.id,
+    },
     logger: requestLogger,
   });
 
   if (sideQuestion.handled) {
     await entry.context.reply(
-      sideQuestion.outputText.trim().length > 0
-        ? sideQuestion.outputText
+      sideQuestion.result.outputText.trim().length > 0
+        ? sideQuestion.result.outputText
         : "I do not have a side-question reply.",
       createReplyOptions(entry.context),
     );
@@ -755,28 +795,54 @@ const respondInTelegramConversation = async (options: {
   let turnId: string | undefined;
   let runId: string | undefined;
 
-  const responseTask = executePromptInSession({
+  const responseTask = executeIngressCommand({
     config: options.runtime,
-    threadId: options.threadId,
-    prompt: options.prompt,
-    skillTriggerText: options.skillTriggerText,
     logger: options.logger,
-    turnTrigger: "platform_event",
-    turnInputMetadata: {
-      platform: "telegram",
-      conversationKey: options.conversationKey,
-      chatId: String(options.context.chat.id),
-      messageId: options.context.msg.message_id,
-    },
-    onEvent(event) {
-      if (
-        event.type === "message_update" &&
-        event.assistantMessageEvent.type === "text_delta"
-      ) {
-        emittedText = true;
-        textStream.push(event.assistantMessageEvent.delta);
-      }
-    },
+    command: {
+      kind: "message",
+      source: {
+        platform: "telegram",
+      },
+      routing: {
+        platform: "telegram",
+        scope: options.context.msg.message_thread_id === undefined
+          ? {
+            kind: "telegram",
+            chatId: String(options.context.chat.id),
+          }
+          : {
+            kind: "telegram",
+            chatId: String(options.context.chat.id),
+            messageThreadId: String(options.context.msg.message_thread_id),
+          },
+      },
+      message: {
+        text: options.skillTriggerText,
+        id: String(options.context.msg.message_id),
+      },
+      prompt: options.prompt,
+      skillTriggerText: options.skillTriggerText,
+      audit: {
+        trigger: "platform_event",
+        triggerKind: "telegram_message",
+        metadata: {
+          conversationKey: options.conversationKey,
+          chatId: String(options.context.chat.id),
+          messageId: options.context.msg.message_id,
+        },
+      },
+      execution: {
+        onEvent(event) {
+          if (
+            event.type === "message_update" &&
+            event.assistantMessageEvent.type === "text_delta"
+          ) {
+            emittedText = true;
+            textStream.push(event.assistantMessageEvent.delta);
+          }
+        },
+      },
+    } satisfies MessageIngressCommand,
   })
     .then((result) => {
       const { outputText } = result;
@@ -802,6 +868,9 @@ const respondInTelegramConversation = async (options: {
       createReplyOptions(options.context),
     );
     const result = await responseTask;
+    if (result.kind !== "message") {
+      throw new Error("Telegram reply generation expected a message execution result.");
+    }
     turnId = result.turnId;
     runId = result.runId;
     const outputText = result.outputText;
@@ -817,15 +886,17 @@ const respondInTelegramConversation = async (options: {
     });
   } catch (error) {
     const settledResult = await responseTask.catch(() => undefined);
-    turnId = turnId ?? settledResult?.turnId;
-    runId = runId ?? settledResult?.runId;
+    if (settledResult?.kind === "message") {
+      turnId = turnId ?? settledResult.turnId;
+      runId = runId ?? settledResult.runId;
+    }
     const normalizedError = toError(error);
     options.logger.error("telegram.reply_failed", {
       durationMs: Date.now() - startedAt,
       message: normalizedError.message,
       threadId: options.threadId,
-      turnId: turnId ?? (error instanceof ThreadExecutionError ? error.turnId : undefined),
-      runId: runId ?? (error instanceof ThreadExecutionError ? error.runId : undefined),
+      turnId: turnId ?? (error instanceof IngressExecutionError ? error.turnId : undefined),
+      runId: runId ?? (error instanceof IngressExecutionError ? error.runId : undefined),
       conversationKey: options.conversationKey,
     });
 

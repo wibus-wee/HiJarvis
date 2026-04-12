@@ -1,6 +1,6 @@
 import process from "node:process";
 
-import type { Agent } from "@mariozechner/pi-agent-core";
+import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 import { TextInput } from "@inkjs/ui";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import { startTransition, useCallback, useEffect, useReducer, useRef } from "react";
@@ -17,8 +17,12 @@ type PromptWriters = {
 };
 
 export type ReplOptions = {
-  agent: Agent;
-  executePrompt?: (input: string, writers: PromptWriters) => Promise<void>;
+  initialMessages: AgentMessage[];
+  executePrompt?: (
+    input: string,
+    writers: PromptWriters,
+    onEvent: (event: AgentEvent) => void,
+  ) => Promise<void>;
   initialPrompt?: string;
 };
 
@@ -39,7 +43,7 @@ export const runRepl = async (options: ReplOptions): Promise<void> => {
 };
 
 const ReplApp = ({ options }: { options: ReplOptions }) => {
-  const [state, dispatch] = useReducer(replReducer, options.agent.state.messages, createReplState);
+  const [state, dispatch] = useReducer(replReducer, options.initialMessages, createReplState);
   const { exit } = useApp();
   const { stdout } = useStdout();
   const hasHandledInitialPrompt = useRef(false);
@@ -48,16 +52,6 @@ const ReplApp = ({ options }: { options: ReplOptions }) => {
   useEffect(() => {
     isRunningRef.current = state.isRunning;
   }, [state.isRunning]);
-
-  useEffect(() => {
-    const unsubscribe = options.agent.subscribe((event) => {
-      startTransition(() => {
-        dispatch({ type: "agent_event", event });
-      });
-    });
-
-    return unsubscribe;
-  }, [options.agent]);
 
   const submitPrompt = useCallback(async (rawValue: string): Promise<void> => {
     const trimmed = rawValue.trim();
@@ -70,11 +64,10 @@ const ReplApp = ({ options }: { options: ReplOptions }) => {
       return;
     }
 
-    const executePrompt =
-      options.executePrompt ??
-      (async (input: string) => {
-        await options.agent.prompt(input);
-      });
+    const executePrompt = options.executePrompt;
+    if (executePrompt === undefined) {
+      throw new Error("REPL requires an executePrompt handler.");
+    }
 
     startTransition(() => {
       dispatch({ type: "reset_composer" });
@@ -86,6 +79,10 @@ const ReplApp = ({ options }: { options: ReplOptions }) => {
         stderr: {
           write: () => true,
         },
+      }, (event) => {
+        startTransition(() => {
+          dispatch({ type: "agent_event", event });
+        });
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -97,7 +94,7 @@ const ReplApp = ({ options }: { options: ReplOptions }) => {
         dispatch({ type: "set_running", value: false });
       });
     }
-  }, [exit, options.agent, options.executePrompt]);
+  }, [exit, options.executePrompt]);
 
   const handleDraftChange = useCallback((value: string) => {
     dispatch({ type: "set_draft", value });
@@ -119,7 +116,6 @@ const ReplApp = ({ options }: { options: ReplOptions }) => {
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
       if (isRunningRef.current) {
-        options.agent.abort();
         return;
       }
 

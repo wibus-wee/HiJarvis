@@ -1,9 +1,4 @@
 export {
-  maybeExecuteSideQuestionCommand,
-  parseSideQuestionCommand,
-  type ParsedSideQuestionCommand,
-} from "./command.js";
-export {
   executeSideQuestion,
   normalizeSideQuestionPromptToMessages,
   type SideQuestionResult,

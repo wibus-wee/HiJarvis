@@ -320,7 +320,11 @@ test("hasSeenKey expires old entries before admitting a new key", () => {
 });
 
 test("Slack current-message text can be parsed as a /btw side question", () => {
-  assert.deepEqual(parseSideQuestionCommand("/btw what are you doing?"), {
-    question: "what are you doing?",
+  const parsed = parseSideQuestionCommand({
+    input: "/btw what are you doing?",
+    parentThreadId: "thread_main",
+    source: { platform: "slack", identityId: "slack_main" },
   });
+  assert.equal(parsed?.kind, "side_question");
+  assert.equal(parsed?.question.text, "what are you doing?");
 });

@@ -10,17 +10,17 @@ Jar 现在支持两类 runtime surface：
 2. `apps/jar-slack`：基于 Slack Socket Mode 的 Slack gateway。
 3. `apps/jar-telegram`：基于 grammY long polling 的 Telegram gateway。
 
-CLI invocation 仍然保持原有流程：
+CLI invocation 现在统一走 ingress command 流程：
 
 1. Parses CLI arguments.
 2. Loads `apps/jar-cli/jar.toml`.
 3. Uses `packages/jar-core` to resolve a `pi-ai` model from `agent.provider` and `agent.model`.
 4. Overrides the model `baseUrl` when `provider.<name>.base_url` is configured.
-5. Builds the tool list from `packages/jar-core/src/tools.ts`.
-6. Creates a `pi-agent-core` `Agent`.
-7. Executes prompts via `packages/jar-core/src/prompt-executor.ts` for one-shot runs, or `packages/jar-core/src/thread-executor.ts` when `--thread` is used.
+5. Builds a normalized ingress command that carries routing, content, and audit semantics explicitly.
+6. Sends that command through `packages/jar-core/src/execution-service.ts`.
+7. The execution service creates a `pi-agent-core` `Agent` through `packages/jar-core/src/runtime.ts`, injects tools from `packages/jar-core/src/tools.ts`, and executes via `packages/jar-core/src/prompt-executor.ts`.
 8. Either streams assistant text to stdout through the CLI adapter or renders the Ink TUI package (`--repl`).
-9. Optionally persists lane tape plus turn/run/item execution records through `packages/jar-core/src/lanes/`.
+9. Persists lane tape facts plus turn/run/item and raw event projections through the persistence ports in `packages/jar-core/src/persistence.ts` backed by `packages/jar-core/src/lanes/`.
 
 Slack gateway 的流程不同：
 
@@ -30,7 +30,7 @@ Slack gateway 的流程不同：
 4. Each Slack runtime handles `app_mention` and message events for its own bot connection.
 5. On a new `@mention`, the current Slack identity subscribes the thread, collects a bounded window of top-level channel messages before the mention, and composes an observed-context prompt.
 6. On follow-up messages inside a subscribed Slack thread, the current identity routes the message into that identity's local thread without rebuilding channel history.
-7. Executes the turn through `packages/jar-core/src/thread-executor.ts`.
+7. Builds a Slack-scoped ingress command and executes it through `packages/jar-core/src/execution-service.ts`.
 8. Persists tape/event/checkpoint data plus thread-scoped turn/run/item records through `packages/jar-core/src/lanes/`.
 9. Emits summary logs through `packages/jar-core/src/logger.ts` so the request path is readable without replaying raw events.
 
@@ -42,7 +42,7 @@ Telegram gateway 则是：
 4. Each Telegram bot handles all private chat messages, plus group messages that explicitly mention that bot or reply to that bot's message.
 5. Coalesces rapid follow-up messages per chat/topic in memory so long-running LLM turns do not interleave.
 6. Builds a Telegram prompt from the current message, optional reply context, and any skipped messages.
-7. Executes the turn through `packages/jar-core/src/thread-executor.ts`.
+7. Builds a Telegram-scoped ingress command and executes it through `packages/jar-core/src/execution-service.ts`.
 8. Streams assistant text back to Telegram through `@grammyjs/stream`.
 9. Persists tape/event/checkpoint data plus thread-scoped turn/run/item records through `packages/jar-core/src/lanes/`.
 
@@ -55,16 +55,15 @@ Responsibilities:
 - parse `--config` / `-c`, `--repl`, `--thread`, `--list-threads`
 - read prompt text from argv or stdin
 - load validated config from `packages/jar-core/src/config.ts`
-- create the runtime `Agent` via `packages/jar-core/src/runtime.ts`
-- subscribe to runtime events
-- execute prompts through `packages/jar-core/src/prompt-executor.ts`
+- build normalized ingress commands for one-shot, thread-bound, and side-question requests
+- hand execution to `packages/jar-core/src/execution-service.ts`
 - forward one-shot runtime output via `apps/jar-cli/src/render-agent-event.ts`
 - launch `@hijarvis/jar-repl-ink` when `--repl` is enabled
 - exit non-zero when the run fails
 
 The workspace packages are split as follows:
 
-- `packages/jar-core`: runtime assembly (substrate primitives + convenience APIs), prompt execution policy, TOML config loading, tool registration, and tape-backed thread/lane persistence
+- `packages/jar-core`: ingress normalization, application-layer execution services, runtime assembly, prompt execution policy, TOML config loading, tool registration, and tape-backed thread/lane persistence
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
 - `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
@@ -152,23 +151,24 @@ Prompt assembly is now split into two layers:
 - `prompt-context.ts`: owns contextual fragment rendering, prompt injection, and memory-excluded cleanup before persistence or compaction.
 - `getSkillsCatalogOverlays()`: convenience helper that converts a `SkillsRuntime` catalog into `PromptSection[]` for passing to `createAgent()`.
 
-`packages/jar-core/src/thread-executor.ts` is the shared thread-bound execution seam (convenience API). It:
+`packages/jar-core/src/execution-service.ts` is the shared application-layer execution seam. It:
 
-- accepts a single `config: LoadedRuntimeConfig` object instead of individual agent fields — callers do not need to spread or duplicate any agent configuration
+- accepts a normalized ingress command plus `LoadedRuntimeConfig`
+- resolves the target thread from structured ingress routing data instead of relying on adapters to compute thread ids separately
 - creates a fresh `Agent` using `config.agent` fields and `createDefaultTools(config.toolOptions)`
 - restores the persisted Jar thread from `config.sessions.rootDir`
 - creates one explicit `turn` and one `run(kind=act)` for the current request
 - injects skills from `config.skills` into each prompt turn; the system prompt catalog overlay is already embedded in `config.agent.systemPromptOverlays` by `loadRuntimeConfig` and is not re-applied here
 - sanitizes older persisted user messages so previous memory-excluded contextual fragments do not keep accumulating in future context windows
-- appends runtime events/messages back into the lane substrate
+- appends conversation facts, audit projections, and raw runtime events through separate persistence ports in `packages/jar-core/src/persistence.ts`
 - maps the current execution into structured `items` such as `user_input`, `assistant_message`, `tool_call`, `tool_result`, `retry_notice`, and `compaction`
 - emits summary logs for prompt/tool boundaries
 - executes the prompt using the retry/timeout policy from `config.agent.execution`
 - returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
 
-`packages/jar-core/src/side-question/` is the shared one-shot `/btw` seam. CLI `--thread`, the Ink REPL, Slack, and Telegram can all route `/btw <question>` through `executeSideQuestion(...)` so the answer reads from the current live in-memory parent thread state without appending a normal persisted turn.
+`packages/jar-core/src/ingress.ts` owns the normalized command types and `/btw` parsing. CLI `--thread`, the Ink REPL, Slack, and Telegram all route `/btw <question>` through the same ingress path so the answer reads from the current live in-memory parent thread state without appending a normal persisted turn.
 
-Identity-aware routing now sits above persistence. `packages/jar-core/src/entity-routing.ts` defines stable Jarvis entities and explicit platform identities. A normal platform turn first resolves the ingress platform identity, then reads the entity bound to that identity, then derives the local conversation target for that identity on that platform. The persistence model is now moving toward thread/lane terminology rather than treating encoded session ids as the primary product identity.
+Identity-aware routing now sits above persistence. Adapters provide structured platform scopes; `packages/jar-core/src/ingress.ts` converts those scopes into stable local thread ids. The persistence model keeps thread/lane terminology and does not require adapters to call a separate routing helper before execution.
 
 The current runtime keeps a narrow side-question live-thread registry so `/btw` can ask a one-shot side question from the parent's current in-memory state instead of replaying only persisted lane state. `/btw` is intentionally not a persisted fork, child lane, or multi-turn bubble.
 
@@ -197,9 +197,9 @@ Jar does not currently render:
 - structured reasoning blocks
 - persisted transcripts
 
-Slack and Telegram gateways additionally emit request-level summary logs. These logs intentionally summarize stage boundaries instead of mirroring every streaming delta, which keeps long-running sessions readable at `info` level. When the execution seam is used, the core logs also attach `turnId` and `runId` to prompt/tool stage records.
+Slack and Telegram gateways additionally emit request-level summary logs. These logs intentionally summarize stage boundaries instead of mirroring every streaming delta, which keeps long-running sessions readable at `info` level. When the execution service is used, the core logs also attach `turnId` and `runId` to prompt/tool stage records.
 
-In `--repl` mode, `packages/jar-repl-ink/src/repl.tsx` subscribes to the same event stream but routes it into an Ink state reducer instead of writing directly to stdout/stderr. The TUI currently renders:
+In `--repl` mode, `packages/jar-repl-ink/src/repl.tsx` receives persisted initial messages plus per-turn event callbacks from the CLI adapter and routes those events into an Ink state reducer instead of talking to `Agent` directly. The TUI currently renders:
 
 - persisted transcript history from the restored session
 - streaming assistant text

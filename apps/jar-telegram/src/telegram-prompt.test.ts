@@ -134,9 +134,13 @@ test("buildTelegramPrompt includes group framing and chat title", () => {
 });
 
 test("Telegram message text can be parsed as a /btw side question", () => {
-  assert.deepEqual(parseSideQuestionCommand("/btw summarize current status"), {
-    question: "summarize current status",
+  const parsed = parseSideQuestionCommand({
+    input: "/btw summarize current status",
+    parentThreadId: "thread_main",
+    source: { platform: "telegram", identityId: "telegram_main" },
   });
+  assert.equal(parsed?.kind, "side_question");
+  assert.equal(parsed?.question.text, "summarize current status");
 });
 
 test("isTelegramSideQuestionCommand detects /btw commands before queueing", () => {

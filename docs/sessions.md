@@ -6,7 +6,13 @@ Jar 现在使用 tape-backed lane 模型。正常执行路径的主语已经不�
 
 - 运行摘要日志：适合开发排障，强调链路边界和可读性。
 - lane 内的 `turns.jsonl` / `runs.jsonl` / `items.jsonl`：适合看一次请求的结构化执行轨迹。
-- lane 内的 `tape.jsonl` 与 `events.jsonl`：适合深度调试和回放事实流，其中 tape 是恢复与未来分叉的核心事实流，events 仍然更偏底层审计。
+- lane 内的 `tape.jsonl` 与 `events.jsonl`：适合深度调试和回放事实流，其中 tape 是恢复与未来分叉的核心事实流，events 是低层事件投影，不是恢复真相。
+
+从执行分层看，当前系统明确分成三类持久化资料：
+
+- conversation state facts：`tape.jsonl` 与其中的 checkpoint records
+- audit projections：`turns.jsonl` / `runs.jsonl` / `items.jsonl`
+- debug event trace：`events.jsonl`
 
 ## 当前目录结构
 
@@ -25,7 +31,7 @@ Jar 现在使用 tape-backed lane 模型。正常执行路径的主语已经不�
 
 ## Tape 与恢复
 
-Tape 是 append-only 的事实流。正常用户消息、assistant 最终消息、以及 compaction checkpoint 都会追加到 `tape.jsonl`。恢复时，系统从 tape materialize 当前 lane view，而不是把 `head.json` 当真相读回来。
+Tape 是 append-only 的事实流。正常用户消息、assistant 最终消息、以及 compaction checkpoint 都会追加到 `tape.jsonl`。恢复时，系统从 tape materialize 当前 lane view，而不是把 `head.json` 当真相读回来。普通 flush 现在只刷新 `head.json` 这类派生缓存，不再顺手制造新的语义 checkpoint。
 
 现在的关键语义是：
 
@@ -48,7 +54,7 @@ compaction 不再意味着“把整个当前上下文重写进一个权威 snaps
 
 ## 审计层
 
-`turns.jsonl`、`runs.jsonl`、`items.jsonl` 仍然保留，因为它们对调试和未来扩展有价值。但它们现在更明确地是审计层，而不是恢复层。
+`turns.jsonl`、`runs.jsonl`、`items.jsonl` 仍然保留，因为它们对调试和未来扩展有价值。但它们现在更明确地是审计层，而不是恢复层。它们由 `packages/jar-core/src/thread-execution.ts` 通过 `ExecutionAuditStore` 这样的窄接口写入，而不是通过一个混合 state/audit/cache 的大句柄写入。
 
 当前执行对象仍然是：
 

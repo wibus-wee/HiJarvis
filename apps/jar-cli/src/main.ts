@@ -2,17 +2,14 @@ import path from "node:path";
 import process from "node:process";
 
 import {
-  createAgent,
-  createDefaultTools,
-  maybeExecuteSideQuestionCommand,
-  executePromptInSession,
-  executePromptWithPolicy,
+  buildDefaultSkillTriggerText,
+  executeIngressCommand,
+  maybeExecuteSideQuestionIngress,
   listThreads,
   loadRuntimeConfig,
   openConversationHandle,
   preparePromptWithSkills,
-  startThreadExecutionTracker,
-  stripMemoryExcludedPromptContextFromMessage,
+  type MessageIngressCommand,
 } from "@hijarvis/jar-core";
 import { runRepl } from "@hijarvis/jar-repl-ink";
 
@@ -63,105 +60,52 @@ const main = async (): Promise<void> => {
       model: config.agent.model,
       threadId,
     });
-      let activeExecution:
-        | Awaited<ReturnType<typeof startThreadExecutionTracker>>
-        | undefined;
-    let activeOutputText = "";
-    const agent = createAgent({
-      ...config.agent,
-      compactionEventSink: (event) => {
-        void session.appendEvent(event);
-        if (activeExecution) {
-          void activeExecution.recordCompaction(event);
-        }
-      },
-      tools: createDefaultTools(config.toolOptions),
-    });
-
-    agent.sessionId = session.threadId;
-    agent.state.messages = session.messages;
-    agent.subscribe(async (event, signal) => {
-      if (signal.aborted) {
-        return;
-      }
-      await session.appendEvent(event);
-      if (activeExecution) {
-        await activeExecution.recordEvent(event);
-      }
-      if (
-        event.type === "message_update" &&
-        event.assistantMessageEvent.type === "text_delta"
-      ) {
-        activeOutputText += event.assistantMessageEvent.delta;
-      }
-      if (event.type === "message_end") {
-        await session.appendMessage(stripMemoryExcludedPromptContextFromMessage(event.message));
-      }
-      if (event.type === "agent_end") {
-        await session.flush();
-      }
-    });
 
     const prompt = await readPrompt(cliOptions.prompt);
     await runRepl({
-      agent,
+      initialMessages: session.messages,
       executePrompt: async (
         input: string,
-        writers: { stderr: Pick<NodeJS.WriteStream, "write"> },
+        _writers: { stderr: Pick<NodeJS.WriteStream, "write"> },
+        onEvent,
       ) => {
-        const sideQuestion = await maybeExecuteSideQuestionCommand({
+        const sideQuestion = await maybeExecuteSideQuestionIngress({
           config,
           parentThreadId: session.threadId,
           input,
+          source: { platform: "cli" },
         });
         if (sideQuestion.handled) {
-          process.stdout.write(`${sideQuestion.outputText.trim() || "I do not have a side-question reply."}\n`);
+          process.stdout.write(`${sideQuestion.result.outputText.trim() || "I do not have a side-question reply."}\n`);
           return;
         }
 
-        const prepared = await preparePromptWithSkills(input, {
-          skills: config.skills,
-          triggerText: input,
-        });
-        activeOutputText = "";
-        activeExecution = await startThreadExecutionTracker({
-          session,
-          prompt: prepared.prompt,
-          trigger: "user_input",
-        });
-
-        for (const warning of prepared.warnings) {
-          await activeExecution.recordNote({
-            kind: "skills_warning",
-            message: warning,
-          });
-        }
-
-        try {
-          await executePromptWithPolicy(
-            agent,
-            prepared.prompt,
-            config.agent.execution,
-            writers,
-            undefined,
-            {
-              onAttemptFailed: async (failure) => {
-                await activeExecution?.recordRetryNotice(failure);
-              },
-              onRetryScheduled: async (event) => {
-                await activeExecution?.recordRetryNotice(event);
-              },
+        const command: MessageIngressCommand = {
+          kind: "message",
+          source: { platform: "cli" },
+          routing: {
+            platform: "cli",
+            scope: {
+              kind: "local_thread",
+              threadId: session.threadId,
             },
-          );
-          await activeExecution.complete(activeOutputText);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          await activeExecution.fail(message);
-          throw error;
-        } finally {
-          activeExecution = undefined;
-          activeOutputText = "";
-        }
+          },
+          message: {
+            text: input,
+          },
+          prompt: input,
+          audit: {
+            trigger: "user_input",
+          },
+          execution: {
+            onEvent,
+          },
+        };
+
+        await executeIngressCommand({
+          config,
+          command,
+        });
       },
       ...(prompt !== undefined ? { initialPrompt: prompt } : {}),
     });
@@ -175,40 +119,80 @@ const main = async (): Promise<void> => {
   }
 
   if (cliOptions.threadId !== undefined) {
-    const sideQuestion = await maybeExecuteSideQuestionCommand({
+    const sideQuestion = await maybeExecuteSideQuestionIngress({
       config,
       parentThreadId: cliOptions.threadId,
       input: prompt,
+      source: { platform: "cli" },
     });
     if (sideQuestion.handled) {
-      process.stdout.write(`${sideQuestion.outputText.trim() || "I do not have a side-question reply."}`);
+      process.stdout.write(`${sideQuestion.result.outputText.trim() || "I do not have a side-question reply."}`);
     } else {
-    await executePromptInSession({
-      config,
-      threadId: cliOptions.threadId,
-      prompt,
-      skillTriggerText: prompt,
-      turnTrigger: "user_input",
-      onEvent: (event) => {
-        renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
-      },
-    });
+      await executeIngressCommand({
+        config,
+        command: {
+          kind: "message",
+          source: { platform: "cli" },
+          routing: {
+            platform: "cli",
+            scope: {
+              kind: "local_thread",
+              threadId: cliOptions.threadId,
+            },
+          },
+          message: { text: prompt },
+          prompt,
+          audit: { trigger: "user_input" },
+          execution: {
+            onEvent: (event) => {
+              renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
+            },
+          },
+        },
+      });
     }
   } else {
-    const agent = createAgent({
-      ...config.agent,
-      tools: createDefaultTools(config.toolOptions),
-    });
-    agent.subscribe((event) => {
-      renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
-    });
     const prepared = await preparePromptWithSkills(prompt, {
       skills: config.skills,
       triggerText: prompt,
     });
-    await executePromptWithPolicy(agent, prepared.prompt, config.agent.execution, {
-      stderr: process.stderr,
+    const oneShotSession = await openConversationHandle({
+      rootDir: config.sessions.rootDir,
+      provider: config.agent.provider,
+      model: config.agent.model,
+      threadId: `oneshot__${Date.now()}`,
     });
+    const command: MessageIngressCommand = {
+      kind: "message",
+      source: { platform: "cli" },
+      routing: {
+        platform: "cli",
+        scope: {
+          kind: "local_thread",
+          threadId: oneShotSession.threadId,
+        },
+      },
+      message: { text: prompt },
+      prompt: prepared.prompt,
+      skillTriggerText: buildDefaultSkillTriggerText({
+        kind: "message",
+        source: { platform: "cli" },
+        routing: {
+          platform: "cli",
+          scope: { kind: "local_thread", threadId: oneShotSession.threadId },
+        },
+        message: { text: prompt },
+        prompt,
+        audit: { trigger: "user_input" },
+      }),
+      audit: { trigger: "user_input" },
+      execution: {
+        onEvent: (event) => {
+          renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
+        },
+      },
+    };
+    await executeIngressCommand({ config, command });
   }
   if (!process.stdout.write("\n")) {
     await onceDrain();

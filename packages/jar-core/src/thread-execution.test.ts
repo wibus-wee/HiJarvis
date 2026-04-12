@@ -7,21 +7,75 @@ import test from "node:test";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, AssistantMessageEvent, Usage } from "@mariozechner/pi-ai";
 
-import { openConversationHandle } from "./lanes/index.js";
+import { createFileSystemConversationStateStore, createFileSystemExecutionAuditStore } from "./persistence.js";
 import { startThreadExecutionTracker } from "./thread-execution.js";
 
 test("startThreadExecutionTracker records turn, run, and items", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-thread-execution-"));
   try {
-    const session = await openConversationHandle({
-      rootDir,
-      provider: "openai",
-      model: "gpt-4o-mini",
-      threadId: "thread_main",
+    const stateStore = createFileSystemConversationStateStore();
+    const session = await stateStore.load({
+      platform: "cli",
+      scope: {
+        kind: "local_thread",
+        threadId: "thread_main",
+      },
+    }, {
+      configFilePath: path.join(rootDir, "jar.toml"),
+      logging: { level: "info", stderr: true },
+      agent: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        systemPrompt: "You are Jarvis.",
+        thinkingLevel: "minimal",
+        providerConfig: {},
+        execution: {
+          requestTimeoutMs: 120_000,
+          retryAttempts: 0,
+          retryInitialDelayMs: 1_000,
+          retryBackoffMultiplier: 2,
+          retryMaxDelayMs: 30_000,
+        },
+        compaction: {
+          enabled: true,
+          triggerRatio: 0.9,
+          budgetRatio: 0.9,
+          summaryMaxTokens: 1024,
+        },
+        systemPromptOverlays: [],
+      },
+      skills: {
+        enabled: false,
+        roots: [],
+        entries: [],
+        catalog: "",
+        errors: [],
+        truncatedByLimit: false,
+        maxScanDepth: 0,
+        maxSkills: 0,
+        maxCatalogChars: 0,
+        maxBodyChars: 0,
+      },
+      toolOptions: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        workspaceRoot: rootDir,
+        maxFileBytes: 32_768,
+        commandTimeoutMs: 30_000,
+        maxCommandOutputBytes: 32_768,
+        webRequestTimeoutMs: 30_000,
+        maxWebResponseBytes: 65_536,
+      },
+      sessions: { rootDir },
+      entities: {},
+      platformIdentities: {},
+      platform: {},
     });
+    const auditStore = createFileSystemExecutionAuditStore();
 
     const tracker = await startThreadExecutionTracker({
-      session,
+      threadId: session.threadId,
+      auditStore,
       prompt: "Explain the workspace state.",
       trigger: "user_input",
       turnInputMetadata: {
