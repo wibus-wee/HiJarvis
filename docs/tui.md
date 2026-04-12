@@ -8,7 +8,7 @@ TUI 只替换交互层，不替换底层 agent 执行链：
 
 - `packages/jar-core/src/runtime.ts` 继续负责创建 `Agent`
 - `packages/jar-core/src/prompt-executor.ts` 继续负责 timeout、retry 与错误分类
-- `packages/jar-core/src/session-store.ts` 继续负责 transcript / event 持久化
+- `packages/jar-core/src/lanes/` 继续负责 thread/lane tape、checkpoint 与 event 持久化
 - `packages/jar-repl-ink/src/repl.tsx` 负责输入、消息渲染与最小交互
 - `packages/jar-repl-ink/src/tui/format.ts` 负责基于终端宽度做 wrap / truncate
 

@@ -35,38 +35,54 @@ export {
   type PromptExecutionPolicy,
 } from "./prompt-executor.js";
 
-// --- Substrate: session store ---
+// --- Substrate: execution facts ---
 export {
-  generateSessionItemId,
-  generateSessionRunId,
-  generateSessionTurnId,
-  listSessions,
-  openSession,
-  type SessionHandle,
-  type SessionItem,
-  type SessionItemRecord,
-  type SessionItemStatus,
-  type SessionItemType,
-  type SessionRun,
-  type SessionRunKind,
-  type SessionRunRecord,
-  type SessionRunStatus,
-  type SessionTurn,
-  type SessionTurnInput,
-  type SessionTurnOutput,
-  type SessionTurnRecord,
-  type SessionTurnStatus,
-  type SessionTurnTrigger,
-} from "./session-store.js";
+  generateThreadItemId,
+  generateThreadRunId,
+  generateThreadTurnId,
+  type CompactionEvent,
+  type JarEvent,
+  type ThreadItem,
+  type ThreadItemStatus,
+  type ThreadItemType,
+  type ThreadRun,
+  type ThreadRunKind,
+  type ThreadRunStatus,
+  type ThreadTurn,
+  type ThreadTurnInput,
+  type ThreadTurnOutput,
+  type ThreadTurnStatus,
+  type ThreadTurnTrigger,
+} from "./execution-types.js";
+
+// --- Substrate: lanes ---
+export {
+  appendTapeRecord,
+  ensureThreadMeta,
+  listThreads,
+  materializeLaneView,
+  openTape,
+  openConversationHandle,
+  readTapeRecords,
+  touchThread,
+  type ConversationHandle,
+  type LaneCheckpointPayload,
+  type LaneMeta,
+  type MaterializedLaneView,
+  type TapeHandle,
+  type TapeRecord,
+  type ThreadListItem,
+  type ThreadMeta,
+} from "./lanes/index.js";
 
 // --- Substrate: session execution tracking ---
 export {
   countPromptMessages,
   estimatePromptChars,
-  startSessionExecutionTracker,
-  type SessionExecutionTracker,
-  type SessionExecutionTrackerOptions,
-} from "./session-execution.js";
+  startThreadExecutionTracker,
+  type ThreadExecutionTracker,
+  type ThreadExecutionTrackerOptions,
+} from "./thread-execution.js";
 
 // --- Substrate: logging ---
 export {
@@ -97,9 +113,7 @@ export {
 } from "./config.js";
 
 export {
-  createEphemeralSideQuerySessionId,
   findMostRecentIdentityThread,
-  findMostRecentThreadForEntity,
   getEntityById,
   getPlatformIdentityById,
   parseIdentitySessionId,
@@ -112,13 +126,11 @@ export {
 
 // --- Convenience: session execution ---
 export {
-  executeSideQueryInSession,
   executePromptInSession,
-  SessionExecutionError,
-  type SideQueryResult,
-  type SessionPromptOptions,
-  type SessionPromptResult,
-} from "./session-executor.js";
+  ThreadExecutionError,
+  type ThreadPromptOptions,
+  type ThreadPromptResult,
+} from "./thread-executor.js";
 
 // --- Convenience: skills ---
 export {

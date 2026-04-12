@@ -114,7 +114,7 @@ web_request_timeout_ms = 30000
 max_web_response_bytes = 65536
 
 [sessions]
-root_dir = ".jar/sessions"
+root_dir = ".jar/threads"
 ```
 
 ## Field Reference
@@ -207,7 +207,7 @@ Telegram gateway 默认使用 long polling，而不是 webhook，并且现在以
 - `stderr`: 是否把摘要日志同时输出到 `stderr`。默认：`true`。当前实现基于 `pino-pretty`，面向本地开发可读性。
 - `file_path`: 可选的日志文件路径。相对路径会以配置文件所在目录为基准。当前实现会写入 `pino` JSONL，适合后续 grep 或脚本分析。
 
-这套日志的设计目标不是替代 `.jar/sessions/<sessionId>/events.jsonl`，而是提供一层更适合开发和排障的“链路摘要”：
+这套日志的设计目标不是替代 `.jar/threads/<threadId>/lanes/main/events.jsonl`，而是提供一层更适合开发和排障的“链路摘要”：
 
 - `info`：只输出关键阶段边界，例如 Slack 事件接收、队列合并、channel delta 抓取、session 执行开始/结束、reply 发回 Slack。
 - `debug`：在 `info` 基础上补充更多低层事件，例如 message 落盘、被忽略或被去重的 Slack 事件。
@@ -238,7 +238,7 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 
 ### `[sessions]`
 
-- `root_dir`: 会话存储目录。相对路径会以配置文件所在目录为基准。默认：`.jar/sessions`。
+- `root_dir`: thread/lane 存储目录。相对路径会以配置文件所在目录为基准。默认：`.jar/threads`。
 
 ## Runtime Notes
 
@@ -246,9 +246,9 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - `apps/jar-slack/src/slack-runtime.ts` reads `platform.slack`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `apps/jar-telegram/src/telegram-runtime.ts` reads `platform.telegram`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
-- `packages/jar-core/src/config.ts` resolves `skills` at startup and passes the catalog/runtime metadata into `packages/jar-core/src/runtime.ts` and `packages/jar-core/src/session-executor.ts`.
+- `packages/jar-core/src/config.ts` resolves `skills` at startup and passes the catalog/runtime metadata into `packages/jar-core/src/runtime.ts` and `packages/jar-core/src/thread-executor.ts`.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
-- `packages/jar-core/src/session-executor.ts` emits session/tool summary logs without streaming every token delta.
+- `packages/jar-core/src/thread-executor.ts` emits thread/tool summary logs without streaming every token delta.
 - `packages/jar-core/src/runtime.ts` forwards `agent.retry_max_delay_ms` to `Agent.maxRetryDelayMs`.
 - `packages/jar-core/src/runtime.ts` passes `provider.<name>.api_key` through `Agent.getApiKey()` for the active provider only.
 - `packages/jar-core/src/config.ts` also forwards the active provider name, model, `provider.<name>.api_key`, and optional `provider.<name>.base_url` into `toolOptions` so provider-aware tools such as `web_search` can branch correctly.

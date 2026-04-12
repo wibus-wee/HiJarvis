@@ -1,58 +1,70 @@
 # Sessions
 
-Jar 现在支持基于 `jsonl` 的会话持久化，用于多轮对话、会话恢复以及审计。
-
-默认情况下，只有在启用 `--repl` 或显式传入 `--session` 时才会创建会话目录。`--repl` 现在使用 Ink TUI，但底层会话写入机制没有变化。
+Jar 现在使用 tape-backed lane 模型。正常执行路径的主语已经不是“把 `session.json` 当作真相再恢复”，而是“把 append-only tape 当作真相，再 materialize 当前 lane view”。
 
 如果你需要看“当前这一次请求到底跑到了哪一步”，现在有三层资料可看：
 
 - 运行摘要日志：适合开发排障，强调链路边界和可读性。
-- `turns.jsonl` / `runs.jsonl` / `items.jsonl`: 适合看一次请求的结构化执行轨迹。
-- `events.jsonl`: 适合深度调试和回放底层 streaming 事实，但不适合作为日常开发控制台。
+- lane 内的 `turns.jsonl` / `runs.jsonl` / `items.jsonl`：适合看一次请求的结构化执行轨迹。
+- lane 内的 `tape.jsonl` 与 `events.jsonl`：适合深度调试和回放事实流，其中 tape 是恢复与未来分叉的核心事实流，events 仍然更偏底层审计。
 
-## 目录结构
+## 当前目录结构
 
-每个会话对应一个目录，包含以下文件：
+新的主路径是 thread/lane 结构：
 
-- `messages.jsonl`: 逐行追加的消息记录，作为可恢复的主日志
-- `session.json`: 会话快照，包含完整消息数组与最后序号
-- `meta.json`: 会话元信息（创建时间、最近更新时间、模型与 provider）
-- `events.jsonl`: 事件记录（包含 streaming 增量、tool 执行事件、以及 compaction 事件），用于回放或调试，不参与会话恢复
-- `turns.jsonl`: turn 级结构化记录；同一个 `turnId` 会随着状态变化追加多条快照
-- `runs.jsonl`: run 级结构化记录；当前每个 turn 默认只有一个 `run(kind=act)`
-- `items.jsonl`: run 内细粒度执行记录，例如 `assistant_message`、`tool_call`、`tool_result`、`retry_notice`、`compaction`
+- `threads/<threadId>/meta.json`: thread 元信息，例如当前活跃 lane。
+- `threads/<threadId>/lanes/main/meta.json`: lane 元信息。
+- `threads/<threadId>/lanes/main/tape.jsonl`: append-only tape，作为当前 conversation truth。
+- `threads/<threadId>/lanes/main/head.json`: 派生缓存，只用于加速与调试，不是 source of truth。
+- `threads/<threadId>/lanes/main/events.jsonl`: 底层事件流审计。
+- `threads/<threadId>/lanes/main/turns.jsonl`: turn 级结构化记录。
+- `threads/<threadId>/lanes/main/runs.jsonl`: run 级结构化记录。
+- `threads/<threadId>/lanes/main/items.jsonl`: item 级细粒度执行记录。
 
-## JSONL 记录结构
+第一版 lane runtime 只支持一个 `main` lane。这里先把 lane 抽象建立起来，是为了让未来可以从 live lane fork 出临时分支，而不是继续把“整个当前上下文”绑定在一个可变 snapshot 文件上。
 
-`messages.jsonl` 采用一行一个 JSON 对象的形式：
+## Tape 与恢复
 
-```json
-{"v":1,"type":"message","sessionId":"sess_20260406_120000_abcd12","sequence":1,"recordedAt":1775400000000,"message":{"role":"user","content":"Hello","timestamp":1775400000000}}
-```
+Tape 是 append-only 的事实流。正常用户消息、assistant 最终消息、以及 compaction checkpoint 都会追加到 `tape.jsonl`。恢复时，系统从 tape materialize 当前 lane view，而不是把 `head.json` 当真相读回来。
 
-`turns.jsonl` / `runs.jsonl` / `items.jsonl` 也都采用一行一个 JSON 对象的形式。例如：
+现在的关键语义是：
 
-```json
-{"v":1,"type":"turn","sessionId":"sess_20260406_120000_abcd12","recordedAt":1775400001000,"turn":{"turnId":"turn_a1b2","sessionId":"sess_20260406_120000_abcd12","trigger":"user_input","status":"running","input":{"promptPreview":"Hello","promptChars":5,"promptMessageCount":1},"createdAt":1775400001000,"startedAt":1775400001000}}
-```
+- `tape.jsonl` 是 canonical truth。
+- `head.json` 是 derived cache。
+- `turns.jsonl` / `runs.jsonl` / `items.jsonl` 是审计投影。
+- `events.jsonl` 是底层事件审计，不是恢复真相。
 
-## 快照策略
+这和旧模型不同。旧模型里，`session.json` 与 `messages.jsonl` 共同承担恢复职责；新模型里，恢复应该围绕 tape 和 lane checkpoint 发生。
 
-会话结束时会写入 `session.json` 快照，用于加速恢复。
+## Checkpoint
 
-恢复时优先读取快照，再从 `messages.jsonl` 追加序号更大的记录。
+compaction 不再意味着“把整个当前上下文重写进一个权威 snapshot 文件”。在新的 lane 模型里，compaction 的持久化目标是 lane checkpoint，也就是 tape 上的一条重建边界记录。
 
-## streaming 与恢复
+简化理解：
 
-`messages.jsonl` 只保存最终消息，因此“恢复”指的是恢复模型上下文的真实状态，而不是复现当时的 streaming 动画。自动 compaction 发生后，后续写入的 `session.json` 快照会保存压缩后的消息数组；`messages.jsonl` 里历史追加记录仍会保留，便于审计。
+- 历史事实仍然保留在 tape 上。
+- checkpoint 只是告诉 materializer：“可以从这里开始重建，而不必从头全扫。”
+- checkpoint 带来的 `headMessages` 是派生重建状态，不是覆盖历史。
 
-如果需要快速理解“这一轮做了什么”，优先看 `turns.jsonl` / `runs.jsonl` / `items.jsonl`。如果需要回放更底层的 streaming 过程，再看 `events.jsonl`。这些文件都不会影响会话恢复的上下文；恢复仍然只依赖 `session.json` 与 `messages.jsonl`。
+## 审计层
+
+`turns.jsonl`、`runs.jsonl`、`items.jsonl` 仍然保留，因为它们对调试和未来扩展有价值。但它们现在更明确地是审计层，而不是恢复层。
+
+当前执行对象仍然是：
+
+- `thread`: 一个稳定的对话范围标识
+- `lane`: thread 内的一条执行线；当前只有 `main`
+- `turn`: 一次输入触发的一单位工作
+- `run`: 某个 turn 的一次具体执行
+- `item`: run 内的细粒度审计记录
 
 ## CLI 使用
 
 ```bash
 pnpm dev -- --config ./apps/jar-cli/jar.toml --repl
-pnpm dev -- --config ./apps/jar-cli/jar.toml --session my-session --repl
-pnpm dev -- --config ./apps/jar-cli/jar.toml --session my-session "Continue this session"
-pnpm dev -- --config ./apps/jar-cli/jar.toml --list-sessions
+pnpm dev -- --config ./apps/jar-cli/jar.toml --thread my-thread --repl
+pnpm dev -- --config ./apps/jar-cli/jar.toml --thread my-thread "Continue this thread"
+pnpm dev -- --config ./apps/jar-cli/jar.toml --list-threads
 ```
+
+CLI 现在使用 `--thread` 明确表达持久化容器选择。

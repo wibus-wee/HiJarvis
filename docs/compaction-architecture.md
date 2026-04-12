@@ -2,7 +2,7 @@
 
 HiJarvis compaction is a small runtime context-reduction layer in `packages/jar-core/src/compaction`.
 
-The current design intentionally favors one predictable path over multiple strategies. The system does not do partial compaction, boundary slicing, or artifact restoration anymore. It rewrites the current message snapshot into a smaller resumable payload and persists that payload back into `session.json`.
+The current design intentionally favors one predictable path over multiple strategies. The system does not do partial compaction, boundary slicing, or artifact restoration anymore. It rewrites the current materialized message head into a smaller resumable payload and persists that payload as a lane checkpoint rather than as authoritative snapshot truth.
 
 The main entry points are:
 
@@ -179,45 +179,40 @@ Each prompt pass then does:
 
 There is no extra boundary slicing step. The current message array is already the working set.
 
-## Session and Persistence Flow
+## Thread and Persistence Flow
 
-Session persistence is implemented in `packages/jar-core/src/session-store.ts`.
+Thread persistence now lives in the lane substrate under `packages/jar-core/src/lanes/`.
 
 Important files:
 
-- `messages.jsonl` - append-only final messages
+- `tape.jsonl` - append-only lane facts and checkpoints
+- `head.json` - optional derived materialized head cache
 - `events.jsonl` - agent events and compaction events
-- `session.json` - current snapshot containing the compacted message array
 - `turns.jsonl`, `runs.jsonl`, `items.jsonl` - higher-level execution tracking
 
-Recovery:
-
-- `openSession(...)` loads the snapshot first
-- then replays only transcript messages with `sequence > lastSequence`
-
-This means `session.json.messages` is the authoritative current context. There is no separate persisted compaction boundary anymore.
+Recovery on the new path materializes the current lane view from tape plus the latest checkpoint. Any head file is derived cache only. The architecture target is that canonical truth lives in tape entries, not in a mutable snapshot file.
 
 ## Event Flow Through a Running Session
 
-`executePromptInSession(...)` in `packages/jar-core/src/session-executor.ts` is where compaction joins execution, persistence, and audit tracking.
+`executePromptInSession(...)` in `packages/jar-core/src/thread-executor.ts` is where compaction joins execution, persistence, and audit tracking.
 
 Flow:
 
-- open session and restore messages
+- open the current lane and materialize messages
 - create agent with compaction integration
 - start a tracker for turn/run/item records
 
 During execution:
 
 - every agent event is appended to `events.jsonl`
-- on `message_end`, the final assistant message is appended to `messages.jsonl`
+- on `message_end`, the final assistant message is appended to the lane tape
 - then `runPostTurnCompaction(...)` may compact the session history using usage-based policy
 
 If `post_turn` compaction happens:
 
 - `compactHistoryNow(..., "post_turn", ...)` returns compacted messages plus stage telemetry
 - `agent.state.messages` is replaced
-- `session.writeSnapshot(...)` persists the compacted message array
+- the lane appends a checkpoint record that carries the new compacted head
 - a compaction event is appended to `events.jsonl`
 - a structured compaction item is written into `items.jsonl`
 
@@ -228,7 +223,7 @@ The current system is best understood as:
 - a context transform that can compact before prompting
 - a post-turn cleanup pass that can compact using actual model usage
 - a staged reducer that first prunes raw payloads, then summarizes
-- a snapshot model where the compacted message array itself is the only recovery boundary
+- a tape-backed lane model where compaction writes checkpoints and recovery materializes from tape
 - an audit layer that records raw events and structured compaction items
 
 ## File Map
@@ -243,6 +238,6 @@ The current system is best understood as:
 - oldest-message snip reduction: `packages/jar-core/src/compaction/snip.ts`
 - usage-based compaction policy: `packages/jar-core/src/compaction/policy.ts`
 - runtime integration: `packages/jar-core/src/runtime.ts`
-- session execution integration: `packages/jar-core/src/session-executor.ts`
-- structured turn/run/item tracking: `packages/jar-core/src/session-execution.ts`
-- session persistence and snapshot format: `packages/jar-core/src/session-store.ts`
+- thread execution integration: `packages/jar-core/src/thread-executor.ts`
+- structured turn/run/item tracking: `packages/jar-core/src/thread-execution.ts`
+- lane substrate and materialization: `packages/jar-core/src/lanes/`

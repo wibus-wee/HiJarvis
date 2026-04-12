@@ -18,17 +18,17 @@ test("createLogger filters events below the configured level", async () => {
     },
   });
 
-  logger.info("session.prompt_started", {
-    sessionId: "sess_1",
+  logger.info("thread.prompt_started", {
+    threadId: "thread_1",
   });
-  logger.warn("session.prompt_failed", {
-    sessionId: "sess_1",
+  logger.warn("thread.prompt_failed", {
+    threadId: "thread_1",
   });
 
   assert.equal(lines.length, 1);
   assert.match(lines[0] ?? "", /WARN/);
-  assert.match(lines[0] ?? "", /session\.prompt_failed/);
-  assert.doesNotMatch(lines[0] ?? "", /session\.prompt_started/);
+  assert.match(lines[0] ?? "", /thread\.prompt_failed/);
+  assert.doesNotMatch(lines[0] ?? "", /thread\.prompt_started/);
 });
 
 test("createLogger writes formatted lines into the configured file", async () => {

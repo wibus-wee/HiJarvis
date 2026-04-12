@@ -6,10 +6,7 @@ import {
   shouldCompactFromUsage,
 } from "./compaction/index.js";
 import type { LoadedRuntimeConfig } from "./config.js";
-import {
-  createEphemeralSideQuerySessionId,
-  getEntityById,
-} from "./entity-routing.js";
+import type { CompactionEvent, ThreadTurnTrigger } from "./execution-types.js";
 import type { Logger } from "./logger.js";
 import { stripMemoryExcludedPromptContextFromMessage } from "./prompt-context.js";
 import {
@@ -20,57 +17,51 @@ import {
 import {
   countPromptMessages,
   estimatePromptChars,
-  startSessionExecutionTracker,
-} from "./session-execution.js";
+  startThreadExecutionTracker,
+} from "./thread-execution.js";
+import { openConversationHandle } from "./lanes/index.js";
 import { createAgent } from "./runtime.js";
-import { openSession, type CompactionEvent, type SessionTurnTrigger } from "./session-store.js";
 import { preparePromptWithSkills } from "./skills.js";
 import { createDefaultTools } from "./tools.js";
 
-type SessionExecutionWriters = {
+type ThreadExecutionWriters = {
   stderr: Pick<NodeJS.WriteStream, "write">;
 };
 
-export type SessionPromptOptions = {
+export type ThreadPromptOptions = {
   config: LoadedRuntimeConfig;
-  sessionId: string;
+  threadId: string;
   prompt: PromptInput;
   onEvent?: (event: AgentEvent) => Promise<void> | void;
   skillTriggerText?: string;
-  turnTrigger?: SessionTurnTrigger;
+  turnTrigger?: ThreadTurnTrigger;
   turnInputMetadata?: Record<string, unknown>;
   serializeMessage?: (message: AgentMessage) => AgentMessage;
   logger?: Logger;
 };
 
-export type SessionPromptResult = {
+export type ThreadPromptResult = {
   outputText: string;
-  sessionId: string;
+  threadId: string;
   turnId: string;
   runId: string;
 };
 
-export type SideQueryResult = {
-  outputText: string;
-  entityId: string;
-  sourceSessionId: string;
-};
-
-export class SessionExecutionError extends Error {
-  readonly sessionId: string;
+export class ThreadExecutionError extends Error {
+  readonly threadId: string;
   readonly turnId?: string;
   readonly runId?: string;
 
   constructor(options: {
     message: string;
-    sessionId: string;
+    threadId: string;
     turnId?: string;
     runId?: string;
     cause?: unknown;
   }) {
     super(options.message, options.cause === undefined ? {} : { cause: options.cause });
-    this.name = "SessionExecutionError";
-    this.sessionId = options.sessionId;
+    this.name = "ThreadExecutionError";
+    this.threadId = options.threadId;
     if (options.turnId !== undefined) {
       this.turnId = options.turnId;
     }
@@ -80,25 +71,25 @@ export class SessionExecutionError extends Error {
   }
 }
 
-const defaultWriters: SessionExecutionWriters = {
+const defaultWriters: ThreadExecutionWriters = {
   stderr: process.stderr,
 };
 
 export const executePromptInSession = async (
-  options: SessionPromptOptions,
-): Promise<SessionPromptResult> => {
+  options: ThreadPromptOptions,
+): Promise<ThreadPromptResult> => {
   const startTime = Date.now();
   let tracker:
-    | Awaited<ReturnType<typeof startSessionExecutionTracker>>
+    | Awaited<ReturnType<typeof startThreadExecutionTracker>>
     | undefined;
 
   const { config } = options;
   const agentConfig = config.agent;
   const { skills, toolOptions, sessions } = config;
 
-  const session = await openSession({
+  const session = await openConversationHandle({
     rootDir: sessions.rootDir,
-    sessionId: options.sessionId,
+    threadId: options.threadId,
     provider: agentConfig.provider,
     model: agentConfig.model,
   });
@@ -115,10 +106,10 @@ export const executePromptInSession = async (
     },
   });
 
-  agent.sessionId = session.sessionId;
+  agent.sessionId = session.threadId;
   agent.state.messages = session.messages;
   const logger = options.logger?.child({
-    sessionId: session.sessionId,
+    threadId: session.threadId,
     provider: agentConfig.provider,
     model: agentConfig.model,
   });
@@ -131,7 +122,7 @@ export const executePromptInSession = async (
       : { triggerText: options.skillTriggerText }),
     ...(logger === undefined ? {} : { logger }),
   });
-  tracker = await startSessionExecutionTracker({
+  tracker = await startThreadExecutionTracker({
     session,
     prompt: preparedPrompt.prompt,
     trigger: options.turnTrigger ?? "user_input",
@@ -143,7 +134,7 @@ export const executePromptInSession = async (
 
   let outputText = "";
 
-  logger?.info("session.prompt_started", {
+  logger?.info("thread.prompt_started", {
     turnId: tracker.turnId,
     runId: tracker.runId,
     existingMessages: session.messages.length,
@@ -199,7 +190,7 @@ export const executePromptInSession = async (
       signal,
     );
     agent.state.messages = result.messages;
-    await session.writeSnapshot(agent.state.messages.map(serializeMessage));
+    await session.appendLaneCheckpoint(agent.state.messages.map(serializeMessage), []);
 
     const inputTokens = getUsageInputTokens(message.usage);
     const compactionEvent: CompactionEvent = {
@@ -240,7 +231,7 @@ export const executePromptInSession = async (
     }
 
     if (event.type === "agent_end") {
-      await session.writeSnapshot(agent.state.messages.map(serializeMessage));
+      await session.flush();
     }
 
     logAgentEvent(logger, tracker.turnId, tracker.runId, event);
@@ -269,15 +260,15 @@ export const executePromptInSession = async (
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await tracker.fail(message);
-    logger?.error("session.prompt_failed", {
+    logger?.error("thread.prompt_failed", {
       turnId: tracker.turnId,
       runId: tracker.runId,
       durationMs: Date.now() - startTime,
       message,
     });
-    throw new SessionExecutionError({
+    throw new ThreadExecutionError({
       message,
-      sessionId: session.sessionId,
+      threadId: session.threadId,
       turnId: tracker.turnId,
       runId: tracker.runId,
       cause: error,
@@ -285,7 +276,7 @@ export const executePromptInSession = async (
   }
 
   await tracker.complete(outputText);
-  logger?.info("session.prompt_finished", {
+  logger?.info("thread.prompt_finished", {
     turnId: tracker.turnId,
     runId: tracker.runId,
     durationMs: Date.now() - startTime,
@@ -294,66 +285,9 @@ export const executePromptInSession = async (
 
   return {
     outputText,
-    sessionId: session.sessionId,
+    threadId: session.threadId,
     turnId: tracker.turnId,
     runId: tracker.runId,
-  };
-};
-
-export const executeSideQueryInSession = async (options: {
-  config: LoadedRuntimeConfig;
-  entityId: string;
-  sourceSessionId: string;
-  prompt: PromptInput;
-  logger?: Logger;
-}): Promise<SideQueryResult> => {
-  const { config } = options;
-  const entity = getEntityById(config, options.entityId);
-  if (entity === undefined) {
-    throw new Error(`Unknown Jarvis entity \"${options.entityId}\"`);
-  }
-
-  const agentConfig = config.agent;
-  const { toolOptions, sessions } = config;
-  const sourceSession = await openSession({
-    rootDir: sessions.rootDir,
-    sessionId: options.sourceSessionId,
-    provider: agentConfig.provider,
-    model: agentConfig.model,
-  });
-
-  const ephemeralSessionId = createEphemeralSideQuerySessionId(entity.id);
-  const agent = createAgent({
-    ...agentConfig,
-    ...(entity.systemPrompt === undefined ? {} : { systemPrompt: entity.systemPrompt }),
-    tools: [],
-    ...(options.logger ? { logger: options.logger } : {}),
-  });
-  agent.sessionId = ephemeralSessionId;
-  agent.state.messages = sourceSession.messages;
-
-  let outputText = "";
-  agent.subscribe((event) => {
-    if (
-      event.type === "message_update" &&
-      event.assistantMessageEvent.type === "text_delta"
-    ) {
-      outputText += event.assistantMessageEvent.delta;
-    }
-  });
-
-  await executePromptWithPolicy(
-    agent,
-    options.prompt,
-    agentConfig.execution,
-    defaultWriters,
-    options.logger,
-  );
-
-  return {
-    outputText,
-    entityId: entity.id,
-    sourceSessionId: sourceSession.sessionId,
   };
 };
 
@@ -369,7 +303,7 @@ const logAgentEvent = (
 
   switch (event.type) {
     case "tool_execution_start":
-      logger.info("session.tool_started", {
+      logger.info("thread.tool_started", {
         turnId,
         runId,
         toolName: event.toolName,
@@ -377,14 +311,14 @@ const logAgentEvent = (
       });
       break;
     case "tool_execution_end":
-      logger.info("session.tool_finished", {
+      logger.info("thread.tool_finished", {
         turnId,
         runId,
         toolName: event.toolName,
       });
       break;
     case "message_end":
-      logger.debug("session.message_recorded", {
+      logger.debug("thread.message_recorded", {
         turnId,
         runId,
         role: event.message.role,

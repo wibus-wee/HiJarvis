@@ -7,19 +7,20 @@ import test from "node:test";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, AssistantMessageEvent, Usage } from "@mariozechner/pi-ai";
 
-import { startSessionExecutionTracker } from "./session-execution.js";
-import { openSession } from "./session-store.js";
+import { openConversationHandle } from "./lanes/index.js";
+import { startThreadExecutionTracker } from "./thread-execution.js";
 
-test("startSessionExecutionTracker records turn, run, and items", async () => {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-session-execution-"));
+test("startThreadExecutionTracker records turn, run, and items", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-thread-execution-"));
   try {
-    const session = await openSession({
+    const session = await openConversationHandle({
       rootDir,
       provider: "openai",
       model: "gpt-4o-mini",
+      threadId: "thread_main",
     });
 
-    const tracker = await startSessionExecutionTracker({
+    const tracker = await startThreadExecutionTracker({
       session,
       prompt: "Explain the workspace state.",
       trigger: "user_input",
@@ -99,9 +100,10 @@ test("startSessionExecutionTracker records turn, run, and items", async () => {
     await tracker.recordEvent(createMessageEndEvent(assistantMessage));
     await tracker.complete("Workspace is clean.");
 
-    const turns = await readJsonl(session.paths.turnsPath);
-    const runs = await readJsonl(session.paths.runsPath);
-    const items = await readJsonl(session.paths.itemsPath);
+    const laneDir = path.join(rootDir, "threads", "thread_main", "lanes", "main");
+    const turns = await readJsonl(path.join(laneDir, "turns.jsonl"));
+    const runs = await readJsonl(path.join(laneDir, "runs.jsonl"));
+    const items = await readJsonl(path.join(laneDir, "items.jsonl"));
 
     assert.equal(turns.length, 2);
     assert.equal(turns.at(-1)?.turn.status, "completed");

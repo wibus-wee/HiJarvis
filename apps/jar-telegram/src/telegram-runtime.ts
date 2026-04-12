@@ -6,12 +6,10 @@ import { run, type RunnerHandle } from "@grammyjs/runner";
 import { stream, type StreamFlavor } from "@grammyjs/stream";
 import {
   createLogger,
-  executeSideQueryInSession,
-  findMostRecentThreadForEntity,
   resolveIdentityThread,
   executePromptInSession,
   loadRuntimeConfig,
-  SessionExecutionError,
+  ThreadExecutionError,
   type LoadedTelegramIdentityConfig,
   type LoadedRuntimeConfig,
   type Logger,
@@ -26,7 +24,6 @@ import { z } from "zod";
 
 import {
   buildTelegramPrompt,
-  parseTelegramSideQueryCommand,
   type TelegramMessage,
   type TelegramReplyContext,
 } from "./telegram-prompt.js";
@@ -193,57 +190,6 @@ const registerTelegramHandlers = (
       "Jar Telegram gateway is ready. Send a private message, or mention/reply to the bot in a group.",
       createReplyOptions(messageContext),
     );
-  });
-
-  bot.command("btw", async (context) => {
-    const messageContext = context as TelegramMessageContext;
-    if (!isAllowedChat(messageContext.chat.id, state)) {
-      return;
-    }
-
-    const text = readTelegramMessageText(messageContext.msg);
-    if (!text) {
-      await messageContext.reply("Usage: /btw <entity> <question>", createReplyOptions(messageContext));
-      return;
-    }
-
-    const parsed = parseTelegramSideQueryCommand(text);
-    if (parsed === null) {
-      await messageContext.reply("Usage: /btw <entity> <question>", createReplyOptions(messageContext));
-      return;
-    }
-
-      try {
-        const thread = await findMostRecentThreadForEntity(state.runtime, parsed.entityId);
-        if (thread === null) {
-          await messageContext.reply(
-            `I could not find an active thread for ${parsed.entityId}.`,
-          createReplyOptions(messageContext),
-        );
-        return;
-      }
-
-      const result = await executeSideQueryInSession({
-        config: state.runtime,
-        entityId: parsed.entityId,
-        sourceSessionId: thread.sessionId,
-        prompt: parsed.question,
-        logger: state.logger.child({
-          command: "btw",
-          entityId: parsed.entityId,
-          sourceSessionId: thread.sessionId,
-        }),
-      });
-      await messageContext.reply(
-        result.outputText.trim().length > 0
-          ? result.outputText
-          : "I do not have a short side answer for that right now.",
-        createReplyOptions(messageContext),
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await messageContext.reply(`Side query failed: ${message}`, createReplyOptions(messageContext));
-    }
   });
 
   bot.on("message", async (context) => {
@@ -637,10 +583,10 @@ const handleQueueEntry = async (
     platform: "telegram",
     scope: sessionScope,
   });
-  const sessionId = routed.sessionId;
+  const threadId = routed.threadId;
   const requestLogger = state.logger.child({
     conversationKey,
-    sessionId,
+    threadId,
     entityId: routed.entity.id,
     chatId: entry.message.chatId,
     messageId: entry.message.messageId,
@@ -666,7 +612,7 @@ const handleQueueEntry = async (
     runtime: state.runtime,
     context: entry.context,
     conversationKey,
-    sessionId,
+    threadId,
     prompt,
     skillTriggerText: buildTelegramSkillTriggerText(current, skippedMessages),
     logger: requestLogger,
@@ -691,7 +637,7 @@ const respondInTelegramConversation = async (options: {
   runtime: LoadedRuntimeConfig;
   context: TelegramMessageContext;
   conversationKey: string;
-  sessionId: string;
+  threadId: string;
   prompt: string;
   skillTriggerText: string;
   logger: Logger;
@@ -704,7 +650,7 @@ const respondInTelegramConversation = async (options: {
 
   const responseTask = executePromptInSession({
     config: options.runtime,
-    sessionId: options.sessionId,
+    threadId: options.threadId,
     prompt: options.prompt,
     skillTriggerText: options.skillTriggerText,
     logger: options.logger,
@@ -756,7 +702,7 @@ const respondInTelegramConversation = async (options: {
     options.logger.info("telegram.reply_posted", {
       durationMs: Date.now() - startedAt,
       replyChars: outputText.trim().length,
-      sessionId: options.sessionId,
+      threadId: options.threadId,
       turnId: result.turnId,
       runId: result.runId,
       conversationKey: options.conversationKey,
@@ -770,9 +716,9 @@ const respondInTelegramConversation = async (options: {
     options.logger.error("telegram.reply_failed", {
       durationMs: Date.now() - startedAt,
       message: normalizedError.message,
-      sessionId: options.sessionId,
-      turnId: turnId ?? (error instanceof SessionExecutionError ? error.turnId : undefined),
-      runId: runId ?? (error instanceof SessionExecutionError ? error.runId : undefined),
+      threadId: options.threadId,
+      turnId: turnId ?? (error instanceof ThreadExecutionError ? error.turnId : undefined),
+      runId: runId ?? (error instanceof ThreadExecutionError ? error.runId : undefined),
       conversationKey: options.conversationKey,
     });
 

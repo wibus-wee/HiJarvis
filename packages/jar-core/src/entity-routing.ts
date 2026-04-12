@@ -1,11 +1,9 @@
-import crypto from "node:crypto";
-
 import type {
   LoadedEntityConfig,
   LoadedPlatformIdentityConfig,
   LoadedRuntimeConfig,
 } from "./config.js";
-import { listSessions, type SessionListItem } from "./session-store.js";
+import { listThreads, type ThreadListItem } from "./lanes/index.js";
 
 export type Platform = "slack" | "telegram";
 
@@ -18,7 +16,7 @@ export type IdentityTarget = {
 export type RoutedIdentityThread = {
   identity: LoadedPlatformIdentityConfig;
   entity: LoadedEntityConfig;
-  sessionId: string;
+  threadId: string;
   platform: Platform;
   scope: string;
 };
@@ -88,7 +86,7 @@ export const resolveIdentityThread = (
   return {
     identity,
     entity,
-    sessionId: resolveIdentitySessionId(target),
+    threadId: resolveIdentitySessionId(target),
     platform: target.platform,
     scope: target.scope,
   };
@@ -109,13 +107,13 @@ export const findMostRecentIdentityThread = async (
     );
   }
 
-  const sessions = await listSessions(config.sessions.rootDir);
-  const match = sessions.find((session) => parseIdentitySessionId(session.sessionId)?.identityId === identityId);
-  if (!match) {
+  const threads = await listThreads(config.sessions.rootDir);
+  const match = threads.find((thread) => parseIdentitySessionId(thread.threadId)?.identityId === identityId);
+  if (match === undefined) {
     return null;
   }
 
-  const parsed = parseIdentitySessionId(match.sessionId);
+  const parsed = parseIdentitySessionId(match.threadId);
   if (parsed === null) {
     return null;
   }
@@ -123,63 +121,15 @@ export const findMostRecentIdentityThread = async (
   return {
     identity,
     entity,
-    sessionId: match.sessionId,
+    threadId: match.threadId,
     platform: parsed.platform,
     scope: parsed.scope,
   };
-};
-
-export const findMostRecentThreadForEntity = async (
-  config: LoadedRuntimeConfig,
-  entityId: string,
-): Promise<RoutedIdentityThread | null> => {
-  const entity = getEntityById(config, entityId);
-  if (entity === undefined) {
-    throw new Error(`Unknown Jarvis entity \"${entityId}\"`);
-  }
-
-  const identityIds = Object.values(config.platformIdentities)
-    .filter((identity) => identity.entityId === entityId)
-    .map((identity) => identity.id);
-  if (identityIds.length === 0) {
-    return null;
-  }
-
-  const sessions = await listSessions(config.sessions.rootDir);
-  const match = sessions.find((session) => {
-    const parsed = parseIdentitySessionId(session.sessionId);
-    return parsed !== null && identityIds.includes(parsed.identityId);
-  });
-  if (!match) {
-    return null;
-  }
-
-  const parsed = parseIdentitySessionId(match.sessionId);
-  if (parsed === null) {
-    return null;
-  }
-
-  const identity = getPlatformIdentityById(config, parsed.identityId);
-  if (identity === undefined) {
-    return null;
-  }
-
-  return {
-    identity,
-    entity,
-    sessionId: match.sessionId,
-    platform: parsed.platform,
-    scope: parsed.scope,
-  };
-};
-
-export const createEphemeralSideQuerySessionId = (identityId: string): string => {
-  return `${sessionPrefix}__sidequery__${identityId}__${crypto.randomBytes(6).toString("hex")}`;
 };
 
 export const sessionBelongsToIdentity = (
-  session: SessionListItem,
+  session: ThreadListItem,
   identityId: string,
 ): boolean => {
-  return parseIdentitySessionId(session.sessionId)?.identityId === identityId;
+  return parseIdentitySessionId(session.threadId)?.identityId === identityId;
 };

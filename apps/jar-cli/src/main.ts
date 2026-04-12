@@ -6,11 +6,11 @@ import {
   createDefaultTools,
   executePromptInSession,
   executePromptWithPolicy,
-  listSessions,
+  listThreads,
   loadRuntimeConfig,
-  openSession,
+  openConversationHandle,
   preparePromptWithSkills,
-  startSessionExecutionTracker,
+  startThreadExecutionTracker,
   stripMemoryExcludedPromptContextFromMessage,
 } from "@hijarvis/jar-core";
 import { runRepl } from "@hijarvis/jar-repl-ink";
@@ -22,8 +22,8 @@ type CliOptions = {
   prompt?: string;
   helpRequested: boolean;
   repl: boolean;
-  sessionId?: string;
-  listSessions: boolean;
+  threadId?: string;
+  listThreads: boolean;
 };
 
 const main = async (): Promise<void> => {
@@ -39,35 +39,32 @@ const main = async (): Promise<void> => {
   }
 
   const config = await loadRuntimeConfig(cliOptions.configPath);
-  if (cliOptions.listSessions) {
-    const sessions = await listSessions(config.sessions.rootDir);
-    if (sessions.length === 0) {
-      process.stdout.write("No sessions found.\n");
+  if (cliOptions.listThreads) {
+    const threads = await listThreads(config.sessions.rootDir);
+    if (threads.length === 0) {
+      process.stdout.write("No threads found.\n");
       return;
     }
-    for (const session of sessions) {
-      const count =
-        session.messageCount === undefined ? "unknown" : String(session.messageCount);
+    for (const thread of threads) {
       process.stdout.write(
-        `${session.sessionId} (${session.provider}/${session.model}) messages=${count} updated=${new Date(
-          session.updatedAt,
+        `${thread.threadId} (${thread.provider}/${thread.model}) updated=${new Date(
+          thread.updatedAt,
         ).toISOString()}\n`,
       );
     }
     return;
   }
   if (cliOptions.repl) {
-    const session = await openSession({
+    const threadId = cliOptions.threadId ?? "main";
+    const session = await openConversationHandle({
       rootDir: config.sessions.rootDir,
       provider: config.agent.provider,
       model: config.agent.model,
-      ...(cliOptions.sessionId !== undefined
-        ? { sessionId: cliOptions.sessionId }
-        : {}),
+      threadId,
     });
-    let activeExecution:
-      | Awaited<ReturnType<typeof startSessionExecutionTracker>>
-      | undefined;
+      let activeExecution:
+        | Awaited<ReturnType<typeof startThreadExecutionTracker>>
+        | undefined;
     let activeOutputText = "";
     const agent = createAgent({
       ...config.agent,
@@ -80,7 +77,7 @@ const main = async (): Promise<void> => {
       tools: createDefaultTools(config.toolOptions),
     });
 
-    agent.sessionId = session.sessionId;
+    agent.sessionId = session.threadId;
     agent.state.messages = session.messages;
     agent.subscribe(async (event, signal) => {
       if (signal.aborted) {
@@ -100,9 +97,7 @@ const main = async (): Promise<void> => {
         await session.appendMessage(stripMemoryExcludedPromptContextFromMessage(event.message));
       }
       if (event.type === "agent_end") {
-        await session.writeSnapshot(
-          agent.state.messages.map(stripMemoryExcludedPromptContextFromMessage),
-        );
+        await session.flush();
       }
     });
 
@@ -118,7 +113,7 @@ const main = async (): Promise<void> => {
           triggerText: input,
         });
         activeOutputText = "";
-        activeExecution = await startSessionExecutionTracker({
+        activeExecution = await startThreadExecutionTracker({
           session,
           prompt: prepared.prompt,
           trigger: "user_input",
@@ -168,10 +163,10 @@ const main = async (): Promise<void> => {
     throw new Error("Missing prompt. Pass text as an argument or pipe it through stdin.");
   }
 
-  if (cliOptions.sessionId !== undefined) {
+  if (cliOptions.threadId !== undefined) {
     await executePromptInSession({
       config,
-      sessionId: cliOptions.sessionId,
+      threadId: cliOptions.threadId,
       prompt,
       skillTriggerText: prompt,
       turnTrigger: "user_input",
@@ -205,8 +200,8 @@ const parseCliOptions = (argv: string[]): CliOptions => {
   const promptSegments: string[] = [];
   let helpRequested = false;
   let repl = false;
-  let sessionId: string | undefined;
-  let listSessionsFlag = false;
+  let threadId: string | undefined;
+  let listThreadsFlag = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -234,12 +229,12 @@ const parseCliOptions = (argv: string[]): CliOptions => {
       continue;
     }
 
-    if (argument === "--session" || argument === "-s") {
+    if (argument === "--thread" || argument === "-t") {
       const nextValue = argv[index + 1];
       if (nextValue === undefined) {
-        throw new Error("Expected a session id after --session");
+        throw new Error("Expected a thread id after --thread");
       }
-      sessionId = nextValue;
+      threadId = nextValue;
       index += 1;
       continue;
     }
@@ -249,8 +244,8 @@ const parseCliOptions = (argv: string[]): CliOptions => {
       continue;
     }
 
-    if (argument === "--list-sessions") {
-      listSessionsFlag = true;
+    if (argument === "--list-threads") {
+      listThreadsFlag = true;
       continue;
     }
 
@@ -261,8 +256,8 @@ const parseCliOptions = (argv: string[]): CliOptions => {
     configPath: path.resolve(configPath),
     helpRequested,
     repl,
-    listSessions: listSessionsFlag,
-    ...(sessionId !== undefined ? { sessionId } : {}),
+    listThreads: listThreadsFlag,
+    ...(threadId !== undefined ? { threadId } : {}),
   };
 
   if (promptSegments.length > 0) {
@@ -295,15 +290,15 @@ const readPrompt = async (inlinePrompt?: string): Promise<string | undefined> =>
 const printUsage = (): void => {
   process.stdout.write(`Usage: pnpm dev -- --config ./apps/jar-cli/jar.toml "Your prompt here"
        pnpm dev -- --config ./apps/jar-cli/jar.toml --repl
-       pnpm dev -- --config ./apps/jar-cli/jar.toml --session my-session "Continue this session"
-       pnpm dev -- --config ./apps/jar-cli/jar.toml --list-sessions
+       pnpm dev -- --config ./apps/jar-cli/jar.toml --thread my-thread "Continue this thread"
+       pnpm dev -- --config ./apps/jar-cli/jar.toml --list-threads
 
 Examples:
   pnpm dev -- --config ./apps/jar-cli/jar.toml "Read package.json and summarize the scripts."
   echo "Run git status and explain the workspace state." | pnpm dev -- --config ./apps/jar-cli/jar.toml
   pnpm dev -- --config ./apps/jar-cli/jar.toml --repl
-  pnpm dev -- --config ./apps/jar-cli/jar.toml --session my-session --repl
-  pnpm dev -- --config ./apps/jar-cli/jar.toml --list-sessions
+  pnpm dev -- --config ./apps/jar-cli/jar.toml --thread my-thread --repl
+  pnpm dev -- --config ./apps/jar-cli/jar.toml --list-threads
 `);
 };
 

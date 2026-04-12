@@ -1,6 +1,6 @@
 # Slack Gateway
 
-本页说明 `apps/jar-slack` 这个第一版 Slack 平台接入的运行方式、上下文组装规则，以及它和现有 Jar session/runtime 的边界。
+本页说明 `apps/jar-slack` 这个第一版 Slack 平台接入的运行方式、上下文组装规则，以及它和现有 Jar thread/lane runtime 的边界。
 
 ## 目标
 
@@ -8,8 +8,7 @@
 
 - 在 Slack channel 中 `@mention` Jarvis 时，把请求导入 Jar runtime；
 - 所有回复统一进入 Slack thread；
-- 顶层 channel mention 和 thread follow-up 各自映射到某个 Jarvis entity 在 Slack 上的局部 thread session。
-- 支持显式 `/btw <entity> <question>` 侧问，不污染目标 thread 的主历史。
+- 顶层 channel mention 和 thread follow-up 各自映射到某个 Jarvis entity 在 Slack 上的局部 thread。
 
 这意味着第一版明确**不做**：
 
@@ -35,7 +34,7 @@
 3. 为每个 Slack identity 启动一条独立的 Socket Mode 连接
 4. 先把 Slack transport event 归一化成 canonical message
 5. 在每个 identity 自己的内存态里维护线程订阅、scope reply timestamp、event dedupe、message dedupe 与队列状态
-6. 先把 Slack scope 路由到当前 Slack identity，再映射到该 identity 绑定 entity 的局部 Jar session
+6. 先把 Slack scope 路由到当前 Slack identity，再映射到该 identity 绑定 entity 的局部本地 thread
 7. 在回复发回 Slack 前，把模型原始 Markdown 组织成 Slack `markdown` blocks
 8. 输出一层面向开发排障的摘要日志
 
@@ -133,7 +132,7 @@ Slack gateway 现在会输出一层摘要型运行日志，用于回答“这条
 
 推荐把这层日志理解成开发排障视图，而不是最终审计真相：
 
-- 审计真相：`.jar/sessions/<sessionId>/events.jsonl`
+- 审计真相：`.jar/threads/<threadId>/lanes/main/events.jsonl`
 - 开发视图：`[logging].file_path` 对应的 runtime log
 
 默认 `info` 级会覆盖这些关键阶段：
@@ -175,12 +174,12 @@ Slack gateway 现在明确把输入处理拆成三层：
 3. 如果 Jarvis 之前已经在这个 channel scope 里回复过，就只拉取“上次 Jarvis 回复之后，到这次 mention 之前”的顶层 channel 消息
 4. 如果这是这个 channel scope 的第一次回复，才退回一个很小的 bootstrap window
 5. 用这些顶层消息构造 prompt
-6. 通过 `packages/jar-core/src/session-executor.ts` 执行一次 session-bound prompt
+6. 通过 `packages/jar-core/src/thread-executor.ts` 执行一次 thread-bound prompt
 7. 把结果发回当前 Slack thread，并订阅这个 thread 的后续消息
 
 补充说明：
 
-- 顶层 channel scope 的 Jar session id 按 `channel:{channelId}` 生成。
+- 顶层 channel scope 的本地 thread id 按 `channel:{channelId}` 生成。
 - 如果同一条消息同时以 `app_mention` 和 `message.channels` 到达，最终也只会被接受一次。
 
 ### 2. 已订阅 thread 中的后续消息
@@ -190,7 +189,7 @@ Slack gateway 现在明确把输入处理拆成三层：
 1. 收到 thread 内的后续消息
 2. 不再重新拉取 channel 顶层历史
 3. 只把“Jarvis 上次在该 thread 回复之后新增的 thread 消息”送进这一轮 prompt
-4. 直接把这些消息写入该 thread 对应的 Jar session
+4. 直接把这些消息写入该 thread 对应的本地 thread/lane
 5. 在同一个 thread 中回复
 
 补充规则：
@@ -212,26 +211,11 @@ Slack gateway 现在不再把 Slack scope 直接当成“Jarvis 自己”。
 - `platform identity`：真实 Slack bot/app 身份，例如 `slack_main`
 - `entity`：该 Slack bot 绑定的 Jarvis 身份，例如 `jarvis` 或 `pm`
 - `scope`：Slack channel/thread 上的一个局部表面坐标
-- `session`：该 identity 在该 scope 上的本地持续 thread
+- `thread`：该 identity 在该 scope 上的本地持续 thread
 
 普通消息不再路由到默认 entity。它们总是路由到当前 Slack runtime identity 绑定的 entity。
 
-如果用户发送：
-
-```text
-/btw jarvis-a what are you working on?
-```
-
-Slack gateway 会：
-
-1. 解析目标 entity
-2. 查找该 entity 最近活跃的 identity-bound thread session
-3. 运行 side query
-4. 把短答发回当前 Slack thread
-
-这次 side query 不会写入目标 thread 的正常 transcript。
-
-## Session 映射
+## Thread 映射
 
 顶层 channel scope 统一编码成：
 
@@ -245,7 +229,7 @@ thread scope 统一编码成：
 slack:thread:{channelId}:{threadTs}
 ```
 
-最终会转换成带 identity 前缀的 Jar session id，例如：
+最终会转换成带 identity 前缀的本地 thread id，例如：
 
 ```text
 identity__slack_main__slack__channel__{channelId}
@@ -256,8 +240,8 @@ identity__slack_main__slack__thread__{channelId}__{threadTs}
 
 - 保持可读性
 - 避免直接把 `/` 之类的平台分隔符带入本地文件路径
-- 保证“同一个 Slack identity 上的一个 scope = 一个 Jar session”
-- 保证不同 Slack bot 即使落在同一个 channel/thread 坐标，也不会共享 session
+- 保证“同一个 Slack identity 上的一个 scope = 一个本地 thread”
+- 保证不同 Slack bot 即使落在同一个 channel/thread 坐标，也不会共享 thread
 
 ## 上下文组装
 
@@ -315,7 +299,7 @@ Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标
 当前限制：
 
 - 进程重启后，thread subscription 会丢失
-- 但 Jar session 文件仍然保留在 `.jar/sessions`
+- 但本地 thread/lane 文件仍然保留在 `.jar/threads`
 
 如果后续需要多实例部署或重启后保留 subscriptions / scope reply timestamp，再切到 Redis / PostgreSQL。
 
@@ -327,7 +311,7 @@ Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标
 2. 在 Slack App 中启用 Socket Mode，并配置 `SLACK_APP_TOKEN`
 3. 在一个 channel 中连续发几条顶层消息
 4. `@mention` Jarvis，确认它在 thread 中回复，并能引用上一次 Jarvis channel 回复之后的顶层消息
-5. 继续在该 thread 中追问，确认它沿用同一个 thread session
+5. 继续在该 thread 中追问，确认它沿用同一个本地 thread
 6. 重启服务后重新 mention，确认新的 thread 仍然可用
 
 ## 已知限制

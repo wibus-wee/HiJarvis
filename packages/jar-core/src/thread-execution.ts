@@ -1,38 +1,38 @@
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
 import type { Logger } from "./logger.js";
+import type { ConversationHandle } from "./lanes/index.js";
+import {
+  generateThreadItemId,
+  generateThreadRunId,
+  generateThreadTurnId,
+  type CompactionEvent,
+  type ThreadItem,
+  type ThreadRun,
+  type ThreadRunKind,
+  type ThreadTurn,
+  type ThreadTurnTrigger,
+} from "./execution-types.js";
 import {
   getPromptTextInput,
   stripMemoryExcludedPromptContext,
 } from "./prompt-context.js";
 import type { PromptErrorCategory, PromptInput } from "./prompt-executor.js";
-import {
-  generateSessionItemId,
-  generateSessionRunId,
-  generateSessionTurnId,
-  type CompactionEvent,
-  type SessionHandle,
-  type SessionItem,
-  type SessionRun,
-  type SessionRunKind,
-  type SessionTurn,
-  type SessionTurnTrigger,
-} from "./session-store.js";
 
 const promptPreviewLimit = 2_000;
 
-export type SessionExecutionTrackerOptions = {
-  session: SessionHandle;
+export type ThreadExecutionTrackerOptions = {
+  session: ConversationHandle;
   prompt: PromptInput;
-  trigger: SessionTurnTrigger;
+  trigger: ThreadTurnTrigger;
   logger?: Logger;
-  runKind?: SessionRunKind;
+  runKind?: ThreadRunKind;
   turnInputMetadata?: Record<string, unknown>;
 };
 
-export type SessionExecutionTracker = {
-  turn: SessionTurn;
-  run: SessionRun;
+export type ThreadExecutionTracker = {
+  turn: ThreadTurn;
+  run: ThreadRun;
   turnId: string;
   runId: string;
   recordEvent: (event: AgentEvent) => Promise<void>;
@@ -51,21 +51,21 @@ export type SessionExecutionTracker = {
   fail: (message: string) => Promise<void>;
 };
 
-export const startSessionExecutionTracker = async (
-  options: SessionExecutionTrackerOptions,
-): Promise<SessionExecutionTracker> => {
+export const startThreadExecutionTracker = async (
+  options: ThreadExecutionTrackerOptions,
+): Promise<ThreadExecutionTracker> => {
   const now = Date.now();
-  const turn: SessionTurn = {
-    turnId: generateSessionTurnId(),
-    sessionId: options.session.sessionId,
+  const turn: ThreadTurn = {
+    turnId: generateThreadTurnId(),
+    threadId: options.session.threadId,
     trigger: options.trigger,
     status: "running",
     input: buildTurnInput(options.prompt, options.turnInputMetadata),
     createdAt: now,
     startedAt: now,
   };
-  const run: SessionRun = {
-    runId: generateSessionRunId(),
+  const run: ThreadRun = {
+    runId: generateThreadRunId(),
     turnId: turn.turnId,
     kind: options.runKind ?? "act",
     sequence: 1,
@@ -76,7 +76,7 @@ export const startSessionExecutionTracker = async (
   await options.session.appendTurn(turn);
   await options.session.appendRun(run);
   await options.session.appendItem({
-    itemId: generateSessionItemId(),
+    itemId: generateThreadItemId(),
     runId: run.runId,
     type: "user_input",
     status: "completed",
@@ -91,9 +91,9 @@ export const startSessionExecutionTracker = async (
 
   let settled = false;
 
-  const appendItem = async (item: Omit<SessionItem, "itemId" | "runId" | "createdAt">) => {
+  const appendItem = async (item: Omit<ThreadItem, "itemId" | "runId" | "createdAt">) => {
     await options.session.appendItem({
-      itemId: generateSessionItemId(),
+      itemId: generateThreadItemId(),
       runId: run.runId,
       ...item,
       createdAt: Date.now(),
@@ -266,7 +266,7 @@ export const estimatePromptChars = (prompt: PromptInput): number => {
 const buildTurnInput = (
   prompt: PromptInput,
   metadata?: Record<string, unknown>,
-): SessionTurn["input"] => {
+): ThreadTurn["input"] => {
   const preview = stripMemoryExcludedPromptContext(
     getPromptTextInput(prompt),
   );

@@ -10,8 +10,9 @@ apps/jar-cli/src/render-agent-event.ts - One-shot stdout/stderr event renderer f
 packages/jar-core/src/runtime.ts - Agent runtime assembly and model resolution.
 packages/jar-core/src/prompt-executor.ts - Shared prompt execution policy (timeout, retry/backoff, and failure classification).
 packages/jar-core/src/config.ts - TOML config loader built on smol-toml + zod.
+packages/jar-core/src/lanes/ - Tape-backed thread/lane persistence substrate and materialization.
+packages/jar-core/src/execution-types.ts - Turn/run/item and compaction fact types plus id generators.
 packages/jar-core/src/tools.ts - Tool aggregation entrypoint that registers the local tool set.
-packages/jar-core/src/session-store.ts - JSONL transcript + snapshot session persistence.
 packages/jar-core/src/tools/shared.ts - Shared tool option types and workspace path confinement.
 packages/jar-core/src/tools/file-tools.ts - read_file and write_file implementations.
 packages/jar-core/src/tools/patch-tool.ts - apply_patch parser, patch applier, and tool implementation.

@@ -6,12 +6,11 @@ import test from "node:test";
 
 import {
   findMostRecentIdentityThread,
-  findMostRecentThreadForEntity,
+  openConversationHandle,
   parseIdentitySessionId,
   resolveIdentitySessionId,
   type LoadedRuntimeConfig,
 } from "./index.js";
-import { openSession } from "./session-store.js";
 
 const createConfig = (rootDir: string): LoadedRuntimeConfig => ({
   configFilePath: path.join(rootDir, "jar.toml"),
@@ -102,18 +101,18 @@ const createConfig = (rootDir: string): LoadedRuntimeConfig => ({
   platform: {},
 });
 
-test("resolveIdentitySessionId encodes identity and platform into session id", () => {
-  const sessionId = resolveIdentitySessionId({
+test("resolveIdentitySessionId encodes identity and platform into thread id", () => {
+  const threadId = resolveIdentitySessionId({
     identityId: "slack_main",
     platform: "slack",
     scope: "thread:C123:1743931234.56789",
   });
 
   assert.equal(
-    sessionId,
+    threadId,
     "identity__slack_main__slack__thread__C123__1743931234.56789",
   );
-  assert.deepEqual(parseIdentitySessionId(sessionId), {
+  assert.deepEqual(parseIdentitySessionId(threadId), {
     identityId: "slack_main",
     platform: "slack",
     scope: "thread__C123__1743931234.56789",
@@ -135,7 +134,7 @@ test("identity routing keeps same platform scope distinct per identity", () => {
   assert.notEqual(mainSessionId, pmSessionId);
 });
 
-test("findMostRecentIdentityThread returns latest matching identity session", async () => {
+test("findMostRecentIdentityThread returns latest matching identity thread", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-identity-routing-"));
   try {
     const config = createConfig(rootDir);
@@ -150,52 +149,27 @@ test("findMostRecentIdentityThread returns latest matching identity session", as
       scope: "thread:C1:2",
     });
 
-    const first = await openSession({
+    const first = await openConversationHandle({
       rootDir,
-      sessionId: firstId,
+      threadId: firstId,
       provider: "openai",
       model: "gpt-4o-mini",
     });
-    await first.writeSnapshot([]);
+    await first.flush();
 
     await new Promise((resolve) => setTimeout(resolve, 5));
 
-    const second = await openSession({
+    const second = await openConversationHandle({
       rootDir,
-      sessionId: secondId,
+      threadId: secondId,
       provider: "openai",
       model: "gpt-4o-mini",
     });
-    await second.writeSnapshot([]);
+    await second.flush();
 
     const match = await findMostRecentIdentityThread(config, "slack_main");
-    assert.equal(match?.sessionId, secondId);
+    assert.equal(match?.threadId, secondId);
     assert.equal(match?.platform, "slack");
-  } finally {
-    await rm(rootDir, { recursive: true, force: true });
-  }
-});
-
-test("findMostRecentThreadForEntity resolves through the bound identity", async () => {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-entity-thread-"));
-  try {
-    const config = createConfig(rootDir);
-    const sessionId = resolveIdentitySessionId({
-      identityId: "slack_pm",
-      platform: "slack",
-      scope: "thread:C2:9",
-    });
-    const session = await openSession({
-      rootDir,
-      sessionId,
-      provider: "openai",
-      model: "gpt-4o-mini",
-    });
-    await session.writeSnapshot([]);
-
-    const match = await findMostRecentThreadForEntity(config, "pm");
-    assert.equal(match?.identity.id, "slack_pm");
-    assert.equal(match?.sessionId, sessionId);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }

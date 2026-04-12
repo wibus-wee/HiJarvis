@@ -5,11 +5,9 @@ import { App, LogLevel } from "@slack/bolt";
 import {
   buildTurnPrompt,
   createLogger,
-  executeSideQueryInSession,
-  findMostRecentThreadForEntity,
   resolveIdentityThread,
   executePromptInSession,
-  SessionExecutionError,
+  ThreadExecutionError,
   loadRuntimeConfig,
   type LoadedSlackIdentityConfig,
   type LoadedRuntimeConfig,
@@ -483,11 +481,11 @@ const handleQueueEntry = async (
     platform: "slack",
     scope: scopeKey,
   });
-  const sessionId = routed.sessionId;
+  const threadId = routed.threadId;
   const requestLogger = state.logger.child({
     scopeKey,
     scopeKind: entry.scopeKind,
-    sessionId,
+    threadId,
     entityId: routed.entity.id,
     channel: entry.channel,
     threadTs: entry.threadTs,
@@ -512,27 +510,12 @@ const handleQueueEntry = async (
     )
     : buildSubscribedThreadPrompt(current, skippedMessages);
 
-  const sideQuery = parseSlackSideQuery(current.text);
-  if (sideQuery !== null) {
-    await respondWithSlackSideQuery({
-      runtime: state.runtime,
-      channel: entry.channel,
-      threadTs: entry.threadTs,
-      scopeKey,
-      client: state,
-      entityId: sideQuery.entityId,
-      question: sideQuery.question,
-      logger: requestLogger,
-    });
-    return;
-  }
-
   await respondInSlackThread({
     runtime: state.runtime,
     channel: entry.channel,
     threadTs: entry.threadTs,
     scopeKey,
-    sessionId,
+    threadId,
     prompt,
     skillTriggerText: buildSlackSkillTriggerText(current, skippedMessages),
     client: state,
@@ -890,23 +873,6 @@ const stripBotMention = (text: string, botUserId: string): string => {
   return text.replace(mention, "").trim();
 };
 
-const parseSlackSideQuery = (
-  text: string,
-): { entityId: string; question: string } | null => {
-  const match = text.trim().match(/^\/btw\s+(\S+)\s+([\s\S]+)$/i);
-  if (!match) {
-    return null;
-  }
-
-  const entityId = match[1]?.trim();
-  const question = match[2]?.trim();
-  if (!entityId || !question) {
-    return null;
-  }
-
-  return { entityId, question };
-};
-
 const includesBotMention = (text: string, botUserId: string): boolean => {
   return text.includes(`<@${botUserId}>`);
 };
@@ -916,7 +882,7 @@ const respondInSlackThread = async ({
   channel,
   threadTs,
   scopeKey,
-  sessionId,
+  threadId,
   prompt,
   skillTriggerText,
   client,
@@ -926,7 +892,7 @@ const respondInSlackThread = async ({
   channel: string;
   threadTs: string;
   scopeKey: string;
-  sessionId: string;
+  threadId: string;
   prompt: string;
   skillTriggerText: string;
   client: SlackGatewayState;
@@ -941,7 +907,7 @@ const respondInSlackThread = async ({
     });
     const execution = await executePromptInSession({
       config: runtime,
-      sessionId,
+      threadId,
       prompt,
       skillTriggerText,
       turnTrigger: "platform_event",
@@ -973,7 +939,7 @@ const respondInSlackThread = async ({
     logger.info("slack.reply_posted", {
       durationMs: Date.now() - startedAt,
       replyChars: reply.length,
-      sessionId,
+      threadId,
       turnId,
       runId,
       scopeKey,
@@ -984,9 +950,9 @@ const respondInSlackThread = async ({
     logger.error("slack.reply_failed", {
       durationMs: Date.now() - startedAt,
       message,
-      sessionId,
-      turnId: turnId ?? (error instanceof SessionExecutionError ? error.turnId : undefined),
-      runId: runId ?? (error instanceof SessionExecutionError ? error.runId : undefined),
+      threadId,
+      turnId: turnId ?? (error instanceof ThreadExecutionError ? error.turnId : undefined),
+      runId: runId ?? (error instanceof ThreadExecutionError ? error.runId : undefined),
       scopeKey,
     });
 
@@ -1000,50 +966,6 @@ const respondInSlackThread = async ({
     if (fallback.ts) {
       client.lastReplyTsByScope.set(scopeKey, fallback.ts);
     }
-  }
-};
-
-const respondWithSlackSideQuery = async (options: {
-  runtime: LoadedRuntimeConfig;
-  channel: string;
-  threadTs: string;
-  scopeKey: string;
-  client: SlackGatewayState;
-  entityId: string;
-  question: string;
-  logger: Logger;
-}): Promise<void> => {
-  try {
-    const thread = await findMostRecentThreadForEntity(options.runtime, options.entityId);
-    const reply = thread === null
-      ? `I could not find an active thread for ${options.entityId}.`
-      : (await executeSideQueryInSession({
-        config: options.runtime,
-        entityId: options.entityId,
-        sourceSessionId: thread.sessionId,
-        prompt: options.question,
-        logger: options.logger.child({
-          command: "btw",
-          entityId: options.entityId,
-          sourceSessionId: thread.sessionId,
-        }),
-      })).outputText.trim() || "I do not have a short side answer for that right now.";
-
-    const response = await options.client.slackClient.chat.postMessage({
-      channel: options.channel,
-      thread_ts: options.threadTs,
-      ...createSlackReplyPayload(reply),
-    });
-    if (response.ts) {
-      options.client.lastReplyTsByScope.set(options.scopeKey, response.ts);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await options.client.slackClient.chat.postMessage({
-      channel: options.channel,
-      thread_ts: options.threadTs,
-      ...createSlackReplyPayload(`Side query failed: ${message}`),
-    });
   }
 };
 

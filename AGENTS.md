@@ -7,20 +7,26 @@
 ```bash
 .
 ├── 3rd
-│   └── wechat-sdk - extracted WeChat API SDK
+│   └── wechat-sdk - extracted WeChat API SDK with api, auth, media, messaging, storage, and util modules
 ├── apps
-│   ├── jar-cli - a CLI interface with a readline loop
-│   ├── jar-slack - a Slack bot
-│   ├── jar-telegram - a Telegram bot
+│   ├── jar-cli - CLI entrypoint for one-shot runs, thread commands, and the Ink REPL surface
+│   ├── jar-slack - Slack Socket Mode gateway and identity supervisor with thread-first routing
+│   └── jar-telegram - Telegram long-polling gateway and identity supervisor with chat/topic routing
 ├── docs
+│   ├── README.md - documentation index for runtime, compaction, sessions, tools, gateways, TUI, and SDK docs
 │   └── exec-plans - living implementation plans for large refactors and features
 ├── packages
-│   └── jar-core
-│       └── src
-│           └── compaction - staged compaction subsystem with boundary, pipeline, summary, partial compaction, retry, and artifact restoration
+│   ├── jar-core
+│   │   └── src
+│   │       ├── compaction - staged history compaction pipeline with assembly, policy, prompting, summaries, snipping, and lightweight passes
+│   │       ├── lanes - tape-backed thread/lane persistence, materialization, checkpoints, and audit records
+│   │       └── tools - built-in file, patch, bash, and web tools plus shared workspace safety helpers
+│   ├── jar-manager - workspace package reserved for manager-oriented functionality
+│   └── jar-repl-ink - Ink-based TUI package for the `--repl` experience
 └── research
     ├── claude-code-compaction - research notes on Claude Code's compaction system
-    └── hijarvis-compaction-vs-claude-code.md - current parity gap audit between HiJarvis and Claude Code compaction
+    ├── hijarvis-compaction-vs-claude-code.md - current parity gap audit between HiJarvis and Claude Code compaction
+    └── hijarvis-arch-research-0409 - architecture research workspace
 ```
 
 ## Documentation

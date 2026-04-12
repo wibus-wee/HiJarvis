@@ -7,7 +7,6 @@ import {
   formatTelegramCurrentMessageBlock,
   formatTelegramQueuedMessagesBlock,
   formatTelegramReplyContextBlock,
-  parseTelegramSideQueryCommand,
   type TelegramMessage,
   type TelegramReplyContext,
 } from "./telegram-prompt.js";
@@ -48,16 +47,6 @@ test("createTelegramSessionId normalizes conversation ids into filesystem-safe s
   assert.equal(
     createTelegramSessionId("telegram:-10012345:77"),
     "telegram__-10012345__77",
-  );
-});
-
-test("parseTelegramSideQueryCommand parses /btw entity and question", () => {
-  assert.deepEqual(
-    parseTelegramSideQueryCommand("/btw jarvis-a what are you working on?"),
-    {
-      entityId: "jarvis-a",
-      question: "what are you working on?",
-    },
   );
 });
 

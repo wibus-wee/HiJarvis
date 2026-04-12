@@ -19,24 +19,6 @@ export const createTelegramSessionId = (conversationId: string): string => {
   return conversationId.replaceAll(":", "__").replaceAll("/", "_");
 };
 
-export const parseTelegramSideQueryCommand = (
-  text: string,
-): { entityId: string; question: string } | null => {
-  const trimmed = text.trim();
-  const match = trimmed.match(/^\/btw(?:@\w+)?\s+(\S+)\s+([\s\S]+)$/i);
-  if (!match) {
-    return null;
-  }
-
-  const entityId = match[1]?.trim();
-  const question = match[2]?.trim();
-  if (!entityId || !question) {
-    return null;
-  }
-
-  return { entityId, question };
-};
-
 export const formatTelegramReplyContextBlock = (
   replyTo: TelegramReplyContext | undefined,
 ): string => {

@@ -18,9 +18,9 @@ CLI invocation 仍然保持原有流程：
 4. Overrides the model `baseUrl` when `provider.<name>.base_url` is configured.
 5. Builds the tool list from `packages/jar-core/src/tools.ts`.
 6. Creates a `pi-agent-core` `Agent`.
-7. Executes prompts via `packages/jar-core/src/prompt-executor.ts` for one-shot runs, or `packages/jar-core/src/session-executor.ts` when `--session` is used.
+7. Executes prompts via `packages/jar-core/src/prompt-executor.ts` for one-shot runs, or `packages/jar-core/src/thread-executor.ts` when `--thread` is used.
 8. Either streams assistant text to stdout through the CLI adapter or renders the Ink TUI package (`--repl`).
-9. Optionally persists session transcripts plus turn/run/item execution records through `packages/jar-core/src/session-store.ts`.
+9. Optionally persists lane tape plus turn/run/item execution records through `packages/jar-core/src/lanes/`.
 
 Slack gateway 的流程不同：
 
@@ -29,9 +29,9 @@ Slack gateway 的流程不同：
 3. Iterates `platform.slack.identities.*` and starts one Slack Socket Mode runtime per configured identity.
 4. Each Slack runtime handles `app_mention` and message events for its own bot connection.
 5. On a new `@mention`, the current Slack identity subscribes the thread, collects a bounded window of top-level channel messages before the mention, and composes an observed-context prompt.
-6. On follow-up messages inside a subscribed Slack thread, the current identity routes the message into that identity's Jar session without rebuilding channel history.
-7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
-8. Persists transcript/event/snapshot data plus session-scoped turn/run/item records through the same `packages/jar-core/src/session-store.ts`.
+6. On follow-up messages inside a subscribed Slack thread, the current identity routes the message into that identity's local thread without rebuilding channel history.
+7. Executes the turn through `packages/jar-core/src/thread-executor.ts`.
+8. Persists tape/event/checkpoint data plus thread-scoped turn/run/item records through `packages/jar-core/src/lanes/`.
 9. Emits summary logs through `packages/jar-core/src/logger.ts` so the request path is readable without replaying raw events.
 
 Telegram gateway 则是：
@@ -42,9 +42,9 @@ Telegram gateway 则是：
 4. Each Telegram bot handles all private chat messages, plus group messages that explicitly mention that bot or reply to that bot's message.
 5. Coalesces rapid follow-up messages per chat/topic in memory so long-running LLM turns do not interleave.
 6. Builds a Telegram prompt from the current message, optional reply context, and any skipped messages.
-7. Executes the turn through `packages/jar-core/src/session-executor.ts`.
+7. Executes the turn through `packages/jar-core/src/thread-executor.ts`.
 8. Streams assistant text back to Telegram through `@grammyjs/stream`.
-9. Persists transcript/event/snapshot data plus session-scoped turn/run/item records through the same `packages/jar-core/src/session-store.ts`.
+9. Persists tape/event/checkpoint data plus thread-scoped turn/run/item records through `packages/jar-core/src/lanes/`.
 
 ## Entrypoint
 
@@ -52,7 +52,7 @@ Telegram gateway 则是：
 
 Responsibilities:
 
-- parse `--config` / `-c`, `--repl`, `--session`, `--list-sessions`
+- parse `--config` / `-c`, `--repl`, `--thread`, `--list-threads`
 - read prompt text from argv or stdin
 - load validated config from `packages/jar-core/src/config.ts`
 - create the runtime `Agent` via `packages/jar-core/src/runtime.ts`
@@ -64,7 +64,7 @@ Responsibilities:
 
 The workspace packages are split as follows:
 
-- `packages/jar-core`: runtime assembly (substrate primitives + convenience APIs), prompt execution policy, TOML config loading, tool registration, session persistence
+- `packages/jar-core`: runtime assembly (substrate primitives + convenience APIs), prompt execution policy, TOML config loading, tool registration, and tape-backed thread/lane persistence
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
 - `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
@@ -84,8 +84,8 @@ Supported forms:
 pnpm dev -- --config ./apps/jar-cli/jar.toml "Read package.json and summarize the scripts."
 echo "Run git status and explain the workspace state." | pnpm dev -- --config ./apps/jar-cli/jar.toml
 pnpm dev -- --config ./apps/jar-cli/jar.toml --repl
-pnpm dev -- --config ./apps/jar-cli/jar.toml --session my-session --repl
-pnpm dev -- --config ./apps/jar-cli/jar.toml --list-sessions
+pnpm dev -- --config ./apps/jar-cli/jar.toml --thread my-thread --repl
+pnpm dev -- --config ./apps/jar-cli/jar.toml --list-threads
 ```
 
 Rules:
@@ -152,23 +152,23 @@ Prompt assembly is now split into two layers:
 - `prompt-context.ts`: owns contextual fragment rendering, prompt injection, and memory-excluded cleanup before persistence or compaction.
 - `getSkillsCatalogOverlays()`: convenience helper that converts a `SkillsRuntime` catalog into `PromptSection[]` for passing to `createAgent()`.
 
-`packages/jar-core/src/session-executor.ts` is the shared session-bound execution seam (convenience API). It:
+`packages/jar-core/src/thread-executor.ts` is the shared thread-bound execution seam (convenience API). It:
 
 - accepts a single `config: LoadedRuntimeConfig` object instead of individual agent fields — callers do not need to spread or duplicate any agent configuration
 - creates a fresh `Agent` using `config.agent` fields and `createDefaultTools(config.toolOptions)`
-- restores the persisted Jar session from `config.sessions.rootDir`
+- restores the persisted Jar thread from `config.sessions.rootDir`
 - creates one explicit `turn` and one `run(kind=act)` for the current request
 - injects skills from `config.skills` into each prompt turn; the system prompt catalog overlay is already embedded in `config.agent.systemPromptOverlays` by `loadRuntimeConfig` and is not re-applied here
 - sanitizes older persisted user messages so previous memory-excluded contextual fragments do not keep accumulating in future context windows
-- appends runtime events/messages back into the session store
+- appends runtime events/messages back into the lane substrate
 - maps the current execution into structured `items` such as `user_input`, `assistant_message`, `tool_call`, `tool_result`, `retry_notice`, and `compaction`
 - emits summary logs for prompt/tool boundaries
 - executes the prompt using the retry/timeout policy from `config.agent.execution`
 - returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
 
-Identity-aware routing now sits above sessions. `packages/jar-core/src/entity-routing.ts` defines stable Jarvis entities and explicit platform identities. A normal platform turn first resolves the ingress platform identity, then reads the entity bound to that identity, then derives the correct local thread session for that identity on that platform. This means continuity is still stored in sessions, but sessions no longer have to double as the product's identity layer and no gateway needs a fake “default entity” shortcut.
+Identity-aware routing now sits above persistence. `packages/jar-core/src/entity-routing.ts` defines stable Jarvis entities and explicit platform identities. A normal platform turn first resolves the ingress platform identity, then reads the entity bound to that identity, then derives the local conversation target for that identity on that platform. The persistence model is now moving toward thread/lane terminology rather than treating encoded session ids as the primary product identity.
 
-`packages/jar-core/src/session-executor.ts` now also exposes a side-query execution path. A side query is a one-shot read against an existing entity thread. It uses the target session's current messages as context, but it does not append user/assistant messages back into that target session transcript and does not write a fresh snapshot there. This keeps `/btw`-style questions from contaminating the main working thread.
+The current runtime refactor is establishing a tape-backed lane substrate so future side ask can fork from live lane state rather than reading a persisted snapshot-backed transcript. The old side-query path has been removed instead of being carried forward as a compatibility seam.
 
 The default tools (via `createDefaultTools()`) are:
 
@@ -223,27 +223,30 @@ Errors can come from several layers:
 
 Jar is intentionally minimal right now:
 
-- default CLI runs a single prompt per process (multi-turn is available in REPL/session mode)
+- default CLI runs a single prompt per process (multi-turn is available in REPL/thread mode)
 - Slack transport exists, but only as a dedicated Socket Mode app in `apps/jar-slack`
 - Telegram transport exists as a dedicated grammY long-polling app in `apps/jar-telegram`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven, but retry notices are now mirrored into session `items`
-- prompt compaction is applied via the `packages/jar-core/src/compaction/` subsystem to keep long sessions within context limits; runtime sanitizes the current snapshot-backed message history, then runs a staged pipeline of snip-style oldest-history trimming, lightweight tool-result reduction, summary compaction, and final payload assembly; summary generation also retries with progressively truncated history if the compaction request itself is too large, and compaction metadata is persisted into session events/items while the compacted message array itself is persisted into `session.json`
+- prompt compaction is applied via the `packages/jar-core/src/compaction/` subsystem to keep long conversations within context limits; runtime sanitizes the current materialized lane view, then runs a staged pipeline of snip-style oldest-history trimming, lightweight tool-result reduction, summary compaction, and final payload assembly; summary generation also retries with progressively truncated history if the compaction request itself is too large, and compaction metadata is persisted into lane events/items while the compacted head is recorded as a lane checkpoint rather than as authoritative snapshot truth
 - skills catalog overlays are supported, but full skill bodies remain turn-scoped and are not persisted as long-lived system prompt text
 - no built-in tools beyond text file IO and shell execution
 
 ## Session Execution Model
 
-Jar 现在显式区分四层执行对象：
+Jar 现在正在显式收敛到五层执行对象：
 
-- `session`: 长期持久化的会话容器，也是恢复模型上下文的边界
-- `turn`: 一次输入触发的一单位工作
-- `run`: 某个 `turn` 的一次具体执行；当前默认只有一个 `run(kind=act)`
-- `item`: `run` 内的细粒度审计记录，例如 assistant delta、tool 调用、retry 通知、compaction
+- `thread`: 一个稳定的对话范围标识，例如一个 Slack thread 或 Telegram chat/topic 所映射出的本地容器
+- `lane`: thread 内的一条执行线。当前主路径只有一个 `main` lane，但 lane 抽象是未来 live fork 的基础。
+- `tape`: lane 的 append-only 事实流，作为恢复与未来 fork 的 canonical truth。
+- `turn`: 一次输入触发的一单位工作。
+- `run`: 某个 `turn` 的一次具体执行；当前默认只有一个 `run(kind=act)`。
+- `item`: `run` 内的细粒度审计记录，例如 assistant delta、tool 调用、retry 通知、compaction。
 
 当前实现里：
 
-- `messages.jsonl` 和 `session.json` 仍然是上下文恢复的唯一来源
+- `tape.jsonl` 正在成为上下文恢复的主来源
+- `head.json` 如果存在，也只是 derived cache，不是 source of truth
 - `turns.jsonl`、`runs.jsonl`、`items.jsonl` 只承担执行审计与后续扩展职责
 - `events.jsonl` 继续保留原始底层事件流，不被 `items` 取代
 
@@ -251,4 +254,4 @@ If any of these behaviors change, update this document together with `apps/jar-c
 
 ## 会话与 REPL
 
-Jar 支持在 `--repl` 或 `--session` 模式下进行多轮会话。`--repl` 现在由 Ink 驱动，负责输入、状态栏、tool activity 与 diagnostics 面板；会话内容仍以 JSONL 追加写入，并在会话结束时写入快照以加速恢复。详情参见 [Sessions](./sessions.md) 和 [TUI](./tui.md)。
+Jar 支持在 `--repl` 或 `--thread` 模式下进行多轮会话。`--repl` 现在由 Ink 驱动，负责输入、状态栏、tool activity 与 diagnostics 面板；底层正常执行路径已经切到 tape-backed lane substrate。详情参见 [Sessions](./sessions.md) 和 [TUI](./tui.md)。
