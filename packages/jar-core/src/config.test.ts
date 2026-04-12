@@ -220,14 +220,18 @@ system_prompt = "You are a test agent."
     assert.deepEqual(config.memory, {
       enabled: true,
       provider: "filesystem",
-      rootDir: path.join(path.dirname(configPath), ".jar", "memory"),
+      providers: {
+        filesystem: {
+          rootDir: path.join(path.dirname(configPath), ".jar", "memory"),
+        },
+      },
     });
   } finally {
     await cleanupConfigFile(configPath);
   }
 });
 
-test("loadAgentConfig reads custom memory config values", async () => {
+test("loadAgentConfig reads provider-specific memory config values", async () => {
   const { provider, model } = pickProviderAndModel();
   const configPath = await writeConfigFile(`
 [agent]
@@ -238,6 +242,8 @@ system_prompt = "You are a test agent."
 [memory]
 enabled = false
 provider = "filesystem"
+
+[memory.providers.filesystem]
 root_dir = "./var/memory"
 `);
 
@@ -246,7 +252,49 @@ root_dir = "./var/memory"
     assert.deepEqual(config.memory, {
       enabled: false,
       provider: "filesystem",
-      rootDir: path.join(path.dirname(configPath), "var", "memory"),
+      providers: {
+        filesystem: {
+          rootDir: path.join(path.dirname(configPath), "var", "memory"),
+        },
+      },
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads memory provider modules and arbitrary provider options", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[memory]
+provider = "custom"
+
+[memory.providers.custom]
+module = "./plugins/custom-memory.ts"
+endpoint = "https://memory.example.test"
+namespace = "jarvis-memory"
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.memory, {
+      enabled: true,
+      provider: "custom",
+      providers: {
+        filesystem: {
+          rootDir: path.join(path.dirname(configPath), ".jar", "memory"),
+        },
+        custom: {
+          module: path.join(path.dirname(configPath), "plugins", "custom-memory.ts"),
+          endpoint: "https://memory.example.test",
+          namespace: "jarvis-memory",
+        },
+      },
     });
   } finally {
     await cleanupConfigFile(configPath);

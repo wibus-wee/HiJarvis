@@ -13,9 +13,9 @@ The design goal is local-first memory with explicit promotion:
 
 At runtime, memory is wired in this order:
 
-1. `jar.toml` loads `[memory]` into `LoadedRuntimeConfig.memory`
+1. `jar.toml` loads `[memory]` and `[memory.providers.*]` into `LoadedRuntimeConfig.memory`
 2. `packages/jar-core/src/execution-service.ts` resolves the active entity for the current message turn
-3. A `MemoryProvider` instance is created for the configured backend
+3. `packages/jar-core/src/memory/provider-resolution.ts` resolves the configured provider using either an internal registry or a configured external module
 4. `createMemoryTools(entityId, provider)` adds four scoped tools to the turn's toolset
 
 Current built-in provider:
@@ -54,12 +54,18 @@ export interface MemoryProvider {
 
 The contract is intentionally narrow so alternate providers can be added later without changing the tool surface.
 
+Provider creation is now also abstracted:
+
+- built-in providers are registered in an internal resolver registry
+- external providers can be loaded from `memory.providers.<name>.module`
+- external modules must export `createMemoryProvider(context)`
+
 ## Filesystem Provider
 
 The default provider stores memory under:
 
 ```text
-.jar/memory/<entityId>/entries.jsonl
+<configured rootDir>/<entityId>/entries.jsonl
 ```
 
 Behavior:

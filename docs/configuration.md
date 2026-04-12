@@ -108,6 +108,8 @@ max_body_chars = 20000
 [memory]
 enabled = true
 provider = "filesystem"
+
+[memory.providers.filesystem]
 root_dir = ".jar/memory"
 
 [tools]
@@ -235,8 +237,20 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 ### `[memory]`
 
 - `enabled`: 是否启用长期记忆工具。默认：`true`。
-- `provider`: 记忆后端名称。当前内置实现仅支持 `"filesystem"`。默认：`"filesystem"`。
-- `root_dir`: 默认 filesystem provider 的根目录。相对路径以配置文件所在目录解析。默认：`.jar/memory`。
+- `provider`: 当前启用的 memory provider 名称。默认：`"filesystem"`。
+
+### `[memory.providers.<name>]`
+
+每个 memory provider 都有自己独立的配置表。`[memory]` 只负责“启用 memory”以及“当前选哪个 provider”，具体 provider 参数都放在 `memory.providers.*` 下面。
+
+内置 filesystem provider:
+
+- `root_dir`: filesystem provider 的根目录。相对路径以配置文件所在目录解析。默认：`.jar/memory`。
+
+外部 provider 约定：
+
+- `module`: 可选的模块路径或包名。配置后，Jar 会动态加载该模块，并读取它导出的 `createMemoryProvider()` factory。
+- 其他字段原样透传给该 provider 的 factory，由 provider 自己解释。
 
 记忆系统按 entity 隔离，而不是按 thread 隔离：
 
@@ -245,6 +259,12 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - 解析出的 entity id 会传入每一次 memory provider 调用
 
 当前 `@hijarvis/jar-core` 内置四个记忆工具：`memory_search`、`memory_store`、`memory_update`、`memory_delete`。
+
+当前 provider 解析顺序：
+
+- 如果 `memory.provider` 是内置 provider，例如 `filesystem`，Jar 使用内置 factory
+- 否则如果 `memory.providers.<name>.module` 已配置，Jar 动态加载该模块
+- 否则报错
 
 ### `[tools]`
 
@@ -273,6 +293,7 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - `packages/jar-core/src/config.ts` also forwards the active provider name, model, `provider.<name>.api_key`, and optional `provider.<name>.base_url` into `toolOptions` so provider-aware tools such as `web_search` can branch correctly.
 - Tool registration is handled in `packages/jar-core/src/tools.ts`.
 - Memory tool injection is handled in `packages/jar-core/src/execution-service.ts`, because the active entity is only known after ingress routing.
+- Configured memory provider resolution lives in `packages/jar-core/src/memory/provider-resolution.ts`.
 - Built-in tool behavior and restrictions are documented in [Tools](./tools.md).
 
 ## Validation

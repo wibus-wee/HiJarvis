@@ -133,7 +133,11 @@ const createRuntimeConfig = (): LoadedRuntimeConfig => ({
   memory: {
     enabled: true,
     provider: "filesystem",
-    rootDir: "/tmp/.jar/memory",
+    providers: {
+      filesystem: {
+        rootDir: "/tmp/.jar/memory",
+      },
+    },
   },
   entities: {
     jarvis: {

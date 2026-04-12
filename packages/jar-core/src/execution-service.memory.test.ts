@@ -51,7 +51,11 @@ const createConfig = (memory: Partial<LoadedMemoryConfig> = {}): LoadedRuntimeCo
   memory: {
     enabled: true,
     provider: "filesystem",
-    rootDir: "/tmp/.jar/memory",
+    providers: {
+      filesystem: {
+        rootDir: "/tmp/.jar/memory",
+      },
+    },
     ...memory,
   },
   entities: {
@@ -127,15 +131,27 @@ test("resolveMessageTools adds memory tools only when memory is enabled", () => 
 
   const withMemory = resolveMessageTools(createConfig(), createCommand("slack_main"), {
     createDefaultTools: () => defaultTools,
-    createMemoryProvider: () => provider,
+    resolveMemoryProvider: async () => provider,
     createMemoryTools: (_entityId: string, _provider: MemoryProvider) => memoryTools,
   });
-  assert.deepEqual(withMemory.map((tool) => tool.name), ["read_file", "memory_search"]);
+  return withMemory.then((resolvedTools) => {
+    assert.deepEqual(resolvedTools.map((tool) => tool.name), ["read_file", "memory_search"]);
+  });
 
-  const withoutMemory = resolveMessageTools(createConfig({ enabled: false }), createCommand("slack_main"), {
+});
+
+test("resolveMessageTools skips provider resolution when memory is disabled", async () => {
+  const defaultTools = [{ name: "read_file" }] as AgentTool[];
+  let resolveCalled = false;
+
+  const withoutMemory = await resolveMessageTools(createConfig({ enabled: false }), createCommand("slack_main"), {
     createDefaultTools: () => defaultTools,
-    createMemoryProvider: () => provider,
-    createMemoryTools: (_entityId: string, _provider: MemoryProvider) => memoryTools,
+    resolveMemoryProvider: async () => {
+      resolveCalled = true;
+      throw new Error("should not resolve provider");
+    },
+    createMemoryTools: (_entityId: string, _provider: MemoryProvider) => [],
   });
   assert.deepEqual(withoutMemory.map((tool) => tool.name), ["read_file"]);
+  assert.equal(resolveCalled, false);
 });

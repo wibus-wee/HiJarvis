@@ -52,6 +52,7 @@ const memoryConfigSchema = z.object({
   enabled: z.boolean().optional(),
   provider: nonEmptyString.optional(),
   root_dir: nonEmptyString.optional(),
+  providers: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 }).strict();
 
 const entityConfigSchema = z.object({
@@ -128,7 +129,7 @@ export type LoadedRuntimeConfig = Omit<LoadedBaseConfig, "skillsConfig"> & {
 export type LoadedMemoryConfig = {
   enabled: boolean;
   provider: string;
-  rootDir: string;
+  providers: Record<string, Record<string, unknown>>;
 };
 
 export type EntitySurface = "slack" | "telegram";
@@ -239,11 +240,56 @@ const normalizeMemoryConfig = (
   memory: RawConfig["memory"],
   configDirectory: string,
 ): LoadedMemoryConfig => {
+  const normalizedProviders = Object.fromEntries(
+    Object.entries(memory.providers ?? {}).map(([providerName, providerConfig]) => [
+      providerName,
+      normalizeMemoryProviderConfig(providerName, providerConfig, configDirectory),
+    ]),
+  );
+
+  const filesystemRootDir = path.resolve(
+    configDirectory,
+    memory.root_dir ?? (
+      typeof normalizedProviders.filesystem?.rootDir === "string"
+        ? normalizedProviders.filesystem.rootDir
+        : ".jar/memory"
+    ),
+  );
+
   return {
     enabled: memory.enabled ?? true,
     provider: memory.provider ?? "filesystem",
-    rootDir: path.resolve(configDirectory, memory.root_dir ?? ".jar/memory"),
+    providers: {
+      filesystem: {
+        ...(normalizedProviders.filesystem ?? {}),
+        rootDir: filesystemRootDir,
+      },
+      ...Object.fromEntries(
+        Object.entries(normalizedProviders).filter(([providerName]) => providerName !== "filesystem"),
+      ),
+    },
   };
+};
+
+const normalizeMemoryProviderConfig = (
+  providerName: string,
+  providerConfig: Record<string, unknown>,
+  configDirectory: string,
+): Record<string, unknown> => {
+  const entries = Object.entries(providerConfig).map(([key, value]) => {
+    if (providerName === "filesystem" && key === "root_dir" && typeof value === "string") {
+      return ["rootDir", path.resolve(configDirectory, value)] satisfies [string, unknown];
+    }
+
+    if (key === "module" && typeof value === "string" && value.trim().length > 0) {
+      const resolvedValue = path.isAbsolute(value) ? value : path.resolve(configDirectory, value);
+      return [key, resolvedValue] satisfies [string, unknown];
+    }
+
+    return [key, value] satisfies [string, unknown];
+  });
+
+  return Object.fromEntries(entries);
 };
 
 export const resolveSkillsFromConfig = async (

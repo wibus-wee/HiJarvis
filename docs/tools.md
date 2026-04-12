@@ -68,7 +68,8 @@ Jar also includes provider-backed long-term memory tools. Their current behavior
 
 - when `[memory].enabled = true`, four memory CRUD tools are added for the active entity
 - all memory tools delegate to a `MemoryProvider` interface instead of owning storage logic directly
-- the built-in provider is filesystem-backed and stores entity-specific JSONL files under `.jar/memory/<entityId>/`
+- the built-in provider is filesystem-backed and stores entity-specific JSONL files under the configured `memory.providers.filesystem.root_dir`
+- external providers can be loaded through `memory.providers.<name>.module` when `memory.provider` selects that name
 
 ## `memory_search`
 

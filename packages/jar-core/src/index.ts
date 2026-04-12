@@ -114,8 +114,15 @@ export {
   createMemoryStoreTool,
   createMemoryTools,
   createMemoryUpdateTool,
+  resolveConfiguredMemoryProvider,
 } from "./memory/index.js";
-export type { MemoryEntry, MemoryProvider, MemorySearchResult } from "./memory/index.js";
+export type {
+  CreateMemoryProviderContext,
+  MemoryEntry,
+  MemoryProvider,
+  MemoryProviderFactory,
+  MemorySearchResult,
+} from "./memory/index.js";
 
 // --- Substrate: tool contract ---
 export type { ToolOptions } from "./tools.js";

@@ -16,8 +16,8 @@ import {
 } from "./ingress.js";
 import type { Logger } from "./logger.js";
 import {
-  FileSystemMemoryProvider,
   type MemoryProvider,
+  resolveConfiguredMemoryProvider,
 } from "./memory/index.js";
 import {
   createFileSystemConversationStateStore,
@@ -154,30 +154,22 @@ export const resolveEntityMemoryScope = (
   return firstEntity ?? "default";
 };
 
-const createMemoryProvider = (config: LoadedRuntimeConfig): MemoryProvider => {
-  if (config.memory.provider !== "filesystem") {
-    throw new Error(`Unsupported memory provider "${config.memory.provider}"`);
-  }
-
-  return new FileSystemMemoryProvider({ rootDir: config.memory.rootDir });
-};
-
-export const resolveMessageTools = (
+export const resolveMessageTools = async (
   config: LoadedRuntimeConfig,
   command: MessageIngressCommand,
   dependencies: {
     createDefaultTools?: typeof createDefaultTools;
     createMemoryTools?: (entityId: string, provider: MemoryProvider) => AgentTool[];
-    createMemoryProvider?: (config: LoadedRuntimeConfig) => MemoryProvider;
+    resolveMemoryProvider?: (config: LoadedRuntimeConfig) => Promise<MemoryProvider> | MemoryProvider;
   } = {},
-): AgentTool[] => {
+): Promise<AgentTool[]> => {
   const defaultTools = (dependencies.createDefaultTools ?? createDefaultTools)(config.toolOptions);
   if (!config.memory.enabled) {
     return defaultTools;
   }
 
   const entityId = resolveEntityMemoryScope(config, command);
-  const provider = (dependencies.createMemoryProvider ?? createMemoryProvider)(config);
+  const provider = await (dependencies.resolveMemoryProvider ?? resolveConfiguredMemoryProvider)(config);
   const memoryTools = (dependencies.createMemoryTools ?? createMemoryTools)(entityId, provider);
   return [...defaultTools, ...memoryTools];
 };
@@ -220,9 +212,11 @@ const executeMessageCommand = async (
       turnInputMetadata: buildTurnInputMetadata(command),
     });
 
+    const tools = await resolveMessageTools(config, command);
+
     const agent = createAgent({
       ...config.agent,
-      tools: resolveMessageTools(config, command),
+      tools,
       ...(requestLogger ? { logger: requestLogger } : {}),
       compactionEventSink: (event) => {
         void eventStore.appendEvent(conversation.threadId, event);

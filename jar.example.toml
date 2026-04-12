@@ -109,10 +109,18 @@ max_body_chars = 20000
 [memory]
 # Optional. Disable all long-term memory tools for every entity.
 enabled = true
-# Optional. Built-in provider name. Today only filesystem is implemented.
+# Optional. Active memory provider name.
 provider = "filesystem"
+
+[memory.providers.filesystem]
 # Optional. Filesystem root used by the default provider. Relative to this config file.
 root_dir = ".jar/memory"
+
+# Example external provider module:
+# [memory.providers.custom]
+# module = "./plugins/custom-memory.ts"
+# endpoint = "https://memory.example.test"
+# namespace = "jarvis-memory"
 
 [tools]
 workspace_root = "."

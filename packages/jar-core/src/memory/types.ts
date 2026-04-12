@@ -28,3 +28,12 @@ export interface MemoryProvider {
   ): Promise<MemoryEntry>;
   delete(entityId: string, id: string): Promise<void>;
 }
+
+export type CreateMemoryProviderContext = {
+  providerName: string;
+  providerConfig: Record<string, unknown>;
+};
+
+export type MemoryProviderFactory = (
+  context: CreateMemoryProviderContext,
+) => Promise<MemoryProvider> | MemoryProvider;

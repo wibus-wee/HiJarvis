@@ -70,7 +70,11 @@ test("startThreadExecutionTracker records turn, run, and items", async () => {
       memory: {
         enabled: true,
         provider: "filesystem",
-        rootDir: path.join(rootDir, ".jar", "memory"),
+        providers: {
+          filesystem: {
+            rootDir: path.join(rootDir, ".jar", "memory"),
+          },
+        },
       },
       entities: {},
       platformIdentities: {},
