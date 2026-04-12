@@ -141,6 +141,7 @@ type ShellManager = {
     background: boolean;
   }) => Promise<ShellSnapshot>;
   terminateShell: (shellId: string) => Promise<ShellSnapshot>;
+  releaseShell: (shellId: string) => void;
 };
 
 const KILL_ESCALATION_DELAY_MS = 1_000;
@@ -256,6 +257,9 @@ export const createBashOutputTool = (
           ? shell.output.length
           : clampRange(start + params.limit, shell.output.length);
       const output = shell.output.slice(start, end);
+      if (shell.status !== "running" && end >= shell.output.length) {
+        shellManager.releaseShell(shell.shellId);
+      }
 
       return {
         content: [
@@ -338,7 +342,7 @@ const createShellManager = (options: ToolOptions): ShellManager => {
       if (shell.status !== "running") {
         await shell.completion;
       }
-      return toShellSnapshot(shell);
+      return snapshotShell(shell);
     },
     startShell: async (params) => {
       const shellId = randomUUID();
@@ -379,7 +383,7 @@ const createShellManager = (options: ToolOptions): ShellManager => {
         await shell.completion;
       }
 
-      return toShellSnapshot(shell);
+      return snapshotShell(shell);
     },
     terminateShell: async (shellId) => {
       const shell = getRequiredShell(shells, shellId);
@@ -402,7 +406,10 @@ const createShellManager = (options: ToolOptions): ShellManager => {
         await shell.completion;
       }
 
-      return toShellSnapshot(shell);
+      return snapshotShell(shell);
+    },
+    releaseShell: (shellId) => {
+      shells.delete(shellId);
     },
   };
 };
@@ -534,7 +541,7 @@ const getRequiredShell = (
   return shell;
 };
 
-const toShellSnapshot = (shell: ManagedShell): ShellSnapshot => {
+const snapshotShell = (shell: ManagedShell): ShellSnapshot => {
   return {
     shellId: shell.shellId,
     command: shell.command,

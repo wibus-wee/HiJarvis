@@ -63,4 +63,8 @@ export type TapeHandle = {
   threadId: string;
   laneId: string;
   tapePath: string;
+  state: {
+    nextOffset: number;
+    writeChain: Promise<void>;
+  };
 };

@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { resolveLaneDir, resolveTapePath } from "./path-layout.js";
@@ -11,12 +11,18 @@ export const openTape = async (options: {
 }): Promise<TapeHandle> => {
   const laneDir = resolveLaneDir(options.rootDir, options.threadId, options.laneId);
   await mkdir(laneDir, { recursive: true });
+  const tapePath = resolveTapePath(options.rootDir, options.threadId, options.laneId);
+  const headPath = path.join(laneDir, "head.json");
 
   return {
     rootDir: options.rootDir,
     threadId: options.threadId,
     laneId: options.laneId,
-    tapePath: resolveTapePath(options.rootDir, options.threadId, options.laneId),
+    tapePath,
+    state: {
+      nextOffset: await resolveNextOffset(tapePath, headPath),
+      writeChain: Promise.resolve(),
+    },
   };
 };
 
@@ -49,21 +55,30 @@ export const appendTapeRecord = async (
   tape: TapeHandle,
   input: Omit<TapeRecord, "v" | "offset" | "threadId" | "laneId" | "recordedAt">,
 ): Promise<TapeRecord> => {
-  const laneDir = resolveLaneDir(tape.rootDir, tape.threadId, tape.laneId);
-  const headPath = path.join(laneDir, "head.json");
-  const nextOffset = (await readHeadLastOffset(headPath) ?? 0) + 1;
-  const record: TapeRecord = {
-    v: 1,
-    offset: nextOffset,
-    threadId: tape.threadId,
-    laneId: tape.laneId,
-    recordedAt: Date.now(),
-    type: input.type,
-    payload: input.payload,
-  };
-  await appendFile(tape.tapePath, `${JSON.stringify(record)}\n`, "utf8");
-  await writeHeadLastOffset(headPath, tape, nextOffset);
-  return record;
+  const recordPromise = tape.state.writeChain.then(async () => {
+    const record: TapeRecord = {
+      v: 1,
+      offset: tape.state.nextOffset,
+      threadId: tape.threadId,
+      laneId: tape.laneId,
+      recordedAt: Date.now(),
+      type: input.type,
+      payload: input.payload,
+    };
+    await appendFile(tape.tapePath, `${JSON.stringify(record)}\n`, "utf8");
+    tape.state.nextOffset += 1;
+    return record;
+  });
+  tape.state.writeChain = recordPromise.then(() => undefined, () => undefined);
+  return recordPromise;
+};
+
+const resolveNextOffset = async (
+  tapePath: string,
+  headPath: string,
+): Promise<number> => {
+  const lastOffset = await readHeadLastOffset(headPath) ?? await readTapeLastOffset(tapePath) ?? 0;
+  return lastOffset + 1;
 };
 
 const readHeadLastOffset = async (headPath: string): Promise<number | undefined> => {
@@ -72,37 +87,34 @@ const readHeadLastOffset = async (headPath: string): Promise<number | undefined>
     const head = JSON.parse(raw) as { lastOffset?: unknown };
     return typeof head.lastOffset === "number" ? head.lastOffset : undefined;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (isEnoentError(error)) {
       return undefined;
     }
     throw error;
   }
 };
 
-const writeHeadLastOffset = async (
-  headPath: string,
-  tape: TapeHandle,
-  lastOffset: number,
-): Promise<void> => {
-  const existing = await readHeadFile(headPath);
-  const nextHead = {
-    v: 1,
-    threadId: tape.threadId,
-    laneId: tape.laneId,
-    ...existing,
-    lastOffset,
-  };
-  await writeFile(headPath, `${JSON.stringify(nextHead, null, 2)}\n`, "utf8");
-};
-
-const readHeadFile = async (headPath: string): Promise<Record<string, unknown>> => {
+const readTapeLastOffset = async (tapePath: string): Promise<number | undefined> => {
   try {
-    const raw = await readFile(headPath, "utf8");
-    return JSON.parse(raw) as Record<string, unknown>;
+    const raw = await readFile(tapePath, "utf8");
+    let lastOffset: number | undefined;
+    for (const line of raw.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      const record = JSON.parse(trimmed) as TapeRecord;
+      lastOffset = record.offset;
+    }
+    return lastOffset;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return {};
+    if (isEnoentError(error)) {
+      return undefined;
     }
     throw error;
   }
+};
+
+const isEnoentError = (error: unknown): error is NodeJS.ErrnoException => {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 };

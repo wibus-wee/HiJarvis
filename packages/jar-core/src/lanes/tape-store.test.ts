@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -123,13 +123,8 @@ test("appendTapeRecord uses head lastOffset without replaying the whole tape", a
   try {
     const threadId = "thread_main";
     const laneId = "lane_main";
-    const tape = await openTape({
-      rootDir,
-      threadId,
-      laneId,
-    });
     const laneDir = resolveLaneDir(rootDir, threadId, laneId);
-
+    await mkdir(laneDir, { recursive: true });
     await writeFile(path.join(laneDir, "head.json"), `${JSON.stringify({
       v: 1,
       threadId,
@@ -137,6 +132,11 @@ test("appendTapeRecord uses head lastOffset without replaying the whole tape", a
       lastOffset: 7,
       messages: [],
     }, null, 2)}\n`, "utf8");
+    const tape = await openTape({
+      rootDir,
+      threadId,
+      laneId,
+    });
     await writeFile(tape.tapePath, "{not valid json}\n", "utf8");
 
     const record = await appendTapeRecord(tape, {
@@ -152,4 +152,80 @@ test("appendTapeRecord uses head lastOffset without replaying the whole tape", a
   }
 });
 
-void (null as unknown as TapeRecord);
+test("appendTapeRecord keeps offset state in memory without rewriting head.json", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-tape-offset-cache-"));
+  try {
+    const threadId = "thread_main";
+    const laneId = "lane_main";
+    const laneDir = resolveLaneDir(rootDir, threadId, laneId);
+    const headPath = path.join(laneDir, "head.json");
+    await mkdir(laneDir, { recursive: true });
+    const initialHead = `${JSON.stringify({
+      v: 1,
+      threadId,
+      laneId,
+      lastOffset: 4,
+      messages: [],
+    }, null, 2)}\n`;
+
+    await writeFile(headPath, initialHead, "utf8");
+    const tape = await openTape({
+      rootDir,
+      threadId,
+      laneId,
+    });
+
+    const first = await appendTapeRecord(tape, {
+      type: "message.user",
+      payload: {
+        message: createUserMessage("one"),
+      },
+    });
+    const second = await appendTapeRecord(tape, {
+      type: "message.user",
+      payload: {
+        message: createUserMessage("two"),
+      },
+    });
+
+    assert.equal(first.offset, 5);
+    assert.equal(second.offset, 6);
+    assert.equal(await readFileUtf8(headPath), initialHead);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("appendTapeRecord serializes concurrent appends on the same tape handle", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-tape-concurrent-"));
+  try {
+    const tape = await openTape({
+      rootDir,
+      threadId: "thread_main",
+      laneId: "lane_main",
+    });
+
+    const records = await Promise.all([
+      appendTapeRecord(tape, {
+        type: "message.user",
+        payload: { message: createUserMessage("one") },
+      }),
+      appendTapeRecord(tape, {
+        type: "message.user",
+        payload: { message: createUserMessage("two") },
+      }),
+      appendTapeRecord(tape, {
+        type: "message.user",
+        payload: { message: createUserMessage("three") },
+      }),
+    ]);
+
+    assert.deepEqual(records.map((record) => record.offset), [1, 2, 3]);
+    const persisted = await readTapeRecords(tape);
+    assert.deepEqual(persisted.map((record) => record.offset), [1, 2, 3]);
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+const readFileUtf8 = (filePath: string): Promise<string> => readFile(filePath, "utf8");

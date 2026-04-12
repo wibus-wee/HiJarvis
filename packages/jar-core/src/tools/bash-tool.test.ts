@@ -90,6 +90,28 @@ test("bash.kill stops a background command and exposes the final status", async 
   assert.match(String(outputResult.details?.output), /tick/);
 });
 
+test("bash.output evicts completed background shells after the terminal snapshot", async () => {
+  const tools = createBashTools(toolOptions);
+  const bashTool = getTool(tools, "bash");
+  const outputTool = getTool(tools, "bash_output");
+
+  const startResult = await bashTool.execute("call-1", {
+    command: "node -e \"process.stdout.write('done\\n')\"",
+    background: true,
+  });
+
+  const shellId = getShellId(startResult);
+  await delay(80);
+
+  const finalOutput = await outputTool.execute("call-2", { shellId, offset: 0 });
+  assert.equal(finalOutput.details?.status, "completed");
+
+  await assert.rejects(
+    () => outputTool.execute("call-3", { shellId, offset: 0 }),
+    /was not found/,
+  );
+});
+
 const getTool = (tools: AgentTool[], name: string): AgentTool => {
   const tool = tools.find((candidate) => candidate.name === name);
   assert.ok(tool, `Expected tool "${name}" to be registered`);
