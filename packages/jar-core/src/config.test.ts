@@ -206,6 +206,53 @@ max_web_response_bytes = 16384
   }
 });
 
+test("loadAgentConfig applies default memory config values", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.memory, {
+      enabled: true,
+      provider: "filesystem",
+      rootDir: path.join(path.dirname(configPath), ".jar", "memory"),
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads custom memory config values", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[memory]
+enabled = false
+provider = "filesystem"
+root_dir = "./var/memory"
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.memory, {
+      enabled: false,
+      provider: "filesystem",
+      rootDir: path.join(path.dirname(configPath), "var", "memory"),
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
 test("loadAgentConfig reads logging config from jar.toml", async () => {
   const { provider, model } = pickProviderAndModel();
   const configPath = await writeConfigFile(`

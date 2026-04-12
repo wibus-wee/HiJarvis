@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentEvent, AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 
 import {
   compactHistoryNow,
@@ -15,6 +15,10 @@ import {
   type MessageIngressCommand,
 } from "./ingress.js";
 import type { Logger } from "./logger.js";
+import {
+  FileSystemMemoryProvider,
+  type MemoryProvider,
+} from "./memory/index.js";
 import {
   createFileSystemConversationStateStore,
   createFileSystemEventLogStore,
@@ -34,7 +38,7 @@ import {
 } from "./side-question/live-thread-registry.js";
 import { preparePromptWithSkills } from "./skills.js";
 import { startThreadExecutionTracker } from "./thread-execution.js";
-import { createDefaultTools } from "./tools.js";
+import { createDefaultTools, createMemoryTools } from "./tools.js";
 
 export type MessageIngressResult = {
   kind: "message";
@@ -134,6 +138,50 @@ export const maybeExecuteSideQuestionIngress = async (options: {
   };
 };
 
+export const resolveEntityMemoryScope = (
+  config: LoadedRuntimeConfig,
+  command: MessageIngressCommand,
+): string => {
+  const identityId = command.routing.identityId;
+  if (identityId !== undefined) {
+    const identity = config.platformIdentities[identityId];
+    if (identity !== undefined) {
+      return identity.entityId;
+    }
+  }
+
+  const firstEntity = Object.keys(config.entities)[0];
+  return firstEntity ?? "default";
+};
+
+const createMemoryProvider = (config: LoadedRuntimeConfig): MemoryProvider => {
+  if (config.memory.provider !== "filesystem") {
+    throw new Error(`Unsupported memory provider "${config.memory.provider}"`);
+  }
+
+  return new FileSystemMemoryProvider({ rootDir: config.memory.rootDir });
+};
+
+export const resolveMessageTools = (
+  config: LoadedRuntimeConfig,
+  command: MessageIngressCommand,
+  dependencies: {
+    createDefaultTools?: typeof createDefaultTools;
+    createMemoryTools?: (entityId: string, provider: MemoryProvider) => AgentTool[];
+    createMemoryProvider?: (config: LoadedRuntimeConfig) => MemoryProvider;
+  } = {},
+): AgentTool[] => {
+  const defaultTools = (dependencies.createDefaultTools ?? createDefaultTools)(config.toolOptions);
+  if (!config.memory.enabled) {
+    return defaultTools;
+  }
+
+  const entityId = resolveEntityMemoryScope(config, command);
+  const provider = (dependencies.createMemoryProvider ?? createMemoryProvider)(config);
+  const memoryTools = (dependencies.createMemoryTools ?? createMemoryTools)(entityId, provider);
+  return [...defaultTools, ...memoryTools];
+};
+
 const executeMessageCommand = async (
   config: LoadedRuntimeConfig,
   command: MessageIngressCommand,
@@ -174,7 +222,7 @@ const executeMessageCommand = async (
 
     const agent = createAgent({
       ...config.agent,
-      tools: createDefaultTools(config.toolOptions),
+      tools: resolveMessageTools(config, command),
       ...(requestLogger ? { logger: requestLogger } : {}),
       compactionEventSink: (event) => {
         void eventStore.appendEvent(conversation.threadId, event);

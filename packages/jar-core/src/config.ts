@@ -48,6 +48,12 @@ const skillsConfigSchema = z.object({
   max_body_chars: z.number().int().positive().optional(),
 }).strict();
 
+const memoryConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  provider: nonEmptyString.optional(),
+  root_dir: nonEmptyString.optional(),
+}).strict();
+
 const entityConfigSchema = z.object({
   display_name: nonEmptyString.optional(),
   system_prompt: nonEmptyString.optional(),
@@ -84,6 +90,7 @@ const rawConfigSchema = z.object({
     web_request_timeout_ms: z.number().int().positive().optional(),
     max_web_response_bytes: z.number().int().positive().optional(),
   }).strict().default({}),
+  memory: memoryConfigSchema.default({}),
   skills: skillsConfigSchema.default({}),
   entities: z.record(nonEmptyString, entityConfigSchema).default({}),
 }).strict();
@@ -108,6 +115,7 @@ export type LoadedBaseConfig = {
   sessions: {
     rootDir: string;
   };
+  memory: LoadedMemoryConfig;
   entities: Record<string, LoadedEntityConfig>;
   platformIdentities: Record<string, LoadedPlatformIdentityConfig>;
   platform: Record<string, unknown>;
@@ -115,6 +123,12 @@ export type LoadedBaseConfig = {
 
 export type LoadedRuntimeConfig = Omit<LoadedBaseConfig, "skillsConfig"> & {
   skills: SkillsRuntime;
+};
+
+export type LoadedMemoryConfig = {
+  enabled: boolean;
+  provider: string;
+  rootDir: string;
 };
 
 export type EntitySurface = "slack" | "telegram";
@@ -167,6 +181,7 @@ export const loadBaseConfig = async (
     configDirectory,
     parsedConfig.sessions.root_dir ?? ".jar/sessions",
   );
+  const memoryConfig = normalizeMemoryConfig(parsedConfig.memory, configDirectory);
 
   return {
     configFilePath: absoluteConfigPath,
@@ -210,12 +225,24 @@ export const loadBaseConfig = async (
     sessions: {
       rootDir: sessionRoot,
     },
+    memory: memoryConfig,
     entities: normalizeEntitiesConfig(parsedConfig.entities),
     platformIdentities: normalizePlatformIdentities(
       parsedConfig.platform,
       normalizeEntitiesConfig(parsedConfig.entities),
     ),
     platform: parsedConfig.platform,
+  };
+};
+
+const normalizeMemoryConfig = (
+  memory: RawConfig["memory"],
+  configDirectory: string,
+): LoadedMemoryConfig => {
+  return {
+    enabled: memory.enabled ?? true,
+    provider: memory.provider ?? "filesystem",
+    rootDir: path.resolve(configDirectory, memory.root_dir ?? ".jar/memory"),
   };
 };
 

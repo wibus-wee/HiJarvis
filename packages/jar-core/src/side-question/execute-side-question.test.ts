@@ -130,6 +130,11 @@ const createRuntimeConfig = (): LoadedRuntimeConfig => ({
     maxWebResponseBytes: 65536,
   },
   sessions: { rootDir: "/tmp" },
+  memory: {
+    enabled: true,
+    provider: "filesystem",
+    rootDir: "/tmp/.jar/memory",
+  },
   entities: {
     jarvis: {
       id: "jarvis",

@@ -106,6 +106,14 @@ max_catalog_chars = 12000
 # Optional. Maximum characters injected from one SKILL.md body per turn.
 max_body_chars = 20000
 
+[memory]
+# Optional. Disable all long-term memory tools for every entity.
+enabled = true
+# Optional. Built-in provider name. Today only filesystem is implemented.
+provider = "filesystem"
+# Optional. Filesystem root used by the default provider. Relative to this config file.
+root_dir = ".jar/memory"
+
 [tools]
 workspace_root = "."
 max_file_bytes = 32768

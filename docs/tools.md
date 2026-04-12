@@ -15,7 +15,15 @@ Jar currently documents these built-in local tools:
 - `web_fetch`
 - `web_search`
 
-The tool list is built in `createTools()` and passed into the agent during startup.
+When `[memory].enabled = true`, Jar also registers these per-entity tools for message execution:
+
+- `memory_search`
+- `memory_store`
+- `memory_update`
+- `memory_delete`
+
+The static tool list is built in `createDefaultTools()` and passed into the agent during startup.
+Memory tools are appended later in `packages/jar-core/src/execution-service.ts` after ingress routing resolves the active entity.
 
 Implementation is now split by responsibility:
 
@@ -26,6 +34,7 @@ Implementation is now split by responsibility:
 - `packages/jar-core/src/tools/bash-tool.ts`: `bash`, `bash_output`, and `bash_kill`
 - `packages/jar-core/src/tools/web-fetch-tool.ts`: `web_fetch`
 - `packages/jar-core/src/tools/web-search-tool.ts`: `web_search`
+- `packages/jar-core/src/memory/memory-tools.ts`: `memory_search`, `memory_store`, `memory_update`, and `memory_delete`
 
 The path confinement and patch parsing helpers also have targeted tests in:
 
@@ -54,6 +63,75 @@ Jar now includes a provider-aware `web_search` tool. Its current behavior is:
 
 - when `agent.provider = "openai"`, Jar calls the OpenAI Responses `web_search` tool directly
 - when a different provider is selected, Jar keeps the same tool schema but intentionally throws from the non-OpenAI branch until a provider-specific implementation is added
+
+Jar also includes provider-backed long-term memory tools. Their current behavior is:
+
+- when `[memory].enabled = true`, four memory CRUD tools are added for the active entity
+- all memory tools delegate to a `MemoryProvider` interface instead of owning storage logic directly
+- the built-in provider is filesystem-backed and stores entity-specific JSONL files under `.jar/memory/<entityId>/`
+
+## `memory_search`
+
+Searches long-term memory for the current entity.
+
+### Parameters
+
+```json
+{
+  "text": "preferred language",
+  "tags": ["preference"],
+  "limit": 5
+}
+```
+
+### Behavior
+
+- `text` performs case-insensitive keyword matching against entry `content`
+- `tags` requires the entry to contain every requested tag
+- `limit` truncates the returned result set
+- results are scoped to the current entity only
+
+## `memory_store`
+
+Stores a new long-term memory entry for the current entity.
+
+### Parameters
+
+```json
+{
+  "content": "Preferred language is TypeScript",
+  "tags": ["preference", "language"],
+  "metadata": {
+    "source": "user"
+  }
+}
+```
+
+## `memory_update`
+
+Updates an existing memory entry by `id`.
+
+### Parameters
+
+```json
+{
+  "id": "mem-123",
+  "content": "Preferred language is Go",
+  "tags": ["preference", "backend"]
+}
+```
+
+## `memory_delete`
+
+Deletes an existing memory entry by `id`.
+
+### Parameters
+
+```json
+{
+  "id": "mem-123"
+}
+```
 
 ## `web_search`
 

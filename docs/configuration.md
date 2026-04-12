@@ -30,7 +30,7 @@ Both commands run via `tsx`, and internal packages such as `@hijarvis/jar-core` 
 
 ## Config Layout
 
-`jar.toml` uses eight top-level tables:
+`jar.toml` uses nine top-level tables:
 
 ```toml
 [agent]
@@ -104,6 +104,11 @@ max_scan_depth = 6
 max_skills = 2000
 max_catalog_chars = 12000
 max_body_chars = 20000
+
+[memory]
+enabled = true
+provider = "filesystem"
+root_dir = ".jar/memory"
 
 [tools]
 workspace_root = "."
@@ -227,6 +232,20 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - 每一轮只会根据用户显式写出的 `$skill-name` 去读取对应 `SKILL.md` 正文，并把正文作为 turn-scoped block 注入到当前 prompt。
 - 注入过的 `<skill>...</skill>` block 不会长期保存在 session 历史里；旧消息会在后续轮次进入模型前被清洗掉。
 
+### `[memory]`
+
+- `enabled`: 是否启用长期记忆工具。默认：`true`。
+- `provider`: 记忆后端名称。当前内置实现仅支持 `"filesystem"`。默认：`"filesystem"`。
+- `root_dir`: 默认 filesystem provider 的根目录。相对路径以配置文件所在目录解析。默认：`.jar/memory`。
+
+记忆系统按 entity 隔离，而不是按 thread 隔离：
+
+- Slack/Telegram turn 通过 `platform.<platform>.identities.<identity>.entity` 解析 entity
+- CLI/local-thread turn 回退到第一个已配置 entity
+- 解析出的 entity id 会传入每一次 memory provider 调用
+
+当前 `@hijarvis/jar-core` 内置四个记忆工具：`memory_search`、`memory_store`、`memory_update`、`memory_delete`。
+
 ### `[tools]`
 
 - `workspace_root`: root directory exposed to the file tools and the default starting directory for the shell tool. Relative paths are resolved from the config file directory. Default: `"."`.
@@ -253,6 +272,7 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - `packages/jar-core/src/runtime.ts` passes `provider.<name>.api_key` through `Agent.getApiKey()` for the active provider only.
 - `packages/jar-core/src/config.ts` also forwards the active provider name, model, `provider.<name>.api_key`, and optional `provider.<name>.base_url` into `toolOptions` so provider-aware tools such as `web_search` can branch correctly.
 - Tool registration is handled in `packages/jar-core/src/tools.ts`.
+- Memory tool injection is handled in `packages/jar-core/src/execution-service.ts`, because the active entity is only known after ingress routing.
 - Built-in tool behavior and restrictions are documented in [Tools](./tools.md).
 
 ## Validation

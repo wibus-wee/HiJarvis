@@ -67,6 +67,11 @@ test("startThreadExecutionTracker records turn, run, and items", async () => {
         maxWebResponseBytes: 65_536,
       },
       sessions: { rootDir },
+      memory: {
+        enabled: true,
+        provider: "filesystem",
+        rootDir: path.join(rootDir, ".jar", "memory"),
+      },
       entities: {},
       platformIdentities: {},
       platform: {},

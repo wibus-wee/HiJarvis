@@ -106,6 +106,17 @@ export {
   type LoggerOptions,
 } from "./logger.js";
 
+// --- Substrate: memory ---
+export {
+  FileSystemMemoryProvider,
+  createMemoryDeleteTool,
+  createMemorySearchTool,
+  createMemoryStoreTool,
+  createMemoryTools,
+  createMemoryUpdateTool,
+} from "./memory/index.js";
+export type { MemoryEntry, MemoryProvider, MemorySearchResult } from "./memory/index.js";
+
 // --- Substrate: tool contract ---
 export type { ToolOptions } from "./tools.js";
 
@@ -118,6 +129,7 @@ export {
   type LoadedEntityConfig,
   type LoadedAgentConfig,
   type LoadedBaseConfig,
+  type LoadedMemoryConfig,
   type LoadedPlatformIdentityConfig,
   type LoadedSlackIdentityConfig,
   type LoadedTelegramIdentityConfig,
@@ -146,6 +158,8 @@ export {
   executeIngressCommand,
   IngressExecutionError,
   maybeExecuteSideQuestionIngress,
+  resolveEntityMemoryScope,
+  resolveMessageTools,
   type IngressResult,
   type MessageIngressResult,
   type SideQuestionIngressResult,
