@@ -101,6 +101,12 @@ JARVIS_TELEGRAM_ALLOWED_USERNAMES=wibus,jarvisuser
 
 ## 触发规则
 
+Telegram 现在也支持在当前 chat/topic 对应的 identity thread 中直接使用 `/btw <question>`。
+
+- `/btw` 读取当前 thread 的 live in-memory state
+- `/btw` 返回一次性 side question 回复
+- `/btw` 不创建 child lane，不写 tape truth，也不保留多轮 side-session 状态
+
 ### 1. 私聊
 
 只要是文本消息或带 caption 的媒体消息，就会进入本地 thread。

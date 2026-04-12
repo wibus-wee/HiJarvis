@@ -20,6 +20,11 @@ import {
   startThreadExecutionTracker,
 } from "./thread-execution.js";
 import { openConversationHandle } from "./lanes/index.js";
+import {
+  registerLiveThreadForSideQuestion,
+  unregisterLiveThreadForSideQuestion,
+  updateLiveThreadCaptureForSideQuestion,
+} from "./side-question/index.js";
 import { createAgent } from "./runtime.js";
 import { preparePromptWithSkills } from "./skills.js";
 import { createDefaultTools } from "./tools.js";
@@ -108,6 +113,22 @@ export const executePromptInSession = async (
 
   agent.sessionId = session.threadId;
   agent.state.messages = session.messages;
+  registerLiveThreadForSideQuestion({
+    threadId: session.threadId,
+    laneId: session.laneId,
+  });
+
+  const refreshLiveCapture = () => {
+    updateLiveThreadCaptureForSideQuestion(session.threadId, {
+      threadId: session.threadId,
+      laneId: session.laneId,
+      capturedAt: Date.now(),
+      messages: agent.state.messages.map((message) => structuredClone(message)),
+    });
+  };
+
+  refreshLiveCapture();
+
   const logger = options.logger?.child({
     threadId: session.threadId,
     provider: agentConfig.provider,
@@ -190,6 +211,7 @@ export const executePromptInSession = async (
       signal,
     );
     agent.state.messages = result.messages;
+    refreshLiveCapture();
     await session.appendLaneCheckpoint(agent.state.messages.map(serializeMessage), []);
 
     const inputTokens = getUsageInputTokens(message.usage);
@@ -223,10 +245,12 @@ export const executePromptInSession = async (
       event.assistantMessageEvent.type === "text_delta"
     ) {
       outputText += event.assistantMessageEvent.delta;
+      refreshLiveCapture();
     }
 
     if (event.type === "message_end") {
       await session.appendMessage(serializeMessage(event.message));
+      refreshLiveCapture();
       await runPostTurnCompaction(event.message, signal);
     }
 
@@ -249,46 +273,50 @@ export const executePromptInSession = async (
   };
 
   try {
-    await executePromptWithPolicy(
-      agent,
-      preparedPrompt.prompt,
-      agentConfig.execution,
-      defaultWriters,
-      logger,
-      promptObserver,
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await tracker.fail(message);
-    logger?.error("thread.prompt_failed", {
+    try {
+      await executePromptWithPolicy(
+        agent,
+        preparedPrompt.prompt,
+        agentConfig.execution,
+        defaultWriters,
+        logger,
+        promptObserver,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await tracker.fail(message);
+      logger?.error("thread.prompt_failed", {
+        turnId: tracker.turnId,
+        runId: tracker.runId,
+        durationMs: Date.now() - startTime,
+        message,
+      });
+      throw new ThreadExecutionError({
+        message,
+        threadId: session.threadId,
+        turnId: tracker.turnId,
+        runId: tracker.runId,
+        cause: error,
+      });
+    }
+
+    await tracker.complete(outputText);
+    logger?.info("thread.prompt_finished", {
       turnId: tracker.turnId,
       runId: tracker.runId,
       durationMs: Date.now() - startTime,
-      message,
+      outputChars: outputText.trim().length,
     });
-    throw new ThreadExecutionError({
-      message,
+
+    return {
+      outputText,
       threadId: session.threadId,
       turnId: tracker.turnId,
       runId: tracker.runId,
-      cause: error,
-    });
+    };
+  } finally {
+    unregisterLiveThreadForSideQuestion(session.threadId);
   }
-
-  await tracker.complete(outputText);
-  logger?.info("thread.prompt_finished", {
-    turnId: tracker.turnId,
-    runId: tracker.runId,
-    durationMs: Date.now() - startTime,
-    outputChars: outputText.trim().length,
-  });
-
-  return {
-    outputText,
-    threadId: session.threadId,
-    turnId: tracker.turnId,
-    runId: tracker.runId,
-  };
 };
 
 const logAgentEvent = (

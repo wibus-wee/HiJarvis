@@ -21,7 +21,7 @@ Jar 现在使用 tape-backed lane 模型。正常执行路径的主语已经不�
 - `threads/<threadId>/lanes/main/runs.jsonl`: run 级结构化记录。
 - `threads/<threadId>/lanes/main/items.jsonl`: item 级细粒度执行记录。
 
-第一版 lane runtime 只支持一个 `main` lane。这里先把 lane 抽象建立起来，是为了让未来可以从 live lane fork 出临时分支，而不是继续把“整个当前上下文”绑定在一个可变 snapshot 文件上。
+第一版 lane runtime 只支持一个 `main` lane。lane 抽象的职责是明确持久化 truth 的边界，而不是给 `/btw` 这种一次性 side question 提供临时子会话容器。`/btw` 读取的是 live in-memory capture，但不会创建新的持久化 lane。
 
 ## Tape 与恢复
 

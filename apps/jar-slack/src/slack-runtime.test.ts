@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { parseSideQuestionCommand } from "@hijarvis/jar-core";
+
 import {
   createSlackSessionId,
   buildSubscribedThreadPrompt,
@@ -315,4 +317,10 @@ test("hasSeenKey expires old entries before admitting a new key", () => {
   assert.equal(hasSeenKey(seen, "C123:1", 10, 5), true);
   assert.equal(hasSeenKey(seen, "C123:2", 10, 15), false);
   assert.deepEqual([...seen.keys()], ["C123:2"]);
+});
+
+test("Slack current-message text can be parsed as a /btw side question", () => {
+  assert.deepEqual(parseSideQuestionCommand("/btw what are you doing?"), {
+    question: "what are you doing?",
+  });
 });

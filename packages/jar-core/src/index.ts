@@ -75,6 +75,21 @@ export {
   type ThreadMeta,
 } from "./lanes/index.js";
 
+// --- Runtime-only side-question substrate ---
+export {
+  captureLiveThreadForSideQuestion,
+  executeSideQuestion,
+  maybeExecuteSideQuestionCommand,
+  normalizeSideQuestionPromptToMessages,
+  parseSideQuestionCommand,
+  registerLiveThreadForSideQuestion,
+  unregisterLiveThreadForSideQuestion,
+  updateLiveThreadCaptureForSideQuestion,
+  type ParsedSideQuestionCommand,
+  type SideQuestionResult,
+  type SideQuestionLiveThreadCapture,
+} from "./side-question/index.js";
+
 // --- Substrate: session execution tracking ---
 export {
   countPromptMessages,

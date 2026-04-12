@@ -165,6 +165,15 @@ Slack gateway 现在明确把输入处理拆成三层：
 - `channel + ts` message dedupe：保证同一条 Slack 消息只进入业务处理一次
 - trigger classifier：统一判断这条 canonical message 是 `new_mention`、`subscribed` 还是 `ignore`
 
+### `/btw` side question
+
+Slack 现在支持在当前 identity thread 内直接使用 `/btw <question>`。
+
+- `/btw` 走共享 side-question 执行路径，而不是普通持久化 turn
+- 它读取的是当前 thread 的 live in-memory state
+- 回复是一次性的，不保留多轮 `/btw` 会话
+- 它不创建 child lane，不写 tape truth，也不向父 thread 写回 side-question 消息
+
 ### 1. 顶层 channel mention
 
 当用户在频道顶层 `@mention` Jarvis：

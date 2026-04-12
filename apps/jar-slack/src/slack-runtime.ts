@@ -5,6 +5,7 @@ import { App, LogLevel } from "@slack/bolt";
 import {
   buildTurnPrompt,
   createLogger,
+  maybeExecuteSideQuestionCommand,
   resolveIdentityThread,
   executePromptInSession,
   ThreadExecutionError,
@@ -510,6 +511,28 @@ const handleQueueEntry = async (
     )
     : buildSubscribedThreadPrompt(current, skippedMessages);
 
+  const sideQuestion = await maybeExecuteSideQuestionCommand({
+    config: state.runtime,
+    parentThreadId: threadId,
+    input: current.text,
+    logger: requestLogger,
+  });
+
+  if (sideQuestion.handled) {
+    await postSlackTextReply({
+      client: state,
+      channel: entry.channel,
+      threadTs: entry.threadTs,
+      scopeKey,
+      reply: sideQuestion.outputText.trim().length > 0
+        ? sideQuestion.outputText
+        : "I do not have a side-question reply.",
+      logger: requestLogger,
+      threadId,
+    });
+    return;
+  }
+
   await respondInSlackThread({
     runtime: state.runtime,
     channel: entry.channel,
@@ -927,14 +950,15 @@ const respondInSlackThread = async ({
       ? outputText
       : "I finished processing that, but I do not have a textual reply to send.";
 
-    const response = await client.slackClient.chat.postMessage({
+    const response = await postSlackTextReply({
+      client,
       channel,
-      thread_ts: threadTs,
-      ...createSlackReplyPayload(reply),
+      threadTs,
+      scopeKey,
+      reply,
+      logger,
+      threadId,
     });
-    if (response.ts) {
-      client.lastReplyTsByScope.set(scopeKey, response.ts);
-    }
 
     logger.info("slack.reply_posted", {
       durationMs: Date.now() - startedAt,
@@ -943,7 +967,7 @@ const respondInSlackThread = async ({
       turnId,
       runId,
       scopeKey,
-      replyTs: response.ts,
+      replyTs: response?.ts,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -967,6 +991,28 @@ const respondInSlackThread = async ({
       client.lastReplyTsByScope.set(scopeKey, fallback.ts);
     }
   }
+};
+
+const postSlackTextReply = async (options: {
+  client: SlackGatewayState;
+  channel: string;
+  threadTs: string;
+  scopeKey: string;
+  reply: string;
+  logger: Logger;
+  threadId: string;
+}): Promise<{ ts?: string }> => {
+  const response = await options.client.slackClient.chat.postMessage({
+    channel: options.channel,
+    thread_ts: options.threadTs,
+    ...createSlackReplyPayload(options.reply),
+  });
+  if (response.ts) {
+    options.client.lastReplyTsByScope.set(options.scopeKey, response.ts);
+  }
+  return {
+    ...(response.ts === undefined ? {} : { ts: response.ts }),
+  };
 };
 
 const buildSlackSkillTriggerText = (

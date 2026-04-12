@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { parseSideQuestionCommand } from "@hijarvis/jar-core";
+
+import { isTelegramSideQuestionCommand } from "./telegram-runtime.js";
+
 import {
   buildTelegramPrompt,
   createTelegramSessionId,
@@ -127,4 +131,16 @@ test("buildTelegramPrompt includes group framing and chat title", () => {
 
   assert.match(prompt, /Telegram group or supergroup conversation/);
   assert.match(prompt, /Telegram chat title: Jarvis Dev/);
+});
+
+test("Telegram message text can be parsed as a /btw side question", () => {
+  assert.deepEqual(parseSideQuestionCommand("/btw summarize current status"), {
+    question: "summarize current status",
+  });
+});
+
+test("isTelegramSideQuestionCommand detects /btw commands before queueing", () => {
+  assert.equal(isTelegramSideQuestionCommand("/btw summarize current status"), true);
+  assert.equal(isTelegramSideQuestionCommand("normal message"), false);
+  assert.equal(isTelegramSideQuestionCommand(undefined), false);
 });

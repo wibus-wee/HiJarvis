@@ -4,6 +4,7 @@ import process from "node:process";
 import {
   createAgent,
   createDefaultTools,
+  maybeExecuteSideQuestionCommand,
   executePromptInSession,
   executePromptWithPolicy,
   listThreads,
@@ -108,6 +109,16 @@ const main = async (): Promise<void> => {
         input: string,
         writers: { stderr: Pick<NodeJS.WriteStream, "write"> },
       ) => {
+        const sideQuestion = await maybeExecuteSideQuestionCommand({
+          config,
+          parentThreadId: session.threadId,
+          input,
+        });
+        if (sideQuestion.handled) {
+          process.stdout.write(`${sideQuestion.outputText.trim() || "I do not have a side-question reply."}\n`);
+          return;
+        }
+
         const prepared = await preparePromptWithSkills(input, {
           skills: config.skills,
           triggerText: input,
@@ -164,6 +175,14 @@ const main = async (): Promise<void> => {
   }
 
   if (cliOptions.threadId !== undefined) {
+    const sideQuestion = await maybeExecuteSideQuestionCommand({
+      config,
+      parentThreadId: cliOptions.threadId,
+      input: prompt,
+    });
+    if (sideQuestion.handled) {
+      process.stdout.write(`${sideQuestion.outputText.trim() || "I do not have a side-question reply."}`);
+    } else {
     await executePromptInSession({
       config,
       threadId: cliOptions.threadId,
@@ -174,6 +193,7 @@ const main = async (): Promise<void> => {
         renderAgentEvent(event, { stdout: process.stdout, stderr: process.stderr });
       },
     });
+    }
   } else {
     const agent = createAgent({
       ...config.agent,

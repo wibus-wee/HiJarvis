@@ -166,9 +166,11 @@ Prompt assembly is now split into two layers:
 - executes the prompt using the retry/timeout policy from `config.agent.execution`
 - returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
 
+`packages/jar-core/src/side-question/` is the shared one-shot `/btw` seam. CLI `--thread`, the Ink REPL, Slack, and Telegram can all route `/btw <question>` through `executeSideQuestion(...)` so the answer reads from the current live in-memory parent thread state without appending a normal persisted turn.
+
 Identity-aware routing now sits above persistence. `packages/jar-core/src/entity-routing.ts` defines stable Jarvis entities and explicit platform identities. A normal platform turn first resolves the ingress platform identity, then reads the entity bound to that identity, then derives the local conversation target for that identity on that platform. The persistence model is now moving toward thread/lane terminology rather than treating encoded session ids as the primary product identity.
 
-The current runtime refactor is establishing a tape-backed lane substrate so future side ask can fork from live lane state rather than reading a persisted snapshot-backed transcript. The old side-query path has been removed instead of being carried forward as a compatibility seam.
+The current runtime keeps a narrow side-question live-thread registry so `/btw` can ask a one-shot side question from the parent's current in-memory state instead of replaying only persisted lane state. `/btw` is intentionally not a persisted fork, child lane, or multi-turn bubble.
 
 The default tools (via `createDefaultTools()`) are:
 
@@ -237,7 +239,7 @@ Jar is intentionally minimal right now:
 Jar 现在正在显式收敛到五层执行对象：
 
 - `thread`: 一个稳定的对话范围标识，例如一个 Slack thread 或 Telegram chat/topic 所映射出的本地容器
-- `lane`: thread 内的一条执行线。当前主路径只有一个 `main` lane，但 lane 抽象是未来 live fork 的基础。
+- `lane`: thread 内的一条执行线。当前主路径只有一个 `main` lane；lane 仍然是持久化 truth 的边界，而不是 `/btw` 这类一次性 side question 的生命周期容器。
 - `tape`: lane 的 append-only 事实流，作为恢复与未来 fork 的 canonical truth。
 - `turn`: 一次输入触发的一单位工作。
 - `run`: 某个 `turn` 的一次具体执行；当前默认只有一个 `run(kind=act)`。

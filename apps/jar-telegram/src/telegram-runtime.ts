@@ -6,6 +6,9 @@ import { run, type RunnerHandle } from "@grammyjs/runner";
 import { stream, type StreamFlavor } from "@grammyjs/stream";
 import {
   createLogger,
+  executeSideQuestion,
+  maybeExecuteSideQuestionCommand,
+  parseSideQuestionCommand,
   resolveIdentityThread,
   executePromptInSession,
   loadRuntimeConfig,
@@ -180,6 +183,80 @@ const registerTelegramHandlers = (
   bot: Bot<TelegramGatewayContext>,
   state: TelegramGatewayState,
 ): void => {
+  bot.command("btw", async (context) => {
+    const messageContext = context as TelegramMessageContext;
+    if (!isAllowedChat(messageContext.chat.id, state)) {
+      return;
+    }
+
+    if (!isAllowedUsername(messageContext.msg.from?.username, state)) {
+      return;
+    }
+
+    const text = readTelegramMessageText(messageContext.msg);
+    const parsed = text ? parseSideQuestionCommand(text) : null;
+    if (parsed === null) {
+      await messageContext.reply("Usage: /btw <question>", createReplyOptions(messageContext));
+      return;
+    }
+
+    const normalized = normalizeTelegramMessageSeed(messageContext, state.identity);
+    if (!normalized) {
+      await messageContext.reply(
+        "I could not read that /btw question.",
+        createReplyOptions(messageContext),
+      );
+      return;
+    }
+
+    const sessionScope = normalized.threadId === undefined
+      ? `chat:${normalized.chatId}`
+      : `chat:${normalized.chatId}:thread:${normalized.threadId}`;
+    const routed = resolveIdentityThread(state.runtime, {
+      identityId: state.identityConfig.id,
+      platform: "telegram",
+      scope: sessionScope,
+    });
+    const requestLogger = state.logger.child({
+      conversationKey: buildConversationKey(normalized.chatId, normalized.threadId),
+      threadId: routed.threadId,
+      entityId: routed.entity.id,
+      chatId: normalized.chatId,
+      messageId: normalized.messageId,
+      trigger: "side_question",
+    });
+
+    try {
+      const result = await executeSideQuestion({
+        config: state.runtime,
+        parentThreadId: routed.threadId,
+        question: parsed.question,
+        skillTriggerText: parsed.question,
+        logger: requestLogger,
+      });
+      await messageContext.reply(
+        result.outputText.trim().length > 0
+          ? result.outputText
+          : "I do not have a side-question reply.",
+        createReplyOptions(messageContext),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      requestLogger.error("telegram.side_question_failed", {
+        threadId: routed.threadId,
+        chatId: normalized.chatId,
+        messageId: normalized.messageId,
+        message,
+      });
+      await messageContext.reply(
+        message.includes("No live parent thread available")
+          ? "No active live thread is available for /btw in this chat yet."
+          : "I ran into an error while answering that /btw question.",
+        createReplyOptions(messageContext),
+      );
+    }
+  });
+
   bot.command(["start", "help"], async (context) => {
     const messageContext = context as TelegramMessageContext;
     if (!isAllowedChat(messageContext.chat.id, state)) {
@@ -208,6 +285,15 @@ const registerTelegramHandlers = (
         reason: "username_not_allowed",
         chatId: String(messageContext.chat.id),
         username: messageContext.msg.from?.username,
+      });
+      return;
+    }
+
+    if (isTelegramSideQuestionCommand(readTelegramMessageText(messageContext.msg))) {
+      state.logger.debug("telegram.event_ignored", {
+        reason: "side_question_command",
+        chatId: String(messageContext.chat.id),
+        messageId: messageContext.msg.message_id,
       });
       return;
     }
@@ -438,6 +524,10 @@ const readTelegramMessageText = (
   return message?.text ?? message?.caption;
 };
 
+export const isTelegramSideQuestionCommand = (text: string | undefined): boolean => {
+  return text !== undefined && parseSideQuestionCommand(text) !== null;
+};
+
 const stripBotMention = (
   text: string,
   username: string | undefined,
@@ -607,6 +697,23 @@ const handleQueueEntry = async (
     currentAuthor: current.authorName,
     promptChars: prompt.length,
   });
+
+  const sideQuestion = await maybeExecuteSideQuestionCommand({
+    config: state.runtime,
+    parentThreadId: threadId,
+    input: current.text,
+    logger: requestLogger,
+  });
+
+  if (sideQuestion.handled) {
+    await entry.context.reply(
+      sideQuestion.outputText.trim().length > 0
+        ? sideQuestion.outputText
+        : "I do not have a side-question reply.",
+      createReplyOptions(entry.context),
+    );
+    return;
+  }
 
   await respondInTelegramConversation({
     runtime: state.runtime,
