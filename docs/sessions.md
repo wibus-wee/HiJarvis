@@ -21,7 +21,7 @@ Jar 现在使用 tape-backed lane 模型。正常执行路径的主语已经不�
 - `threads/<threadId>/meta.json`: thread 元信息，例如当前活跃 lane。
 - `threads/<threadId>/lanes/main/meta.json`: lane 元信息。
 - `threads/<threadId>/lanes/main/tape.jsonl`: append-only tape，作为当前 conversation truth。
-- `threads/<threadId>/lanes/main/head.json`: 派生缓存，只用于加速与调试，不是 source of truth。
+- `threads/<threadId>/lanes/main/head.json`: 派生缓存，只用于加速与调试，不是 source of truth；当前会缓存 `messages` 与 `lastOffset`，避免 append 时为计算下一个 offset 全量重读 `tape.jsonl`。
 - `threads/<threadId>/lanes/main/events.jsonl`: 底层事件流审计。
 - `threads/<threadId>/lanes/main/turns.jsonl`: turn 级结构化记录。
 - `threads/<threadId>/lanes/main/runs.jsonl`: run 级结构化记录。

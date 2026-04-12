@@ -1,4 +1,5 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { resolveLaneDir, resolveTapePath } from "./path-layout.js";
 import type { TapeHandle, TapeRecord } from "./types.js";
@@ -48,8 +49,9 @@ export const appendTapeRecord = async (
   tape: TapeHandle,
   input: Omit<TapeRecord, "v" | "offset" | "threadId" | "laneId" | "recordedAt">,
 ): Promise<TapeRecord> => {
-  const existing = await readTapeRecords(tape);
-  const nextOffset = (existing.at(-1)?.offset ?? 0) + 1;
+  const laneDir = resolveLaneDir(tape.rootDir, tape.threadId, tape.laneId);
+  const headPath = path.join(laneDir, "head.json");
+  const nextOffset = (await readHeadLastOffset(headPath) ?? 0) + 1;
   const record: TapeRecord = {
     v: 1,
     offset: nextOffset,
@@ -60,5 +62,47 @@ export const appendTapeRecord = async (
     payload: input.payload,
   };
   await appendFile(tape.tapePath, `${JSON.stringify(record)}\n`, "utf8");
+  await writeHeadLastOffset(headPath, tape, nextOffset);
   return record;
+};
+
+const readHeadLastOffset = async (headPath: string): Promise<number | undefined> => {
+  try {
+    const raw = await readFile(headPath, "utf8");
+    const head = JSON.parse(raw) as { lastOffset?: unknown };
+    return typeof head.lastOffset === "number" ? head.lastOffset : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+};
+
+const writeHeadLastOffset = async (
+  headPath: string,
+  tape: TapeHandle,
+  lastOffset: number,
+): Promise<void> => {
+  const existing = await readHeadFile(headPath);
+  const nextHead = {
+    v: 1,
+    threadId: tape.threadId,
+    laneId: tape.laneId,
+    ...existing,
+    lastOffset,
+  };
+  await writeFile(headPath, `${JSON.stringify(nextHead, null, 2)}\n`, "utf8");
+};
+
+const readHeadFile = async (headPath: string): Promise<Record<string, unknown>> => {
+  try {
+    const raw = await readFile(headPath, "utf8");
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return {};
+    }
+    throw error;
+  }
 };

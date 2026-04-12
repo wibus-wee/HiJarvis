@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { ThreadMeta } from "./types.js";
@@ -98,5 +98,3 @@ export const touchThread = async (rootDir: string, threadId: string): Promise<vo
     // ignore lane meta touch failures until lane-store is formalized
   }
 };
-
-void stat;

@@ -88,6 +88,7 @@ export const openConversationHandle = async (
   });
   const materialized = await materializeLaneView(tape);
   const messages = [...materialized.messages];
+  let lastOffset = materialized.lastOffset;
 
   return {
     threadId: options.threadId,
@@ -95,10 +96,11 @@ export const openConversationHandle = async (
     messages,
     appendMessage: async (message) => {
       messages.push(message);
-      await appendTapeRecord(tape, {
+      const record = await appendTapeRecord(tape, {
         type: message.role === "user" ? "message.user" : "message.assistant",
         payload: { message },
       });
+      lastOffset = record.offset;
     },
     appendEvent: async (event) => {
       await appendJsonLine(eventsPath, {
@@ -143,17 +145,19 @@ export const openConversationHandle = async (
     appendLaneCheckpoint: async (checkpointMessages, sourceOffsets) => {
       messages.length = 0;
       messages.push(...checkpointMessages);
-      await appendTapeRecord(tape, {
+      const record = await appendTapeRecord(tape, {
         type: "lane.checkpoint",
         payload: {
           headMessages: checkpointMessages,
           sourceOffsets,
         },
       });
+      lastOffset = record.offset;
       await writeFile(headPath, `${JSON.stringify({
         v: 1,
         threadId: options.threadId,
         laneId,
+        lastOffset,
         messages: checkpointMessages,
       }, null, 2)}\n`, "utf8");
     },
@@ -162,6 +166,7 @@ export const openConversationHandle = async (
         v: 1,
         threadId: options.threadId,
         laneId,
+        lastOffset,
         messages,
       }, null, 2)}\n`, "utf8");
     },
@@ -182,7 +187,3 @@ const writeJsonIfMissing = async (filePath: string, value: object): Promise<void
 const appendJsonLine = async (filePath: string, value: object): Promise<void> => {
   await appendFile(filePath, `${JSON.stringify(value)}\n`, "utf8");
 };
-
-void generateThreadTurnId;
-void generateThreadRunId;
-void generateThreadItemId;
