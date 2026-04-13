@@ -54,6 +54,7 @@ export {
   type ThreadTurnOutput,
   type ThreadTurnStatus,
   type ThreadTurnTrigger,
+  type UsageRecord,
 } from "./execution-types.js";
 
 // --- Substrate: lanes ---
@@ -179,7 +180,9 @@ export type {
   EventLogStore,
   ExecutionAuditStore,
   MaterializedConversationState,
+  UsageStore,
 } from "./persistence.js";
+export { createFileSystemUsageStore } from "./persistence.js";
 
 // --- Convenience: skills ---
 export {

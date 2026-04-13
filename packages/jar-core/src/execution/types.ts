@@ -7,6 +7,7 @@ import type {
   EventLogStore,
   ExecutionAuditStore,
   MaterializedConversationState,
+  UsageStore,
 } from "../persistence.js";
 import type { MessageIngressCommand } from "../ingress.js";
 import type { SkillPromptInjection } from "../skills.js";
@@ -69,6 +70,7 @@ export type StoresContext = {
   stateStore: ConversationStateStore;
   auditStore: ExecutionAuditStore;
   eventStore: EventLogStore;
+  usageStore: UsageStore;
   startTime: number;
 };
 

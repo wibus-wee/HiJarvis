@@ -61,6 +61,7 @@ export type ThreadItemType =
   | "spawn_call"
   | "spawn_result"
   | "compaction"
+  | "usage_summary"
   | "note";
 
 export type ThreadItemStatus = "delta" | "completed";
@@ -116,3 +117,30 @@ const generateRecordId = (prefix: string): string => {
 export const generateThreadTurnId = (): string => generateRecordId("turn");
 export const generateThreadRunId = (): string => generateRecordId("run");
 export const generateThreadItemId = (): string => generateRecordId("item");
+
+export type UsageRecord = {
+  type: "usage";
+  threadId: string;
+  turnId: string;
+  runId: string;
+  identityId?: string;
+  entityId?: string;
+  platform: "cli" | "slack" | "telegram";
+  model: string;
+  provider: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    totalTokens: number;
+  };
+  cost: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    total: number;
+  };
+  recordedAt: number;
+};

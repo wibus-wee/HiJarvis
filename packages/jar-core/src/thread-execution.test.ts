@@ -187,6 +187,7 @@ test("startThreadExecutionTracker records turn, run, and items", async () => {
         "compaction",
         "note",
         "assistant_message",
+        "usage_summary",
       ],
     );
     const compactionItem = items.find((entry) => entry.item.type === "compaction");

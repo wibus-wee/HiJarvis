@@ -5,6 +5,7 @@ import {
   createFileSystemConversationStateStore,
   createFileSystemEventLogStore,
   createFileSystemExecutionAuditStore,
+  createFileSystemUsageStore,
 } from "../persistence.js";
 import type { StoresContext } from "./types.js";
 
@@ -19,5 +20,6 @@ export const initStores = (
   stateStore: createFileSystemConversationStateStore(),
   auditStore: createFileSystemExecutionAuditStore(),
   eventStore: createFileSystemEventLogStore(),
+  usageStore: createFileSystemUsageStore(config.sessions.rootDir),
   startTime: Date.now(),
 });

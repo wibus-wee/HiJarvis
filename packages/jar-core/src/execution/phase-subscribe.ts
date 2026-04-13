@@ -5,7 +5,7 @@ import {
   getUsageInputTokens,
   shouldCompactFromUsage,
 } from "../compaction/index.js";
-import type { CompactionEvent } from "../execution-types.js";
+import type { CompactionEvent, UsageRecord } from "../execution-types.js";
 import { stripMemoryExcludedPromptContextFromMessage } from "../prompt-context.js";
 import type { AgentContext, SubscribedContext } from "./types.js";
 
@@ -79,6 +79,40 @@ export const subscribeEvents = (ctx: AgentContext): SubscribedContext => {
       ctx.agent.state.messages = [...ctx.agent.state.messages.slice(0, -1), message];
       ctx.refreshLiveCapture();
       await runPostTurnCompaction(event.message, signal);
+
+      if ("role" in event.message && event.message.role === "assistant" && event.message.usage) {
+        const usage = event.message.usage;
+        const identityId = ctx.command.source.identityId;
+        const entityId = identityId
+          ? ctx.config.platformIdentities[identityId]?.entityId
+          : undefined;
+        const record: UsageRecord = {
+          type: "usage",
+          threadId: ctx.conversation.threadId,
+          turnId: ctx.tracker.turnId,
+          runId: ctx.tracker.runId,
+          identityId,
+          entityId,
+          platform: ctx.command.source.platform,
+          model: ctx.config.agent.model,
+          provider: ctx.config.agent.provider,
+          usage: {
+            inputTokens: usage.input,
+            outputTokens: usage.output,
+            cacheReadTokens: usage.cacheRead,
+            cacheWriteTokens: usage.cacheWrite,
+            totalTokens: usage.totalTokens,
+          },
+          cost: { ...usage.cost },
+          recordedAt: Date.now(),
+        };
+        try {
+          await ctx.usageStore.appendUsage(record);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          ctx.requestLogger?.warn("usage.record_failed", { message });
+        }
+      }
     }
     if (event.type === "agent_end") {
       await ctx.stateStore.flush(ctx.conversation.threadId);

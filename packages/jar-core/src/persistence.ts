@@ -1,6 +1,10 @@
+import { appendFile } from "node:fs/promises";
+import path from "node:path";
+
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 
 import type { ThreadItem, ThreadRun, ThreadTurn, JarEvent } from "./execution-types.js";
+import type { UsageRecord } from "./execution-types.js";
 import {
   ensureThreadMeta,
   openConversationHandle,
@@ -41,6 +45,10 @@ export interface ExecutionAuditStore {
 
 export interface EventLogStore {
   appendEvent(threadId: string, event: JarEvent | AgentEvent): Promise<void>;
+}
+
+export interface UsageStore {
+  appendUsage(record: UsageRecord): Promise<void>;
 }
 
 type StoreHandle = Awaited<ReturnType<typeof openConversationHandle>>;
@@ -148,6 +156,16 @@ export const createFileSystemEventLogStore = (): EventLogStore => {
     appendEvent: async (threadId, event) => {
       const handle = await getHandle(threadId);
       await handle.appendEvent(event);
+    },
+  };
+};
+
+export const createFileSystemUsageStore = (sessionsRootDir: string): UsageStore => {
+  const usagePath = path.join(path.resolve(sessionsRootDir), "usage.jsonl");
+  return {
+    appendUsage: async (record) => {
+      const line = JSON.stringify({ v: 1, ...record });
+      await appendFile(usagePath, `${line}\n`, "utf8");
     },
   };
 };

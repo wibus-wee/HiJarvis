@@ -92,6 +92,22 @@ export const startThreadExecutionTracker = async (
 
   let settled = false;
 
+  const accumulatedUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+  };
+  const accumulatedCost = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: 0,
+  };
+  let usageTurnCount = 0;
+
   const appendItem = async (item: Omit<ThreadItem, "itemId" | "runId" | "createdAt">) => {
     await options.auditStore.appendItem(options.threadId, {
       itemId: generateThreadItemId(),
@@ -113,6 +129,19 @@ export const startThreadExecutionTracker = async (
       status: "completed",
       completedAt,
     });
+
+    if (usageTurnCount > 0) {
+      await appendItem({
+        type: "usage_summary",
+        status: "completed",
+        payload: {
+          usage: { ...accumulatedUsage },
+          cost: { ...accumulatedCost },
+          llmTurnCount: usageTurnCount,
+        },
+      });
+    }
+
     await options.auditStore.appendTurn(options.threadId, {
       ...turn,
       status: "completed",
@@ -163,6 +192,21 @@ export const startThreadExecutionTracker = async (
           }
           return;
         case "message_end":
+          if ("role" in event.message && event.message.role === "assistant" && event.message.usage) {
+            const u = event.message.usage;
+            accumulatedUsage.inputTokens += u.input;
+            accumulatedUsage.outputTokens += u.output;
+            accumulatedUsage.cacheReadTokens += u.cacheRead;
+            accumulatedUsage.cacheWriteTokens += u.cacheWrite;
+            accumulatedUsage.totalTokens += u.totalTokens;
+            accumulatedCost.input += u.cost.input;
+            accumulatedCost.output += u.cost.output;
+            accumulatedCost.cacheRead += u.cost.cacheRead;
+            accumulatedCost.cacheWrite += u.cost.cacheWrite;
+            accumulatedCost.total += u.cost.total;
+            usageTurnCount += 1;
+          }
+
           if (!("role" in event.message) || event.message.role !== "assistant") {
             return;
           }
