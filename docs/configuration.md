@@ -155,7 +155,7 @@ root_dir = ".jar/threads"
 - `display_name`: 可选的人类可读名称。默认使用 `<id>`。
 - `system_prompt`: 可选的 entity 级 prompt 覆盖。未配置时继承 `[agent].system_prompt`。
 
-`entities` 现在必须显式配置。Jar 不再偷偷制造默认 entity，因为普通平台消息必须通过某个真实 platform identity 进入系统，而不是通过一个抽象默认身份进入。
+`entities` 现在必须显式配置。Jar 不再偷偷制造默认 entity。平台消息会通过具体的 `platform.<platform>.identities.<identity>.entity` 解析到 entity；CLI/local-thread 没有 platform identity 时，则回退到第一个已配置 entity。
 
 ### `[provider.<name>]`
 
@@ -173,6 +173,8 @@ The built-in `web_search` tool reads the same active provider selection. Today t
 ### `[platform.slack.identities.<identity_id>]`
 
 每个 Slack identity 代表一个真实 Slack bot/app 身份。一个 identity 绑定一个 entity，并拥有自己独立的 Socket Mode 凭证、观察窗口和会话命名空间。
+
+core 只会把这些配置归一化成一个最小引用 `{ id, platform, entityId }`。Slack 特定字段仍然保留在 `jar.toml` 中，但只由 Slack gateway 自己解析和校验。
 
 - `entity`: 该 Slack bot 绑定到哪个 Jarvis entity。
 - `bot_token`: Slack bot token。用于 Socket Mode + Web API 调用。
@@ -195,6 +197,8 @@ Slack gateway 现在读取 `jar.toml` 里的 `platform.slack.identities.*`，并
 ### `[platform.telegram.identities.<identity_id>]`
 
 每个 Telegram identity 代表一个真实 Telegram bot token。一个 identity 绑定一个 entity，并维护自己独立的 allowlist 和会话命名空间。
+
+core 同样只保留 `{ id, platform, entityId }` 这组通用 identity 引用；Telegram 特定字段继续由 Telegram gateway 自己解析和校验。
 
 - `entity`: 该 Telegram bot 绑定到哪个 Jarvis entity。
 - `bot_token`: Telegram bot token。

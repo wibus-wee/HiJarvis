@@ -11,9 +11,9 @@ import {
   loadRuntimeConfig,
   maybeExecuteSideQuestionIngress,
   type MessageIngressCommand,
-  type LoadedSlackIdentityConfig,
   type LoadedRuntimeConfig,
   type Logger,
+  type PlatformIdentityRef,
 } from "@hijarvis/jar-core";
 import { z } from "zod";
 
@@ -141,7 +141,7 @@ type ThreadQueueState = {
 };
 
 type SlackGatewayState = {
-  identityConfig: LoadedSlackIdentityConfig;
+  identityConfig: PlatformIdentityRef;
   identity: SlackGatewayIdentity;
   observedContextLimits: ObservedContextLimits;
   runtime: LoadedRuntimeConfig;
@@ -171,7 +171,7 @@ export const startSlackGateway = async (
   const env = loadSlackGatewayEnv(process.env);
   const slackConfigs = parseSlackPlatformConfig(runtimeConfig.platform);
   const identities = Object.values(runtimeConfig.platformIdentities).filter(
-    (identity): identity is LoadedSlackIdentityConfig => identity.platform === "slack",
+    (identity): identity is PlatformIdentityRef => identity.platform === "slack",
   );
 
   for (const identityConfig of identities) {

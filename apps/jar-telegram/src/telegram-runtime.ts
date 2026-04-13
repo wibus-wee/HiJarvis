@@ -13,9 +13,9 @@ import {
   IngressExecutionError,
   maybeExecuteSideQuestionIngress,
   type MessageIngressCommand,
-  type LoadedTelegramIdentityConfig,
   type LoadedRuntimeConfig,
   type Logger,
+  type PlatformIdentityRef,
 } from "@hijarvis/jar-core";
 import {
   Bot,
@@ -96,7 +96,7 @@ type ConversationQueueState = {
 };
 
 type TelegramGatewayState = {
-  identityConfig: LoadedTelegramIdentityConfig;
+  identityConfig: PlatformIdentityRef;
   runtime: LoadedRuntimeConfig;
   telegramConfig: TelegramPlatformIdentityConfig;
   logger: Logger;
@@ -124,7 +124,7 @@ export const startTelegramGateway = async (
   const env = loadTelegramGatewayEnv(process.env);
   const telegramConfigs = parseTelegramPlatformConfig(runtimeConfig.platform);
   const identities = Object.values(runtimeConfig.platformIdentities).filter(
-    (identity): identity is LoadedTelegramIdentityConfig => identity.platform === "telegram",
+    (identity): identity is PlatformIdentityRef => identity.platform === "telegram",
   );
 
   for (const identityConfig of identities) {

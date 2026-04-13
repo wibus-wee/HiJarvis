@@ -139,9 +139,7 @@ export {
   type LoadedAgentConfig,
   type LoadedBaseConfig,
   type LoadedMemoryConfig,
-  type LoadedPlatformIdentityConfig,
-  type LoadedSlackIdentityConfig,
-  type LoadedTelegramIdentityConfig,
+  type PlatformIdentityRef,
   type LoadedRuntimeConfig,
 } from "./config.js";
 

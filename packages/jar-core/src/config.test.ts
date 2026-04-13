@@ -77,6 +77,26 @@ system_prompt = "You are a test agent."
   }
 });
 
+test("loadAgentConfig allows configs without platform identities", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[entities.jarvis]
+display_name = "Jarvis"
+`, { withIdentityDefaults: false });
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.platformIdentities, {});
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
 test("loadAgentConfig reads custom prompt execution policy values", async () => {
   const { provider, model } = pickProviderAndModel();
   const configPath = await writeConfigFile(`
@@ -573,29 +593,16 @@ allowed_usernames = ["wibus"]
       id: "slack_main",
       platform: "slack",
       entityId: "jarvis",
-      botToken: "xoxb-main",
-      appToken: "xapp-main",
-      signingSecret: "main-secret",
-      contextLookbackMinutes: 15,
-      contextMessageLimit: 12,
     });
     assert.deepEqual(config.platformIdentities.slack_pm, {
       id: "slack_pm",
       platform: "slack",
       entityId: "pm",
-      botToken: "xoxb-pm",
-      appToken: "xapp-pm",
-      signingSecret: "pm-secret",
-      contextLookbackMinutes: 15,
-      contextMessageLimit: 12,
     });
     assert.deepEqual(config.platformIdentities.telegram_main, {
       id: "telegram_main",
       platform: "telegram",
       entityId: "jarvis",
-      botToken: "123456:telegram-token",
-      allowedChatIds: ["123456789"],
-      allowedUsernames: ["wibus"],
     });
   } finally {
     await cleanupConfigFile(configPath);

@@ -119,7 +119,7 @@ export type LoadedBaseConfig = {
   };
   memory: LoadedMemoryConfig;
   entities: Record<string, LoadedEntityConfig>;
-  platformIdentities: Record<string, LoadedPlatformIdentityConfig>;
+  platformIdentities: Record<string, PlatformIdentityRef>;
   platform: Record<string, unknown>;
 };
 
@@ -133,37 +133,17 @@ export type LoadedMemoryConfig = {
   providers: Record<string, Record<string, unknown>>;
 };
 
-export type EntitySurface = "slack" | "telegram";
-
 export type LoadedEntityConfig = {
   id: string;
   displayName: string;
   systemPrompt?: string;
 };
 
-export type LoadedSlackIdentityConfig = {
+export type PlatformIdentityRef = {
   id: string;
-  platform: "slack";
+  platform: string;
   entityId: string;
-  botToken?: string;
-  appToken?: string;
-  signingSecret?: string;
-  contextLookbackMinutes: number;
-  contextMessageLimit: number;
 };
-
-export type LoadedTelegramIdentityConfig = {
-  id: string;
-  platform: "telegram";
-  entityId: string;
-  botToken?: string;
-  allowedChatIds?: string[];
-  allowedUsernames?: string[];
-};
-
-export type LoadedPlatformIdentityConfig =
-  | LoadedSlackIdentityConfig
-  | LoadedTelegramIdentityConfig;
 
 export const loadBaseConfig = async (
   configFilePath: string,
@@ -394,65 +374,23 @@ const normalizeEntitiesConfig = (
   } satisfies LoadedEntityConfig]));
 };
 
-const slackIdentitySchema = z.object({
+const platformIdentityBaseSchema = z.looseObject({
   entity: nonEmptyString,
-  bot_token: nonEmptyString.optional(),
-  app_token: nonEmptyString.optional(),
-  signing_secret: nonEmptyString.optional(),
-  context_lookback_minutes: z.number().int().positive().optional(),
-  context_message_limit: z.number().int().positive().optional(),
-}).strict();
-
-const telegramIdentitySchema = z.object({
-  entity: nonEmptyString,
-  bot_token: nonEmptyString.optional(),
-  allowed_chat_ids: z.array(z.union([z.number().int(), nonEmptyString])).optional(),
-  allowed_usernames: z.array(nonEmptyString).optional(),
-}).strict();
-
-const defaultSlackContextLookbackMinutes = 15;
-const defaultSlackContextMessageLimit = 12;
+});
 
 const normalizePlatformIdentities = (
   platform: RawConfig["platform"],
   entities: Record<string, LoadedEntityConfig>,
-): Record<string, LoadedPlatformIdentityConfig> => {
-  const identities: Record<string, LoadedPlatformIdentityConfig> = {};
+): Record<string, PlatformIdentityRef> => {
+  const identities: Record<string, PlatformIdentityRef> = {};
 
-  const slackRaw = platform.slack;
-  if (slackRaw !== undefined) {
-    const parsed = z.object({
-      identities: z.record(nonEmptyString, slackIdentitySchema),
-    }).strict().safeParse(slackRaw);
-    if (!parsed.success) {
-      throw new Error(`Invalid TOML config:\n${formatIssues(parsed.error.issues, "platform.slack")}`);
-    }
-
-    for (const [id, identity] of Object.entries(parsed.data.identities)) {
-      assertIdentityEntityExists(id, identity.entity, entities);
-      identities[id] = {
-        id,
-        platform: "slack",
-        entityId: identity.entity,
-        botToken: identity.bot_token,
-        appToken: identity.app_token,
-        signingSecret: identity.signing_secret,
-        contextLookbackMinutes:
-          identity.context_lookback_minutes ?? defaultSlackContextLookbackMinutes,
-        contextMessageLimit:
-          identity.context_message_limit ?? defaultSlackContextMessageLimit,
-      };
-    }
-  }
-
-  const telegramRaw = platform.telegram;
-  if (telegramRaw !== undefined) {
-    const parsed = z.object({
-      identities: z.record(nonEmptyString, telegramIdentitySchema),
-    }).strict().safeParse(telegramRaw);
+  for (const [platformName, platformRaw] of Object.entries(platform)) {
+    const parsed = z.looseObject({
+      identities: z.record(nonEmptyString, platformIdentityBaseSchema),
+    }).safeParse(platformRaw);
     if (!parsed.success) {
       throw new Error(
-        `Invalid TOML config:\n${formatIssues(parsed.error.issues, "platform.telegram")}`,
+        `Invalid TOML config:\n${formatIssues(parsed.error.issues, `platform.${platformName}`)}`,
       );
     }
 
@@ -460,19 +398,10 @@ const normalizePlatformIdentities = (
       assertIdentityEntityExists(id, identity.entity, entities);
       identities[id] = {
         id,
-        platform: "telegram",
+        platform: platformName,
         entityId: identity.entity,
-        botToken: identity.bot_token,
-        allowedChatIds: identity.allowed_chat_ids?.map((value) => String(value)),
-        allowedUsernames: identity.allowed_usernames?.map((value) =>
-          value.replace(/^@/, "").toLowerCase()
-        ),
       };
     }
-  }
-
-  if (Object.keys(identities).length === 0) {
-    throw new Error("Invalid TOML config:\nAt least one platform identity must be configured");
   }
 
   return identities;
