@@ -21,6 +21,7 @@ export const executeSideQuestion = async (options: {
   parentThreadId: string;
   question: PromptInput;
   skillTriggerText?: string;
+  tools?: AgentTool[];
   logger?: Logger;
 }): Promise<SideQuestionResult> => {
   const capture = captureLiveThreadForSideQuestion(options.parentThreadId);
@@ -37,7 +38,7 @@ export const executeSideQuestion = async (options: {
   const agentConfig = options.config.agent;
   const agent = createAgent({
     ...agentConfig,
-    tools: [] satisfies AgentTool[],
+    tools: options.tools ?? ([] satisfies AgentTool[]),
     logger: options.logger,
     compactionEventSink: () => {
       // side questions are runtime-only and never persist compaction records

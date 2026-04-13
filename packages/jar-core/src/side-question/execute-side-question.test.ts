@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { Type } from "@mariozechner/pi-ai";
+import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 
 import type { LoadedRuntimeConfig } from "../config.js";
 
@@ -10,6 +11,7 @@ import {
   normalizeSideQuestionPromptToMessages,
 } from "./execute-side-question.js";
 import {
+  _resetLiveThreadRegistryForTest,
   captureLiveThreadForSideQuestion,
   registerLiveThreadForSideQuestion,
   unregisterLiveThreadForSideQuestion,
@@ -22,6 +24,14 @@ const createUserMessage = (content: string): AgentMessage => ({
   timestamp: Date.now(),
 });
 
+test.beforeEach(() => {
+  _resetLiveThreadRegistryForTest();
+});
+
+test.afterEach(() => {
+  _resetLiveThreadRegistryForTest();
+});
+
 test("executeSideQuestion captures parent state once and appends the question only to the ephemeral prompt", async () => {
   registerLiveThreadForSideQuestion({
     threadId: "thread_live_parent",
@@ -31,7 +41,7 @@ test("executeSideQuestion captures parent state once and appends the question on
     threadId: "thread_live_parent",
     laneId: "main",
     capturedAt: 1,
-    messages: [createUserMessage("parent state v1")],
+    messages: [structuredClone(createUserMessage("parent state v1"))],
   });
 
   const before = captureLiveThreadForSideQuestion("thread_live_parent");
@@ -53,7 +63,7 @@ test("executeSideQuestion captures parent state once and appends the question on
     threadId: "thread_live_parent",
     laneId: "main",
     capturedAt: 2,
-    messages: [createUserMessage("parent state v2")],
+    messages: [structuredClone(createUserMessage("parent state v2"))],
   });
 
   const after = captureLiveThreadForSideQuestion("thread_live_parent");
@@ -80,6 +90,40 @@ test("executeSideQuestion fails clearly when the parent thread is not live", asy
       question: "What are you doing?",
     }),
     /No live parent thread available for missing-thread/,
+  );
+});
+
+test("executeSideQuestion accepts opt-in tools", async () => {
+  registerLiveThreadForSideQuestion({
+    threadId: "thread_with_tools",
+    laneId: "main",
+  });
+  updateLiveThreadCaptureForSideQuestion("thread_with_tools", {
+    threadId: "thread_with_tools",
+    laneId: "main",
+    capturedAt: 1,
+    messages: [structuredClone(createUserMessage("parent state"))],
+  });
+
+  const tools = [{
+    name: "readonly_probe",
+    label: "Readonly Probe",
+    description: "Read-only probe",
+    parameters: Type.Object({}, { additionalProperties: false }),
+    execute: async () => ({
+      content: [{ type: "text", text: "ok" }],
+      details: { ok: true },
+    }),
+  }] satisfies AgentTool[];
+
+  await assert.rejects(
+    executeSideQuestion({
+      config: createRuntimeConfig(),
+      parentThreadId: "thread_with_tools",
+      question: "Use the tool if needed",
+      tools,
+    }),
+    /No API key for provider: openai/i,
   );
 });
 

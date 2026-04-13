@@ -4,7 +4,9 @@ export {
   type SideQuestionResult,
 } from "./execute-side-question.js";
 export {
+  _resetLiveThreadRegistryForTest,
   captureLiveThreadForSideQuestion,
+  getLiveThreadRegistrySize,
   registerLiveThreadForSideQuestion,
   unregisterLiveThreadForSideQuestion,
   updateLiveThreadCaptureForSideQuestion,

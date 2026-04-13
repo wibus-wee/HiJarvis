@@ -107,14 +107,16 @@ const executeMessageCommand = async (
   }
 
   const stores = initStores(config, command, logger, hooks);
-  const session = await loadSession(stores);
-
-  // ── Hook: session:loaded ─────────────────────────────────────
-  if (hooks?.has("session:loaded")) {
-    await hooks.tap("session:loaded", session);
-  }
+  let session: Awaited<ReturnType<typeof loadSession>> | undefined;
 
   try {
+    session = await loadSession(stores);
+
+    // ── Hook: session:loaded ─────────────────────────────────────
+    if (hooks?.has("session:loaded")) {
+      await hooks.tap("session:loaded", session);
+    }
+
     // ── Hook: prompt:transform ───────────────────────────────────
     let promptInput: PromptInput = command.prompt;
     let skillTriggerText = command.skillTriggerText ?? buildDefaultSkillTriggerText(command);
@@ -163,9 +165,11 @@ const executeMessageCommand = async (
     }
     throw error;
   } finally {
-    unregisterLiveThreadForSideQuestion(session.conversation.threadId);
-    // Release the cached conversation handle so memory doesn't grow
-    // unboundedly in long-running gateway processes.
-    await stores.stateStore.release(session.conversation.threadId).catch(() => {});
+    if (session) {
+      unregisterLiveThreadForSideQuestion(session.conversation.threadId);
+      // Release the cached conversation handle so memory doesn't grow
+      // unboundedly in long-running gateway processes.
+      await stores.stateStore.release(session.conversation.threadId).catch(() => {});
+    }
   }
 };

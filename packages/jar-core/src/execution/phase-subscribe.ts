@@ -77,7 +77,6 @@ export const subscribeEvents = (ctx: AgentContext): SubscribedContext => {
       event.assistantMessageEvent.type === "text_delta"
     ) {
       outputRef.text += event.assistantMessageEvent.delta;
-      ctx.refreshLiveCapture();
     }
     if (event.type === "message_end") {
       const message = serializeMessage(event.message);

@@ -5,11 +5,20 @@ import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, Usage } from "@mariozechner/pi-ai";
 
 import {
+  _resetLiveThreadRegistryForTest,
   captureLiveThreadForSideQuestion,
   registerLiveThreadForSideQuestion,
   unregisterLiveThreadForSideQuestion,
   updateLiveThreadCaptureForSideQuestion,
 } from "./side-question/index.js";
+
+test.beforeEach(() => {
+  _resetLiveThreadRegistryForTest();
+});
+
+test.afterEach(() => {
+  _resetLiveThreadRegistryForTest();
+});
 
 test("captureLiveThreadForSideQuestion remains detached from later parent mutations", () => {
   const parentMessages = [createAssistantMessage("parent v1")];
@@ -21,7 +30,7 @@ test("captureLiveThreadForSideQuestion remains detached from later parent mutati
     threadId: "thread_live",
     laneId: "main",
     capturedAt: Date.now(),
-    messages: parentMessages,
+    messages: parentMessages.map((message) => structuredClone(message)),
   });
 
   parentMessages.push(createAssistantMessage("parent v2"));

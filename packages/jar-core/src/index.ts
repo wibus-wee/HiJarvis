@@ -79,8 +79,10 @@ export {
 
 // --- Runtime-only side-question substrate ---
 export {
+  _resetLiveThreadRegistryForTest,
   captureLiveThreadForSideQuestion,
   executeSideQuestion,
+  getLiveThreadRegistrySize,
   normalizeSideQuestionPromptToMessages,
   registerLiveThreadForSideQuestion,
   unregisterLiveThreadForSideQuestion,

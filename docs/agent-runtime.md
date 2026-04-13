@@ -173,12 +173,16 @@ Identity-aware routing now sits above persistence. Adapters provide structured p
 
 The current runtime keeps a narrow side-question live-thread registry so `/btw` can ask a one-shot side question from the parent's current in-memory state instead of replaying only persisted lane state. `/btw` is intentionally not a persisted fork, child lane, or multi-turn bubble.
 
+Side-question live-thread captures are registered for the lifetime of an active ingress execution and are unregistered in `execution-service.ts` `finally` cleanup. A lazy 30 minute TTL sweep in the runtime-only registry acts as a backstop if an abnormal path skips explicit unregister.
+
 The default tools (via `createDefaultTools()`) are:
 
 - `read_file`
 - `write_file`
 - `apply_patch`
 - `bash`
+
+`executeSideQuestion()` remains tool-free by default, but direct callers can now opt in a constrained `tools` list for read-only or otherwise safe ephemeral side-question runs.
 
 Non-selected provider configs are ignored at runtime.
 
@@ -199,6 +203,8 @@ Jar does not currently render:
 - persisted transcripts
 
 Slack and Telegram gateways additionally emit request-level summary logs. These logs intentionally summarize stage boundaries instead of mirroring every streaming delta, which keeps long-running sessions readable at `info` level. When the execution service is used, the core logs also attach `turnId` and `runId` to prompt/tool stage records.
+
+For side questions, live capture refreshes now happen at snapshot boundaries: agent creation, `message_end`, and post-turn compaction. Streaming `text_delta` events no longer refresh the side-question snapshot, so `/btw` reads the latest completed assistant turn instead of partial token output.
 
 In `--repl` mode, `packages/jar-repl-ink/src/repl.tsx` receives persisted initial messages plus per-turn event callbacks from the CLI adapter and routes those events into an Ink state reducer instead of talking to `Agent` directly. The TUI currently renders:
 

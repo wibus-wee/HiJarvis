@@ -73,8 +73,6 @@ const createConfig = (memory: Partial<LoadedMemoryConfig> = {}): LoadedRuntimeCo
       id: "slack_main",
       platform: "slack",
       entityId: "jarvis",
-      contextLookbackMinutes: 15,
-      contextMessageLimit: 12,
     },
   },
   platform: {},
