@@ -56,8 +56,8 @@ export class FileSystemMemoryProvider implements MemoryProvider {
     const entry: MemoryEntry = {
       id: randomUUID(),
       content: input.content,
-      ...(input.tags === undefined ? {} : { tags: input.tags }),
-      ...(input.metadata === undefined ? {} : { metadata: input.metadata }),
+      tags: input.tags,
+      metadata: input.metadata,
       createdAt: now,
       updatedAt: now,
     };
@@ -82,9 +82,9 @@ export class FileSystemMemoryProvider implements MemoryProvider {
     const current = entries[index]!;
     const updated: MemoryEntry = {
       ...current,
-      ...(patch.content === undefined ? {} : { content: patch.content }),
-      ...(patch.tags === undefined ? {} : { tags: patch.tags }),
-      ...(patch.metadata === undefined ? {} : { metadata: patch.metadata }),
+      content: patch.content ?? current.content,
+      tags: patch.tags ?? current.tags,
+      metadata: patch.metadata ?? current.metadata,
       updatedAt: Date.now(),
     };
     entries[index] = updated;

@@ -440,10 +440,10 @@ const normalizeShellResult = (
     failed: result.failed === true,
     timedOut: result.timedOut === true,
     isMaxBuffer: result.isMaxBuffer === true,
-    ...(typeof result.all === "string" ? { all: result.all } : {}),
-    ...(result.signal === undefined ? {} : { signal: result.signal }),
-    ...(typeof result.stdout === "string" ? { stdout: result.stdout } : {}),
-    ...(typeof result.stderr === "string" ? { stderr: result.stderr } : {}),
+    all: typeof result.all === "string" ? result.all : undefined,
+    signal: result.signal,
+    stdout: typeof result.stdout === "string" ? result.stdout : undefined,
+    stderr: typeof result.stderr === "string" ? result.stderr : undefined,
   };
 };
 

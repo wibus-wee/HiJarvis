@@ -156,17 +156,11 @@ export const buildTurnInputMetadata = (
 ): Record<string, unknown> => {
   return {
     platform: command.source.platform,
-    ...(command.source.identityId === undefined
-      ? {}
-      : { identityId: command.source.identityId }),
-    ...(command.source.transportEventId === undefined
-      ? {}
-      : { transportEventId: command.source.transportEventId }),
-    ...(command.audit.triggerKind === undefined
-      ? {}
-      : { triggerKind: command.audit.triggerKind }),
-    ...(command.audit.metadata === undefined ? {} : command.audit.metadata),
+    identityId: command.source.identityId,
+    transportEventId: command.source.transportEventId,
+    triggerKind: command.audit.triggerKind,
+    ...(command.audit.metadata ?? {}),
     scope: command.routing.scope,
-    ...(command.actor === undefined ? {} : { actor: command.actor }),
+    actor: command.actor,
   };
 };

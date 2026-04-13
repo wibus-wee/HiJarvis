@@ -30,15 +30,15 @@ export const executeSideQuestion = async (options: {
 
   const preparedQuestion = await preparePromptWithSkills(options.question, {
     skills: options.config.skills,
-    ...(options.skillTriggerText === undefined ? {} : { triggerText: options.skillTriggerText }),
-    ...(options.logger === undefined ? {} : { logger: options.logger }),
+    triggerText: options.skillTriggerText,
+    logger: options.logger,
   });
 
   const agentConfig = options.config.agent;
   const agent = createAgent({
     ...agentConfig,
     tools: [] satisfies AgentTool[],
-    ...(options.logger ? { logger: options.logger } : {}),
+    logger: options.logger,
     compactionEventSink: () => {
       // side questions are runtime-only and never persist compaction records
     },

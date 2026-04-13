@@ -28,7 +28,7 @@ export const runCompactionPipeline = async (
     applied: snip.applied,
     tokenEstimateBefore: snip.tokenEstimateBefore,
     tokenEstimateAfter: snip.tokenEstimateAfter,
-    ...(snip.notes ? { notes: snip.notes } : {}),
+    notes: snip.notes,
   });
 
   const lightweight = applyLightweightReduction(snip.messages);
@@ -37,7 +37,7 @@ export const runCompactionPipeline = async (
     applied: lightweight.applied,
     tokenEstimateBefore: lightweight.tokenEstimateBefore,
     tokenEstimateAfter: lightweight.tokenEstimateAfter,
-    ...(lightweight.notes ? { notes: lightweight.notes } : {}),
+    notes: lightweight.notes,
   });
 
   const summaryResult: SummaryCompactionResult = await compactWithSummaryStrategy(
@@ -52,7 +52,7 @@ export const runCompactionPipeline = async (
     applied: normalizeSummaryText(summaryResult.summaryText) !== null,
     tokenEstimateBefore: estimateMessagesTokens(lightweight.messages),
     tokenEstimateAfter: estimateMessagesTokens(summaryResult.messages),
-    ...(summaryResult.summaryError ? { notes: summaryResult.summaryError } : {}),
+    notes: summaryResult.summaryError,
   });
 
   stages.push({

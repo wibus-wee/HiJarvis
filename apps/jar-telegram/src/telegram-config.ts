@@ -29,18 +29,10 @@ export const parseTelegramPlatformConfig = (
   return Object.fromEntries(Object.entries(parsed.identities).map(([id, identity]) => [id, {
     id,
     entityId: identity.entity,
-    ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
-    ...(identity.allowed_chat_ids === undefined
-      ? {}
-      : {
-        allowedChatIds: identity.allowed_chat_ids.map((value) => String(value)),
-      }),
-    ...(identity.allowed_usernames === undefined
-      ? {}
-      : {
-        allowedUsernames: identity.allowed_usernames.map((value) =>
-          value.replace(/^@/, "").toLowerCase()
-        ),
-      }),
+    botToken: identity.bot_token,
+    allowedChatIds: identity.allowed_chat_ids?.map((value) => String(value)),
+    allowedUsernames: identity.allowed_usernames?.map((value) =>
+      value.replace(/^@/, "").toLowerCase()
+    ),
   } satisfies TelegramPlatformIdentityConfig]));
 };

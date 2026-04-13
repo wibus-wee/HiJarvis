@@ -2,6 +2,7 @@
 export {
   createAgent,
   supportsModelInput,
+  type JarAgentConfig,
   type JarRuntimeOptions,
   type RuntimeProviderConfig,
 } from "./runtime.js";

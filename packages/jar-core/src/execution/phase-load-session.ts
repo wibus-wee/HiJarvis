@@ -18,6 +18,6 @@ export const loadSession = async (ctx: StoresContext): Promise<SessionContext> =
   return {
     ...ctx,
     conversation,
-    ...(requestLogger === undefined ? {} : { requestLogger }),
+    requestLogger,
   };
 };

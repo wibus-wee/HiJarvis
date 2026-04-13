@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { logLevels, type LogLevel } from "./logger.js";
 import type { PromptExecutionPolicy } from "./prompt-executor.js";
-import type { JarRuntimeOptions, RuntimeProviderConfig } from "./runtime.js";
+import type { JarAgentConfig, RuntimeProviderConfig } from "./runtime.js";
 import {
   defaultCompactionSettings,
   type CompactionSettings,
@@ -111,7 +111,7 @@ export type LoadedBaseConfig = {
     stderr: boolean;
     filePath?: string;
   };
-  agent: Omit<JarRuntimeOptions, "tools" | "compaction"> & { compaction: CompactionSettings };
+  agent: JarAgentConfig & { compaction: CompactionSettings };
   skillsConfig: SkillsConfigInput;
   toolOptions: ToolOptions;
   sessions: {
@@ -190,9 +190,9 @@ export const loadBaseConfig = async (
     logging: {
       level: parsedConfig.logging.level ?? "info",
       stderr: parsedConfig.logging.stderr ?? true,
-      ...(parsedConfig.logging.file_path === undefined
-        ? {}
-        : { filePath: path.resolve(configDirectory, parsedConfig.logging.file_path) }),
+      filePath: parsedConfig.logging.file_path === undefined
+        ? undefined
+        : path.resolve(configDirectory, parsedConfig.logging.file_path),
     },
     agent: {
       provider,
@@ -207,12 +207,8 @@ export const loadBaseConfig = async (
     toolOptions: {
       provider,
       model,
-      ...(providerConfig.base_url === undefined
-        ? {}
-        : { providerBaseUrl: providerConfig.base_url }),
-      ...(providerConfig.api_key === undefined
-        ? {}
-        : { providerApiKey: providerConfig.api_key }),
+      providerBaseUrl: providerConfig.base_url,
+      providerApiKey: providerConfig.api_key,
       workspaceRoot: path.resolve(
         configDirectory,
         parsedConfig.tools.workspace_root ?? ".",
@@ -394,7 +390,7 @@ const normalizeEntitiesConfig = (
   return Object.fromEntries(entries.map(([id, entity]) => [id, {
     id,
     displayName: entity.display_name ?? id,
-    ...(entity.system_prompt === undefined ? {} : { systemPrompt: entity.system_prompt }),
+    systemPrompt: entity.system_prompt,
   } satisfies LoadedEntityConfig]));
 };
 
@@ -438,9 +434,9 @@ const normalizePlatformIdentities = (
         id,
         platform: "slack",
         entityId: identity.entity,
-        ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
-        ...(identity.app_token === undefined ? {} : { appToken: identity.app_token }),
-        ...(identity.signing_secret === undefined ? {} : { signingSecret: identity.signing_secret }),
+        botToken: identity.bot_token,
+        appToken: identity.app_token,
+        signingSecret: identity.signing_secret,
         contextLookbackMinutes:
           identity.context_lookback_minutes ?? defaultSlackContextLookbackMinutes,
         contextMessageLimit:
@@ -466,17 +462,11 @@ const normalizePlatformIdentities = (
         id,
         platform: "telegram",
         entityId: identity.entity,
-        ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
-        ...(identity.allowed_chat_ids === undefined
-          ? {}
-          : { allowedChatIds: identity.allowed_chat_ids.map((value) => String(value)) }),
-        ...(identity.allowed_usernames === undefined
-          ? {}
-          : {
-            allowedUsernames: identity.allowed_usernames.map((value) =>
-              value.replace(/^@/, "").toLowerCase()
-            ),
-          }),
+        botToken: identity.bot_token,
+        allowedChatIds: identity.allowed_chat_ids?.map((value) => String(value)),
+        allowedUsernames: identity.allowed_usernames?.map((value) =>
+          value.replace(/^@/, "").toLowerCase()
+        ),
       };
     }
   }
@@ -573,12 +563,8 @@ const toRuntimeProviderConfig = (
   providerConfig: { api_key?: string | undefined; base_url?: string | undefined },
 ): RuntimeProviderConfig => {
   return {
-    ...(providerConfig.api_key === undefined
-      ? {}
-      : { apiKey: providerConfig.api_key }),
-    ...(providerConfig.base_url === undefined
-      ? {}
-      : { baseUrl: providerConfig.base_url }),
+    apiKey: providerConfig.api_key,
+    baseUrl: providerConfig.base_url,
   };
 };
 
@@ -586,17 +572,11 @@ const normalizeSkillsConfig = (
   config: RawConfig["skills"],
 ): SkillsConfigInput => {
   return {
-    ...(config.enabled === undefined ? {} : { enabled: config.enabled }),
-    ...(config.roots === undefined ? {} : { roots: config.roots }),
-    ...(config.max_scan_depth === undefined
-      ? {}
-      : { maxScanDepth: config.max_scan_depth }),
-    ...(config.max_skills === undefined ? {} : { maxSkills: config.max_skills }),
-    ...(config.max_catalog_chars === undefined
-      ? {}
-      : { maxCatalogChars: config.max_catalog_chars }),
-    ...(config.max_body_chars === undefined
-      ? {}
-      : { maxBodyChars: config.max_body_chars }),
+    enabled: config.enabled,
+    roots: config.roots,
+    maxScanDepth: config.max_scan_depth,
+    maxSkills: config.max_skills,
+    maxCatalogChars: config.max_catalog_chars,
+    maxBodyChars: config.max_body_chars,
   };
 };

@@ -42,8 +42,8 @@ const createMessage = (input: {
     authorId: input.authorName,
     authorName: input.authorName,
     sentAt: new Date(input.sentAt),
-    ...(input.chatTitle === undefined ? {} : { chatTitle: input.chatTitle }),
-    ...(input.replyTo === undefined ? {} : { replyTo: input.replyTo }),
+    chatTitle: input.chatTitle,
+    replyTo: input.replyTo,
   };
 };
 

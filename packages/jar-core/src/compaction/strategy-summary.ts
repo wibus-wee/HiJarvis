@@ -63,7 +63,7 @@ export const compactWithSummaryStrategy = async (
     messages,
     summaryText,
     summaryTokens,
-    ...(summaryError ? { summaryError } : {}),
-    ...(retryCount !== undefined ? { retryCount } : {}),
+    summaryError,
+    retryCount,
   };
 };

@@ -36,11 +36,9 @@ export const parseSlackPlatformConfig = (
   return Object.fromEntries(Object.entries(parsed.identities).map(([id, identity]) => [id, {
     id,
     entityId: identity.entity,
-    ...(identity.bot_token === undefined ? {} : { botToken: identity.bot_token }),
-    ...(identity.app_token === undefined ? {} : { appToken: identity.app_token }),
-    ...(identity.signing_secret === undefined
-      ? {}
-      : { signingSecret: identity.signing_secret }),
+    botToken: identity.bot_token,
+    appToken: identity.app_token,
+    signingSecret: identity.signing_secret,
     contextLookbackMinutes:
       identity.context_lookback_minutes ?? defaultContextLookbackMinutes,
     contextMessageLimit:

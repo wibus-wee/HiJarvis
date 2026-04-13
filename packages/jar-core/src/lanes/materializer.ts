@@ -29,7 +29,7 @@ export const materializeLaneView = async (
 
   return {
     messages: [...baseMessages, ...replayMessages],
-    ...(latestCheckpoint === undefined ? {} : { checkpointOffset: latestCheckpoint.offset }),
+    checkpointOffset: latestCheckpoint?.offset,
     lastOffset: records.at(-1)?.offset ?? 0,
   };
 };

@@ -152,9 +152,9 @@ export const createMemoryUpdateTool = (
     execute: async (_toolCallId, rawParams) => {
       const params = rawParams as MemoryUpdateParameters;
       const entry = await provider.update(entityId, params.id, {
-        ...(params.content === undefined ? {} : { content: params.content }),
-        ...(params.tags === undefined ? {} : { tags: params.tags }),
-        ...(params.metadata === undefined ? {} : { metadata: params.metadata }),
+        content: params.content,
+        tags: params.tags,
+        metadata: params.metadata,
       });
       return {
         content: [{

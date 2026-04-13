@@ -33,8 +33,8 @@ export const summarizeHistory = async (
 
   const streamOptions = {
     maxTokens: runtime.settings.summaryMaxTokens,
-    ...(runtime.apiKey ? { apiKey: runtime.apiKey } : {}),
-    ...(signal ? { signal } : {}),
+    apiKey: runtime.apiKey,
+    signal,
   };
 
   let attempt = 0;

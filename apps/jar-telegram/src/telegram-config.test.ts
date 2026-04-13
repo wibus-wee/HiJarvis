@@ -40,5 +40,8 @@ test("parseTelegramPlatformConfig tolerates missing optional fields", () => {
   assert.deepEqual(config.main, {
     id: "main",
     entityId: "jarvis",
+    botToken: undefined,
+    allowedChatIds: undefined,
+    allowedUsernames: undefined,
   });
 });

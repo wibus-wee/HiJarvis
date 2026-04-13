@@ -9,7 +9,7 @@
     "strict": true,
     "noEmit": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
+
     "useUnknownInCatchVariables": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,

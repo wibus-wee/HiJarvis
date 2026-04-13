@@ -222,10 +222,10 @@ export const preparePromptWithSkills = async (
   },
 ): Promise<SkillPromptInjection> => {
   const context = await resolveSkillPromptContext({
-    ...(options.skills === undefined ? {} : { skills: options.skills }),
-    ...(options.triggerText === undefined ? {} : { triggerText: options.triggerText }),
+    skills: options.skills,
+    triggerText: options.triggerText,
     prompt,
-    ...(options.logger === undefined ? {} : { logger: options.logger }),
+    logger: options.logger,
   });
 
   if (context.fragments.length === 0) {

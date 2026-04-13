@@ -47,7 +47,7 @@ export const executeIngressCommand = async (options: {
       parentThreadId: options.command.parentThreadId,
       question: options.command.question.text,
       skillTriggerText: options.command.question.text,
-      ...(options.logger === undefined ? {} : { logger: options.logger }),
+      logger: options.logger,
     });
     return {
       kind: "side_question",
@@ -79,7 +79,7 @@ export const maybeExecuteSideQuestionIngress = async (options: {
   const result = await executeIngressCommand({
     config: options.config,
     command: parsed,
-    ...(options.logger === undefined ? {} : { logger: options.logger }),
+    logger: options.logger,
   });
   return {
     handled: true,

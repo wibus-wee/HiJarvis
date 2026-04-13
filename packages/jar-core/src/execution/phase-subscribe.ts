@@ -48,10 +48,10 @@ export const subscribeEvents = (ctx: AgentContext): SubscribedContext => {
       tokenEstimateBefore: inputTokens,
       tokenEstimateAfter: result.tokenEstimateAfter,
       summaryTokens: result.summaryTokens,
-      ...(result.summaryError ? { summaryError: result.summaryError } : {}),
-      ...(result.stageCount === undefined ? {} : { stageCount: result.stageCount }),
-      ...(result.stages === undefined ? {} : { stages: result.stages }),
-      ...(result.appliedStages === undefined ? {} : { appliedStages: result.appliedStages }),
+      summaryError: result.summaryError,
+      stageCount: result.stageCount,
+      stages: result.stages,
+      appliedStages: result.appliedStages,
     };
     await ctx.eventStore.appendEvent(ctx.conversation.threadId, compactionEvent);
     await ctx.tracker.recordCompaction(compactionEvent);

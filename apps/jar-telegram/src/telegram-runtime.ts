@@ -148,10 +148,10 @@ export const startTelegramGateway = async (
       logger: logger.child({ identityId: identityConfig.id, entityId: identityConfig.entityId }),
       identity: {
         botId: me.id,
-        ...(me.username === undefined ? {} : { username: me.username }),
+        username: me.username,
       },
-      ...(allowedChatIds === undefined ? {} : { allowedChatIds }),
-      ...(allowedUsernames === undefined ? {} : { allowedUsernames }),
+      allowedChatIds,
+      allowedUsernames,
       queues: new Map<string, ConversationQueueState>(),
     };
 
@@ -534,11 +534,9 @@ const normalizeTelegramMessageSeed = (
     sentAt,
     chatId: String(context.chat.id),
     chatType: context.chat.type === "private" ? "private" : "group",
-    ...(chatTitle === undefined ? {} : { chatTitle }),
-    ...(context.msg.message_thread_id === undefined
-      ? {}
-      : { threadId: context.msg.message_thread_id }),
-    ...(replyTo === undefined ? {} : { replyTo }),
+    chatTitle,
+    threadId: context.msg.message_thread_id,
+    replyTo,
   };
 };
 
@@ -775,8 +773,8 @@ const materializeTelegramMessage = (
     authorId: seed.authorId,
     authorName: seed.authorName,
     sentAt: seed.sentAt,
-    ...(seed.chatTitle === undefined ? {} : { chatTitle: seed.chatTitle }),
-    ...(seed.replyTo === undefined ? {} : { replyTo: seed.replyTo }),
+    chatTitle: seed.chatTitle,
+    replyTo: seed.replyTo,
   };
 };
 

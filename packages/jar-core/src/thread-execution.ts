@@ -85,7 +85,7 @@ export const startThreadExecutionTracker = async (
       promptPreview: turn.input.promptPreview,
       promptChars: turn.input.promptChars,
       promptMessageCount: turn.input.promptMessageCount,
-      ...(turn.input.metadata === undefined ? {} : { metadata: turn.input.metadata }),
+      metadata: turn.input.metadata,
     },
     createdAt: now,
   });
@@ -221,10 +221,10 @@ export const startThreadExecutionTracker = async (
           tokenEstimateBefore: event.tokenEstimateBefore,
           tokenEstimateAfter: event.tokenEstimateAfter,
           summaryTokens: event.summaryTokens,
-          ...(event.summaryError === undefined ? {} : { summaryError: event.summaryError }),
-          ...(event.stageCount === undefined ? {} : { stageCount: event.stageCount }),
-          ...(event.stages === undefined ? {} : { stages: event.stages }),
-          ...(event.appliedStages === undefined ? {} : { appliedStages: event.appliedStages }),
+          summaryError: event.summaryError,
+          stageCount: event.stageCount,
+          stages: event.stages,
+          appliedStages: event.appliedStages,
         },
       });
     },
@@ -276,7 +276,7 @@ const buildTurnInput = (
     promptPreview: truncateText(preview, promptPreviewLimit),
     promptChars: estimatePromptChars(prompt),
     promptMessageCount: countPromptMessages(prompt),
-    ...(metadata === undefined ? {} : { metadata }),
+    metadata,
   };
 };
 

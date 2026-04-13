@@ -140,6 +140,7 @@ system_prompt = "You are a test agent."
     assert.deepEqual(config.logging, {
       level: "info",
       stderr: true,
+      filePath: undefined,
     });
   } finally {
     await cleanupConfigFile(configPath);
@@ -160,6 +161,8 @@ system_prompt = "You are a test agent."
     assert.deepEqual(config.toolOptions, {
       provider,
       model,
+      providerBaseUrl: undefined,
+      providerApiKey: undefined,
       workspaceRoot: path.dirname(configPath),
       maxFileBytes: 32_768,
       commandTimeoutMs: 30_000,
@@ -195,6 +198,8 @@ max_web_response_bytes = 16384
     assert.deepEqual(config.toolOptions, {
       provider,
       model,
+      providerBaseUrl: undefined,
+      providerApiKey: undefined,
       workspaceRoot: path.join(path.dirname(configPath), "workspace"),
       maxFileBytes: 4_096,
       commandTimeoutMs: 45_000,
@@ -557,6 +562,7 @@ allowed_usernames = ["wibus"]
     assert.deepEqual(config.entities.jarvis, {
       id: "jarvis",
       displayName: "Jarvis",
+      systemPrompt: undefined,
     });
     assert.deepEqual(config.entities.pm, {
       id: "pm",

@@ -11,7 +11,7 @@ export const createAgentContext = async (ctx: PreparedPromptContext): Promise<Ag
   const agent = createAgent({
     ...ctx.config.agent,
     tools,
-    ...(ctx.requestLogger ? { logger: ctx.requestLogger } : {}),
+    logger: ctx.requestLogger,
     compactionEventSink: (event) => {
       void ctx.eventStore.appendEvent(ctx.conversation.threadId, event);
       void ctx.tracker.recordCompaction(event);
@@ -24,10 +24,8 @@ export const createAgentContext = async (ctx: PreparedPromptContext): Promise<Ag
     model: agent.state.model,
     systemPrompt: agent.state.systemPrompt,
     settings: ctx.config.agent.compaction,
-    ...(ctx.config.agent.providerConfig.apiKey
-      ? { apiKey: ctx.config.agent.providerConfig.apiKey }
-      : {}),
-    ...(ctx.requestLogger ? { logger: ctx.requestLogger } : {}),
+    apiKey: ctx.config.agent.providerConfig.apiKey,
+    logger: ctx.requestLogger,
   };
 
   const refreshLiveCapture = () => {

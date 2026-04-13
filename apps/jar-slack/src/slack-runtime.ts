@@ -1052,7 +1052,7 @@ const postSlackTextReply = async (options: {
     options.client.lastReplyTsByScope.set(options.scopeKey, response.ts);
   }
   return {
-    ...(response.ts === undefined ? {} : { ts: response.ts }),
+    ts: response.ts,
   };
 };
 

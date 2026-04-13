@@ -96,11 +96,11 @@ const createCommand = (identityId?: string): MessageIngressCommand => ({
   kind: "message",
   source: {
     platform: identityId === undefined ? "cli" : "slack",
-    ...(identityId === undefined ? {} : { identityId }),
+    identityId,
   },
   routing: {
     platform: identityId === undefined ? "cli" : "slack",
-    ...(identityId === undefined ? {} : { identityId }),
+    identityId,
     scope: identityId === undefined
       ? { kind: "local_thread", threadId: "thread-1" }
       : { kind: "slack", channelId: "C123" },

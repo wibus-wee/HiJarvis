@@ -107,7 +107,7 @@ const main = async (): Promise<void> => {
           command,
         });
       },
-      ...(prompt !== undefined ? { initialPrompt: prompt } : {}),
+      initialPrompt: prompt,
     });
     return;
   }
@@ -261,7 +261,7 @@ const parseCliOptions = (argv: string[]): CliOptions => {
     helpRequested,
     repl,
     listThreads: listThreadsFlag,
-    ...(threadId !== undefined ? { threadId } : {}),
+    threadId,
   };
 
   if (promptSegments.length > 0) {

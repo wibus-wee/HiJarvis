@@ -17,7 +17,8 @@ export type RuntimeProviderConfig = {
   baseUrl?: string;
 };
 
-export type JarRuntimeOptions = {
+/** Static agent configuration — loaded from config, does not change per request. */
+export type JarAgentConfig = {
   provider: KnownProvider;
   model: string;
   systemPrompt: string;
@@ -26,9 +27,13 @@ export type JarRuntimeOptions = {
   providerConfig: RuntimeProviderConfig;
   execution: PromptExecutionPolicy;
   compaction?: CompactionSettings;
+};
+
+/** Full runtime options — agent config + per-request parameters. */
+export type JarRuntimeOptions = JarAgentConfig & {
+  tools: AgentTool[];
   logger?: Logger;
   compactionEventSink?: (event: CompactionEvent) => void;
-  tools: AgentTool[];
 };
 
 export const createAgent = (config: JarRuntimeOptions): Agent => {
@@ -43,10 +48,8 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
     model,
     systemPrompt,
     settings: compactionSettings,
-    ...(config.providerConfig.apiKey
-      ? { apiKey: config.providerConfig.apiKey }
-      : {}),
-    ...(config.logger ? { logger: config.logger } : {}),
+    apiKey: config.providerConfig.apiKey,
+    logger: config.logger,
   };
 
   const agent = new Agent({

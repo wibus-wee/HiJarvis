@@ -15,7 +15,7 @@ export const initStores = (
 ): StoresContext => ({
   config,
   command,
-  ...(logger === undefined ? {} : { logger }),
+  logger,
   stateStore: createFileSystemConversationStateStore(),
   auditStore: createFileSystemExecutionAuditStore(),
   eventStore: createFileSystemEventLogStore(),

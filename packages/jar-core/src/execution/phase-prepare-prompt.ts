@@ -9,7 +9,7 @@ export const preparePrompt = async (ctx: SessionContext): Promise<PreparedPrompt
   const prepared = await preparePromptWithSkills(ctx.command.prompt, {
     skills: ctx.config.skills,
     triggerText: skillTriggerText,
-    ...(ctx.requestLogger === undefined ? {} : { logger: ctx.requestLogger }),
+    logger: ctx.requestLogger,
   });
 
   const tracker = await startThreadExecutionTracker({
@@ -17,7 +17,7 @@ export const preparePrompt = async (ctx: SessionContext): Promise<PreparedPrompt
     auditStore: ctx.auditStore,
     prompt: prepared.prompt,
     trigger: ctx.command.audit.trigger,
-    ...(ctx.requestLogger === undefined ? {} : { logger: ctx.requestLogger }),
+    logger: ctx.requestLogger,
     turnInputMetadata: buildTurnInputMetadata(ctx.command),
   });
 
