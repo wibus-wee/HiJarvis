@@ -35,6 +35,8 @@ export interface ConversationStateStore {
   appendMessage(input: AppendConversationMessageInput): Promise<void>;
   applyCheckpoint(input: ApplyCheckpointInput): Promise<void>;
   flush(threadId: string): Promise<void>;
+  /** Flush pending writes and release the cached handle so GC can reclaim it. */
+  release(threadId: string): Promise<void>;
 }
 
 export interface ExecutionAuditStore {
@@ -53,7 +55,60 @@ export interface UsageStore {
 
 type StoreHandle = Awaited<ReturnType<typeof openConversationHandle>>;
 
-const handles = new Map<string, Promise<StoreHandle>>();
+// ── LRU handle cache ─────────────────────────────────────────
+// Replaces the previous bare Map to prevent unbounded growth in
+// long-running gateway processes (Slack / Telegram).  Eviction
+// only drops the JS reference — ConversationHandle holds no open
+// file descriptors, so GC is sufficient for cleanup.
+
+class HandleCache {
+  private map = new Map<string, Promise<StoreHandle>>();
+  private accessOrder: string[] = []; // most-recent at end
+  private readonly maxSize: number;
+
+  constructor(maxSize = 256) {
+    this.maxSize = maxSize;
+  }
+
+  get(threadId: string): Promise<StoreHandle> | undefined {
+    const entry = this.map.get(threadId);
+    if (entry !== undefined) {
+      this.touch(threadId);
+    }
+    return entry;
+  }
+
+  set(threadId: string, handle: Promise<StoreHandle>): void {
+    if (!this.map.has(threadId)) {
+      this.evictIfNeeded();
+    }
+    this.map.set(threadId, handle);
+    this.touch(threadId);
+  }
+
+  delete(threadId: string): boolean {
+    this.accessOrder = this.accessOrder.filter((id) => id !== threadId);
+    return this.map.delete(threadId);
+  }
+
+  get size(): number {
+    return this.map.size;
+  }
+
+  private touch(threadId: string): void {
+    this.accessOrder = this.accessOrder.filter((id) => id !== threadId);
+    this.accessOrder.push(threadId);
+  }
+
+  private evictIfNeeded(): void {
+    while (this.map.size >= this.maxSize && this.accessOrder.length > 0) {
+      const oldest = this.accessOrder.shift()!;
+      this.map.delete(oldest);
+    }
+  }
+}
+
+const handles = new HandleCache(256);
 
 const scopeToRouting = (target: RoutedScope): ThreadMeta["routing"] => {
   if (target.scope.kind === "local_thread") {
@@ -105,14 +160,22 @@ export const createFileSystemConversationStateStore = (): ConversationStateStore
         model: config.agent.model,
         routing: scopeToRouting(target),
       });
-      const opened = openConversationHandle({
-        rootDir: config.sessions.rootDir,
-        threadId: resolvedThreadId,
-        provider: config.agent.provider,
-        model: config.agent.model,
-      });
-      handles.set(resolvedThreadId, opened);
-      const handle = await opened;
+
+      // Reuse a cached handle when available instead of unconditionally
+      // opening a new one (which also leaked the previous reference).
+      let cached = handles.get(resolvedThreadId);
+      if (cached === undefined) {
+        const opened = openConversationHandle({
+          rootDir: config.sessions.rootDir,
+          threadId: resolvedThreadId,
+          provider: config.agent.provider,
+          model: config.agent.model,
+        });
+        handles.set(resolvedThreadId, opened);
+        cached = opened;
+      }
+
+      const handle = await cached;
       return {
         threadId: handle.threadId,
         laneId: handle.laneId,
@@ -130,6 +193,16 @@ export const createFileSystemConversationStateStore = (): ConversationStateStore
     flush: async (threadId) => {
       const handle = await getHandle(threadId);
       await handle.flush();
+    },
+    release: async (threadId) => {
+      const cached = handles.get(threadId);
+      if (cached === undefined) return;
+      try {
+        const handle = await cached;
+        await handle.flush();
+      } finally {
+        handles.delete(threadId);
+      }
     },
   };
 };

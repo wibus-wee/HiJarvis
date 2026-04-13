@@ -164,5 +164,8 @@ const executeMessageCommand = async (
     throw error;
   } finally {
     unregisterLiveThreadForSideQuestion(session.conversation.threadId);
+    // Release the cached conversation handle so memory doesn't grow
+    // unboundedly in long-running gateway processes.
+    await stores.stateStore.release(session.conversation.threadId).catch(() => {});
   }
 };
