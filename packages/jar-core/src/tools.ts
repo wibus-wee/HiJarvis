@@ -6,18 +6,19 @@ import { createReadFileTool, createWriteFileTool } from "./tools/file-tools.js";
 import { createApplyPatchTool } from "./tools/patch-tool.js";
 import { createWebFetchTool } from "./tools/web-fetch-tool.js";
 import { createWebSearchTool } from "./tools/web-search-tool.js";
-import type { ToolOptions } from "./tools/shared.js";
+import { validateToolOptions, type ToolOptions } from "./tools/shared.js";
 
 export type { ToolOptions } from "./tools/shared.js";
 
 export const createDefaultTools = (options: ToolOptions): AgentTool[] => {
+  const validatedOptions = validateToolOptions(options);
   return [
-    createReadFileTool(options) as AgentTool,
-    createWriteFileTool(options) as AgentTool,
-    createApplyPatchTool(options) as AgentTool,
-    ...createBashTools(options),
-    createWebFetchTool(options) as AgentTool,
-    createWebSearchTool(options) as AgentTool,
+    createReadFileTool(validatedOptions) as AgentTool,
+    createWriteFileTool(validatedOptions) as AgentTool,
+    createApplyPatchTool(validatedOptions) as AgentTool,
+    ...createBashTools(validatedOptions),
+    createWebFetchTool(validatedOptions) as AgentTool,
+    createWebSearchTool(validatedOptions) as AgentTool,
   ];
 };
 

@@ -166,6 +166,7 @@ system_prompt = "You are a test agent."
       maxCommandOutputBytes: 32_768,
       webRequestTimeoutMs: 30_000,
       maxWebResponseBytes: 65_536,
+      maxConcurrentShells: 10,
     });
   } finally {
     await cleanupConfigFile(configPath);
@@ -200,7 +201,30 @@ max_web_response_bytes = 16384
       maxCommandOutputBytes: 8_192,
       webRequestTimeoutMs: 12_000,
       maxWebResponseBytes: 16_384,
+      maxConcurrentShells: 10,
     });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig rejects invalid tool limits", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[tools]
+max_file_bytes = 0
+`);
+
+  try {
+    await assert.rejects(
+      () => loadAgentConfig(configPath),
+      /tools\.max_file_bytes/i,
+    );
   } finally {
     await cleanupConfigFile(configPath);
   }

@@ -16,6 +16,7 @@ const toolOptions: ToolOptions = {
   maxCommandOutputBytes: 32_768,
   webRequestTimeoutMs: 15_000,
   maxWebResponseBytes: 131_072,
+  maxConcurrentShells: 10,
 };
 
 type ToolResult = Awaited<ReturnType<AgentTool["execute"]>>;
@@ -110,6 +111,31 @@ test("bash.output evicts completed background shells after the terminal snapshot
     () => outputTool.execute("call-3", { shellId, offset: 0 }),
     /was not found/,
   );
+});
+
+test("bash rejects new background shells when at capacity", async () => {
+  const tools = createBashTools({
+    ...toolOptions,
+    maxConcurrentShells: 1,
+  });
+  const bashTool = getTool(tools, "bash");
+  const killTool = getTool(tools, "bash_kill");
+
+  const first = await bashTool.execute("call-1", {
+    command: "node -e \"setInterval(() => {}, 1000)\"",
+    background: true,
+  });
+  const shellId = getShellId(first);
+
+  await assert.rejects(
+    () => bashTool.execute("call-2", {
+      command: "node -e \"process.stdout.write('skip')\"",
+      background: true,
+    }),
+    /Too many concurrent shells/,
+  );
+
+  await killTool.execute("call-3", { shellId });
 });
 
 const getTool = (tools: AgentTool[], name: string): AgentTool => {

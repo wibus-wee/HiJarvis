@@ -22,6 +22,7 @@ export const openTape = async (options: {
     state: {
       nextOffset: await resolveNextOffset(tapePath, headPath),
       writeChain: Promise.resolve(),
+      lastError: undefined,
     },
   };
 };
@@ -55,21 +56,40 @@ export const appendTapeRecord = async (
   tape: TapeHandle,
   input: Omit<TapeRecord, "v" | "offset" | "threadId" | "laneId" | "recordedAt">,
 ): Promise<TapeRecord> => {
-  const recordPromise = tape.state.writeChain.then(async () => {
-    const record: TapeRecord = {
-      v: 1,
-      offset: tape.state.nextOffset,
-      threadId: tape.threadId,
-      laneId: tape.laneId,
-      recordedAt: Date.now(),
-      type: input.type,
-      payload: input.payload,
-    };
-    await appendFile(tape.tapePath, `${JSON.stringify(record)}\n`, "utf8");
-    tape.state.nextOffset += 1;
-    return record;
-  });
-  tape.state.writeChain = recordPromise.then(() => undefined, () => undefined);
+  if (tape.state.lastError) {
+    throw tape.state.lastError;
+  }
+  const recordPromise = tape.state.writeChain.then(
+    async () => {
+      const record: TapeRecord = {
+        v: 1,
+        offset: tape.state.nextOffset,
+        threadId: tape.threadId,
+        laneId: tape.laneId,
+        recordedAt: Date.now(),
+        type: input.type,
+        payload: input.payload,
+      };
+      await appendFile(tape.tapePath, `${JSON.stringify(record)}\n`, "utf8");
+      tape.state.nextOffset += 1;
+      return record;
+    },
+    (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const wrapped = new Error(`Previous tape write failed: ${message}`);
+      tape.state.lastError = wrapped;
+      throw wrapped;
+    },
+  );
+  tape.state.writeChain = recordPromise.then(
+    () => undefined,
+    (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const wrapped = new Error(`Previous tape write failed: ${message}`);
+      tape.state.lastError = wrapped;
+      return undefined;
+    },
+  );
   return recordPromise;
 };
 

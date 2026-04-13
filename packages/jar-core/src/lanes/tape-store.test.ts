@@ -228,4 +228,42 @@ test("appendTapeRecord serializes concurrent appends on the same tape handle", a
   }
 });
 
+test("appendTapeRecord surfaces prior append failures", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-tape-error-"));
+  try {
+    const threadId = "thread_main";
+    const laneId = "lane_main";
+    const tape = await openTape({
+      rootDir,
+      threadId,
+      laneId,
+    });
+    const originalTapePath = tape.tapePath;
+    tape.tapePath = resolveLaneDir(rootDir, threadId, laneId);
+
+    await assert.rejects(
+      async () => {
+        await appendTapeRecord(tape, {
+          type: "message.user",
+          payload: { message: createUserMessage("boom") },
+        });
+      },
+      /EISDIR|illegal operation/, 
+    );
+
+    tape.tapePath = originalTapePath;
+    await assert.rejects(
+      async () => {
+        await appendTapeRecord(tape, {
+          type: "message.user",
+          payload: { message: createUserMessage("retry") },
+        });
+      },
+      /Previous tape write failed/,
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 const readFileUtf8 = (filePath: string): Promise<string> => readFile(filePath, "utf8");

@@ -13,6 +13,31 @@ export type ToolOptions = {
   maxCommandOutputBytes: number;
   webRequestTimeoutMs: number;
   maxWebResponseBytes: number;
+  maxConcurrentShells?: number;
+};
+
+export const validateToolOptions = (options: ToolOptions): ToolOptions => {
+  const checks: Array<[number, string]> = [
+    [options.maxFileBytes, "maxFileBytes"],
+    [options.commandTimeoutMs, "commandTimeoutMs"],
+    [options.maxCommandOutputBytes, "maxCommandOutputBytes"],
+    [options.webRequestTimeoutMs, "webRequestTimeoutMs"],
+    [options.maxWebResponseBytes, "maxWebResponseBytes"],
+  ];
+
+  for (const [value, label] of checks) {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`${label} must be a positive number`);
+    }
+  }
+
+  if (options.maxConcurrentShells !== undefined) {
+    if (!Number.isFinite(options.maxConcurrentShells) || options.maxConcurrentShells <= 0) {
+      throw new Error("maxConcurrentShells must be a positive number");
+    }
+  }
+
+  return options;
 };
 
 export const resolveWorkspacePath = (

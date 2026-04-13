@@ -335,6 +335,7 @@ export const createBashKillTool = (
 
 const createShellManager = (options: ToolOptions): ShellManager => {
   const shells = new Map<string, ManagedShell>();
+  const maxConcurrentShells = options.maxConcurrentShells ?? Number.POSITIVE_INFINITY;
 
   return {
     getShellSnapshot: async (shellId) => {
@@ -345,6 +346,9 @@ const createShellManager = (options: ToolOptions): ShellManager => {
       return snapshotShell(shell);
     },
     startShell: async (params) => {
+      if (params.background && shells.size >= maxConcurrentShells) {
+        throw new Error("Too many concurrent shells");
+      }
       const shellId = randomUUID();
       const subprocess = createManagedSubprocess(execaCommand(params.command, {
         all: true,

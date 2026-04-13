@@ -371,6 +371,7 @@ Executes a shell command starting inside the configured workspace root.
 - `workingDirectory` must stay inside `tools.workspace_root`
 - foreground execution is limited by `tools.command_timeout_ms`
 - combined command output is limited by `tools.max_command_output_bytes`
+- background commands are limited by `tools.max_concurrent_shells`
 - `background: true` returns immediately with a `shellId`
 - background commands can be polled with `bash_output`
 - background commands can be terminated with `bash_kill`

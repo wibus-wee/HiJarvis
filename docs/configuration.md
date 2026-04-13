@@ -119,6 +119,7 @@ command_timeout_ms = 30000
 max_command_output_bytes = 32768
 web_request_timeout_ms = 30000
 max_web_response_bytes = 65536
+max_concurrent_shells = 10
 
 [sessions]
 root_dir = ".jar/threads"
@@ -274,6 +275,7 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - `max_command_output_bytes`: maximum buffered stdout/stderr captured from `bash`. Default: `32768`.
 - `web_request_timeout_ms`: default timeout in milliseconds for `web_fetch` when the tool call omits `timeoutMs`. Default: `30000`.
 - `max_web_response_bytes`: maximum UTF-8 response body size accepted by `web_fetch`. Default: `65536`.
+- `max_concurrent_shells`: maximum number of concurrent background `bash` commands. Default: `10`.
 
 ### `[sessions]`
 

@@ -66,5 +66,6 @@ export type TapeHandle = {
   state: {
     nextOffset: number;
     writeChain: Promise<void>;
+    lastError?: Error;
   };
 };
