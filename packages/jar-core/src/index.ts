@@ -204,6 +204,19 @@ export {
 // --- Convenience: default tools ---
 export { createDefaultTools } from "./tools.js";
 
+// --- Substrate: hooks ---
+export { createHookRegistry } from "./hooks/index.js";
+export type {
+  HookHandler,
+  HookMap,
+  HookPoint,
+  HookRegistration,
+  HookRegistry,
+  HookRegistryOptions,
+  TapHookPoint,
+  TransformHookPoint,
+} from "./hooks/index.js";
+
 // --- Re-exported upstream types ---
 export type { AgentMessage } from "@mariozechner/pi-agent-core";
 export type { ImageContent, UserMessage } from "@mariozechner/pi-ai";

@@ -1,10 +1,13 @@
 import type { LoadedRuntimeConfig } from "./config.js";
+import type { HookRegistry } from "./hooks/index.js";
 import {
   parseSideQuestionCommand,
+  buildDefaultSkillTriggerText,
   type IngressCommand,
   type MessageIngressCommand,
 } from "./ingress.js";
 import type { Logger } from "./logger.js";
+import type { PromptInput } from "./prompt-executor.js";
 import { executeSideQuestion } from "./side-question/execute-side-question.js";
 import { unregisterLiveThreadForSideQuestion } from "./side-question/live-thread-registry.js";
 
@@ -40,6 +43,7 @@ export const executeIngressCommand = async (options: {
   config: LoadedRuntimeConfig;
   command: IngressCommand;
   logger?: Logger;
+  hooks?: HookRegistry;
 }): Promise<IngressResult> => {
   if (options.command.kind === "side_question") {
     const result = await executeSideQuestion({
@@ -57,7 +61,7 @@ export const executeIngressCommand = async (options: {
     };
   }
 
-  return executeMessageCommand(options.config, options.command, options.logger);
+  return executeMessageCommand(options.config, options.command, options.logger, options.hooks);
 };
 
 export const maybeExecuteSideQuestionIngress = async (options: {
@@ -93,15 +97,71 @@ const executeMessageCommand = async (
   config: LoadedRuntimeConfig,
   command: MessageIngressCommand,
   logger?: Logger,
+  hooks?: HookRegistry,
 ): Promise<MessageIngressResult> => {
-  const stores = initStores(config, command, logger);
+
+  // ── Hook: ingress:before ─────────────────────────────────────
+  if (hooks?.has("ingress:before")) {
+    const transformed = await hooks.transform("ingress:before", { config, command });
+    command = transformed.command;
+  }
+
+  const stores = initStores(config, command, logger, hooks);
   const session = await loadSession(stores);
 
+  // ── Hook: session:loaded ─────────────────────────────────────
+  if (hooks?.has("session:loaded")) {
+    await hooks.tap("session:loaded", session);
+  }
+
   try {
-    const prompt = await preparePrompt(session);
+    // ── Hook: prompt:transform ───────────────────────────────────
+    let promptInput: PromptInput = command.prompt;
+    let skillTriggerText = command.skillTriggerText ?? buildDefaultSkillTriggerText(command);
+
+    if (hooks?.has("prompt:transform")) {
+      const transformed = await hooks.transform("prompt:transform", {
+        session,
+        prompt: promptInput,
+        skillTriggerText,
+      });
+      promptInput = transformed.prompt;
+      skillTriggerText = transformed.skillTriggerText;
+    }
+
+    const prompt = await preparePrompt(session, promptInput, skillTriggerText);
+
+    // ── Hook: prompt:prepared ────────────────────────────────────
+    if (hooks?.has("prompt:prepared")) {
+      await hooks.tap("prompt:prepared", prompt);
+    }
+
     const agentCtx = await createAgentContext(prompt);
     const subscribed = subscribeEvents(agentCtx);
-    return await executeAndFinalize(subscribed);
+    const result = await executeAndFinalize(subscribed);
+
+    // ── Hook: response:transform ─────────────────────────────────
+    const durationMs = Date.now() - stores.startTime;
+    if (hooks?.has("response:transform")) {
+      const transformed = await hooks.transform("response:transform", {
+        result,
+        durationMs,
+      });
+      result.outputText = transformed.outputText;
+    }
+
+    // ── Hook: response:complete ──────────────────────────────────
+    if (hooks?.has("response:complete")) {
+      await hooks.tap("response:complete", { result, durationMs });
+    }
+
+    return result;
+  } catch (error) {
+    // ── Hook: error:caught ───────────────────────────────────────
+    if (hooks?.has("error:caught")) {
+      await hooks.tap("error:caught", { error, phase: "execution" });
+    }
+    throw error;
   } finally {
     unregisterLiveThreadForSideQuestion(session.conversation.threadId);
   }

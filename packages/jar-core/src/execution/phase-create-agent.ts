@@ -6,12 +6,38 @@ import { resolveMessageTools } from "./resolve-tools.js";
 import type { AgentContext, PreparedPromptContext } from "./types.js";
 
 export const createAgentContext = async (ctx: PreparedPromptContext): Promise<AgentContext> => {
-  const tools = await resolveMessageTools(ctx.config, ctx.command);
+  let tools = await resolveMessageTools(ctx.config, ctx.command);
+
+  // ── Hook: tools:resolve ──────────────────────────────────────
+  if (ctx.hooks?.has("tools:resolve")) {
+    const transformed = await ctx.hooks.transform("tools:resolve", {
+      config: ctx.config,
+      command: ctx.command,
+      tools,
+    });
+    tools = transformed.tools;
+  }
+
+  // ── Hook: tool:before / tool:after ─────────────────────────
+  // Bridge our hook system into the upstream Agent's native callbacks.
+  const beforeToolCall = ctx.hooks?.has("tool:before")
+    ? async (context: Parameters<NonNullable<Parameters<typeof createAgent>[0]["beforeToolCall"]>>[0], signal?: AbortSignal) => {
+        return ctx.hooks!.transform("tool:before", context);
+      }
+    : undefined;
+
+  const afterToolCall = ctx.hooks?.has("tool:after")
+    ? async (context: Parameters<NonNullable<Parameters<typeof createAgent>[0]["afterToolCall"]>>[0], signal?: AbortSignal) => {
+        return ctx.hooks!.transform("tool:after", context);
+      }
+    : undefined;
 
   const agent = createAgent({
     ...ctx.config.agent,
     tools,
     logger: ctx.requestLogger,
+    beforeToolCall,
+    afterToolCall,
     compactionEventSink: (event) => {
       void ctx.eventStore.appendEvent(ctx.conversation.threadId, event);
       void ctx.tracker.recordCompaction(event);

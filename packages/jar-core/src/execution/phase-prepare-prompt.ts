@@ -1,12 +1,19 @@
 import { buildDefaultSkillTriggerText, buildTurnInputMetadata } from "../ingress.js";
 import { preparePromptWithSkills } from "../skills.js";
 import { startThreadExecutionTracker } from "../thread-execution.js";
+import type { PromptInput } from "../prompt-executor.js";
 import type { PreparedPromptContext, SessionContext } from "./types.js";
 
-export const preparePrompt = async (ctx: SessionContext): Promise<PreparedPromptContext> => {
-  const skillTriggerText = ctx.command.skillTriggerText ?? buildDefaultSkillTriggerText(ctx.command);
+export const preparePrompt = async (
+  ctx: SessionContext,
+  promptOverride?: PromptInput,
+  skillTriggerTextOverride?: string,
+): Promise<PreparedPromptContext> => {
+  const skillTriggerText = skillTriggerTextOverride
+    ?? ctx.command.skillTriggerText
+    ?? buildDefaultSkillTriggerText(ctx.command);
 
-  const prepared = await preparePromptWithSkills(ctx.command.prompt, {
+  const prepared = await preparePromptWithSkills(promptOverride ?? ctx.command.prompt, {
     skills: ctx.config.skills,
     triggerText: skillTriggerText,
     logger: ctx.requestLogger,

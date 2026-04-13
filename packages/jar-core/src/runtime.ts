@@ -1,4 +1,4 @@
-import { Agent, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { Agent, type AgentTool, type BeforeToolCallContext, type BeforeToolCallResult, type AfterToolCallContext, type AfterToolCallResult, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModels, type KnownProvider, type Model } from "@mariozechner/pi-ai";
 
 import {
@@ -34,6 +34,8 @@ export type JarRuntimeOptions = JarAgentConfig & {
   tools: AgentTool[];
   logger?: Logger;
   compactionEventSink?: (event: CompactionEvent) => void;
+  beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
+  afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
 };
 
 export const createAgent = (config: JarRuntimeOptions): Agent => {
@@ -60,6 +62,8 @@ export const createAgent = (config: JarRuntimeOptions): Agent => {
       tools: config.tools,
     },
     maxRetryDelayMs: config.execution.retryMaxDelayMs,
+    beforeToolCall: config.beforeToolCall,
+    afterToolCall: config.afterToolCall,
     getApiKey: (provider) => {
       if (provider !== config.provider) {
         return undefined;

@@ -1,6 +1,7 @@
 import type { Agent, AgentTool } from "@mariozechner/pi-agent-core";
 
 import type { LoadedRuntimeConfig } from "../config.js";
+import type { HookRegistry } from "../hooks/index.js";
 import type { Logger } from "../logger.js";
 import type {
   ConversationStateStore,
@@ -67,6 +68,7 @@ export type StoresContext = {
   config: LoadedRuntimeConfig;
   command: MessageIngressCommand;
   logger?: Logger;
+  hooks?: HookRegistry;
   stateStore: ConversationStateStore;
   auditStore: ExecutionAuditStore;
   eventStore: EventLogStore;

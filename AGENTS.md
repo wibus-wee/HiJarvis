@@ -19,6 +19,7 @@
 │   ├── jar-core
 │   │   └── src
 │   │       ├── compaction - staged history compaction pipeline with assembly, policy, prompting, summaries, snipping, and lightweight passes
+│   │       ├── hooks - typed hook registry for intercepting and observing the execution pipeline (ingress, prompt, tools, response, errors)
 │   │       ├── lanes - tape-backed thread/lane persistence, materialization, checkpoints, and audit records
 │   │       └── tools - built-in file, patch, bash, and web tools plus shared workspace safety helpers
 │   ├── jar-manager - workspace package reserved for manager-oriented functionality

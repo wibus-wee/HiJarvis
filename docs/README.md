@@ -1,7 +1,7 @@
 # Jar Documentation Index
 
 - [Configuration](./configuration.md): `jar.toml` layout, provider selection, and runtime behavior.
-- [Agent Runtime](./agent-runtime.md): workspace startup flow, source-first package boundaries, thread/lane-bound turn/run/item execution, model resolution, and event handling.
+- [Agent Runtime](./agent-runtime.md): workspace startup flow, source-first package boundaries, thread/lane-bound turn/run/item execution, model resolution, hooks, and event handling.
 - [Compaction Architecture](./compaction-architecture.md): simplified staged compaction pipeline, checkpoint-based recovery, PTL retry, and runtime/thread-lane integration.
 - [Memory](./memory.md): long-term memory provider model, per-entity scoping, filesystem storage, and memory tool behavior.
 - [Exec Plans](./exec-plans/): living implementation plans for major refactors and features, including subsystem redesign work such as compaction.

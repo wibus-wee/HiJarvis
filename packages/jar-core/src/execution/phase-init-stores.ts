@@ -1,4 +1,5 @@
 import type { LoadedRuntimeConfig } from "../config.js";
+import type { HookRegistry } from "../hooks/index.js";
 import type { Logger } from "../logger.js";
 import type { MessageIngressCommand } from "../ingress.js";
 import {
@@ -13,10 +14,12 @@ export const initStores = (
   config: LoadedRuntimeConfig,
   command: MessageIngressCommand,
   logger?: Logger,
+  hooks?: HookRegistry,
 ): StoresContext => ({
   config,
   command,
   logger,
+  hooks,
   stateStore: createFileSystemConversationStateStore(),
   auditStore: createFileSystemExecutionAuditStore(),
   eventStore: createFileSystemEventLogStore(),

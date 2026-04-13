@@ -153,7 +153,7 @@ Prompt assembly is now split into two layers:
 
 `packages/jar-core/src/execution-service.ts` is the shared application-layer execution seam. It:
 
-- accepts a normalized ingress command plus `LoadedRuntimeConfig`
+- accepts a normalized ingress command plus `LoadedRuntimeConfig` and an optional `HookRegistry`
 - resolves the target thread from structured ingress routing data instead of relying on adapters to compute thread ids separately
 - creates a fresh `Agent` using `config.agent` fields and `createDefaultTools(config.toolOptions)`
 - restores the persisted Jar thread from `config.sessions.rootDir`
@@ -164,6 +164,7 @@ Prompt assembly is now split into two layers:
 - maps the current execution into structured `items` such as `user_input`, `assistant_message`, `tool_call`, `tool_result`, `retry_notice`, and `compaction`
 - emits summary logs for prompt/tool boundaries
 - executes the prompt using the retry/timeout policy from `config.agent.execution`
+- invokes registered hooks at each pipeline stage when a `HookRegistry` is provided (see [Hooks](#hooks) below)
 - returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
 
 `packages/jar-core/src/ingress.ts` owns the normalized command types and `/btw` parsing. CLI `--thread`, the Ink REPL, Slack, and Telegram all route `/btw <question>` through the same ingress path so the answer reads from the current live in-memory parent thread state without appending a normal persisted turn.
@@ -233,6 +234,83 @@ Jar is intentionally minimal right now:
 - prompt compaction is applied via the `packages/jar-core/src/compaction/` subsystem to keep long conversations within context limits; runtime sanitizes the current materialized lane view, then runs a staged pipeline of snip-style oldest-history trimming, lightweight tool-result reduction, summary compaction, and final payload assembly; summary generation also retries with progressively truncated history if the compaction request itself is too large, and compaction metadata is persisted into lane events/items while the compacted head is recorded as a lane checkpoint rather than as authoritative snapshot truth
 - skills catalog overlays are supported, but full skill bodies remain turn-scoped and are not persisted as long-lived system prompt text
 - no built-in tools beyond text file IO and shell execution
+- hooks are available for internal feature decomposition but not yet exposed as an external plugin API
+
+## Hooks
+
+`packages/jar-core/src/hooks/` provides a typed hook registry that lets callers intercept or observe the execution pipeline without modifying phase functions directly.
+
+### Concepts
+
+The hook system distinguishes two kinds of hooks based on their type signature:
+
+- **Transform hooks** (`out: T`): receive pipeline data, return a (possibly rewritten) version. Executed serially by priority — each handler's output is merged into the next handler's input.
+- **Tap hooks** (`out: void`): observe pipeline data without altering it. Executed concurrently via `Promise.allSettled` — individual failures are logged but never propagate.
+
+The `HookMap` interface in `hooks/types.ts` defines all hook points. The TypeScript type system enforces that `registry.transform()` can only be called on transform points and `registry.tap()` only on tap points.
+
+### Hook Points
+
+| Point | Kind | When | Use case |
+|---|---|---|---|
+| `ingress:before` | transform | Before phase 1 | Rewrite or reject the incoming command |
+| `session:loaded` | tap | After phase 2 | Observe session state, inject metadata |
+| `prompt:transform` | transform | Before phase 3 | Content moderation, inject dynamic context (time, weather, calendar) |
+| `prompt:prepared` | tap | After phase 3 | Prompt logging, token estimation |
+| `tools:resolve` | transform | During phase 4 | Add, remove, or reorder tools |
+| `tool:before` | transform | Per tool call | Permission checks, argument validation (bridges to `Agent.beforeToolCall`) |
+| `tool:after` | transform | Per tool call | Result filtering, audit logging (bridges to `Agent.afterToolCall`) |
+| `agent:event` | tap | During streaming | Real-time logging, metrics, event forwarding |
+| `response:transform` | transform | Before return | Output moderation, formatting |
+| `response:complete` | tap | After return | Analytics, billing, archival |
+| `error:caught` | tap | On error | Error reporting, fallback strategies |
+
+### Usage
+
+```typescript
+import { createHookRegistry, type HookRegistry } from "@hijarvis/jar-core";
+
+const hooks = createHookRegistry({ logger });
+
+// Inject current time into every prompt
+hooks.register({
+  point: "prompt:transform",
+  name: "inject-datetime",
+  priority: 50,
+  handler: ({ prompt, skillTriggerText }) => ({
+    prompt: `[Current time: ${new Date().toISOString()}]\n\n${prompt as string}`,
+    skillTriggerText,
+  }),
+});
+
+// Block sensitive bash commands
+hooks.register({
+  point: "tool:before",
+  name: "permission-guard",
+  priority: 10,
+  handler: (ctx) => {
+    if (ctx.toolCall.name === "bash") {
+      return { block: true, reason: "Bash is disabled" };
+    }
+    return undefined;
+  },
+});
+
+// Pass to execution
+await executeIngressCommand({ config, command, hooks });
+```
+
+### Integration
+
+The `hooks` parameter is optional on `executeIngressCommand()`. When omitted, no hook overhead is incurred — the pipeline skips all hook call sites via `hooks?.has()` guards.
+
+Tool-level hooks (`tool:before`, `tool:after`) bridge directly into the upstream `pi-agent-core` `Agent.beforeToolCall` / `Agent.afterToolCall` callbacks rather than wrapping tool functions. This preserves the agent's native abort signal propagation and streaming update mechanism.
+
+### Files
+
+- `packages/jar-core/src/hooks/types.ts` — `HookMap`, `HookPoint`, `HookHandler`, `HookRegistration`, `HookRegistry`, `TransformHookPoint`, `TapHookPoint`
+- `packages/jar-core/src/hooks/registry.ts` — `createHookRegistry()` implementation
+- `packages/jar-core/src/hooks/index.ts` — unified re-exports
 
 ## Session Execution Model
 

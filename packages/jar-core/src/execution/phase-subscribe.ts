@@ -63,6 +63,15 @@ export const subscribeEvents = (ctx: AgentContext): SubscribedContext => {
     }
     await ctx.eventStore.appendEvent(ctx.conversation.threadId, event);
     await ctx.tracker.recordEvent(event);
+
+    // ── Hook: agent:event ──────────────────────────────────────
+    if (ctx.hooks?.has("agent:event")) {
+      await ctx.hooks.tap("agent:event", {
+        event,
+        threadId: ctx.conversation.threadId,
+      });
+    }
+
     if (
       event.type === "message_update" &&
       event.assistantMessageEvent.type === "text_delta"
