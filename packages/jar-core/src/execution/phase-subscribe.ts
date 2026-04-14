@@ -123,7 +123,7 @@ export const subscribeEvents = (ctx: AgentContext): SubscribedContext => {
       }
     }
     if (event.type === "agent_end") {
-      await ctx.stateStore.flush(ctx.conversation.threadId);
+      await ctx.stateStore.refreshCache(ctx.conversation.threadId);
     }
     await ctx.command.execution?.onEvent?.(event);
   });

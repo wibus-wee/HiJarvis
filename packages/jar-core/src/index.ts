@@ -62,6 +62,7 @@ export {
   appendTapeRecord,
   ensureThreadMeta,
   listThreads,
+  loadThreadMessages,
   materializeLaneView,
   openTape,
   openConversationHandle,

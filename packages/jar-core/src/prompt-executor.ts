@@ -268,11 +268,17 @@ const runPromptAttempt = async (
   }, requestTimeoutMs);
   timeoutHandle.unref?.();
 
+  // Normalize single AgentMessage to array so callers never need to branch.
+  const normalizedPrompt: string | AgentMessage[] =
+    !Array.isArray(prompt) && typeof prompt !== "string"
+      ? [prompt]
+      : prompt;
+
   try {
-    if (typeof prompt === "string") {
-      await agent.prompt(prompt);
+    if (typeof normalizedPrompt === "string") {
+      await agent.prompt(normalizedPrompt);
     } else {
-      await agent.prompt(prompt);
+      await agent.prompt(normalizedPrompt);
     }
   } catch (error) {
     thrownError = error;

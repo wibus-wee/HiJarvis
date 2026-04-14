@@ -172,9 +172,9 @@ const isLlmMessage = (message: AgentMessage | Message): message is Message => {
   if (!("role" in message)) {
     return false;
   }
-  return (
-    (message as Message).role === "user" ||
-    (message as Message).role === "assistant" ||
-    (message as Message).role === "toolResult"
-  );
+
+  // pi-ai Message types have exactly these roles: "user", "assistant", "toolResult"
+  // pi-agent-core custom messages may have other roles or additional discriminant fields
+  const role = (message as Message).role;
+  return role === "user" || role === "assistant" || role === "toolResult";
 };

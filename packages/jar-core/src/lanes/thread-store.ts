@@ -1,8 +1,12 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+
 import type { ThreadMeta } from "./types.js";
 import { resolveThreadDir } from "./path-layout.js";
+import { materializeLaneView } from "./materializer.js";
+import { openTape } from "./tape-store.js";
 
 export type ThreadListItem = {
   threadId: string;
@@ -97,4 +101,26 @@ export const touchThread = async (rootDir: string, threadId: string): Promise<vo
   } catch {
     // ignore lane meta touch failures until lane-store is formalized
   }
+};
+
+/**
+ * Load the materialized message history for a thread without opening a full
+ * ConversationHandle. Use this when you only need to read history (e.g. to
+ * populate the REPL transcript) rather than to write new messages.
+ */
+export const loadThreadMessages = async (options: {
+  rootDir: string;
+  threadId: string;
+  provider: string;
+  model: string;
+}): Promise<AgentMessage[]> => {
+  const laneId = "main";
+  await mkdir(resolveThreadDir(options.rootDir, options.threadId), { recursive: true });
+  const tape = await openTape({
+    rootDir: options.rootDir,
+    threadId: options.threadId,
+    laneId,
+  });
+  const materialized = await materializeLaneView(tape);
+  return [...materialized.messages];
 };

@@ -34,8 +34,10 @@ export interface ConversationStateStore {
   load(target: RoutedScope, config: LoadedRuntimeConfig): Promise<MaterializedConversationState>;
   appendMessage(input: AppendConversationMessageInput): Promise<void>;
   applyCheckpoint(input: ApplyCheckpointInput): Promise<void>;
-  flush(threadId: string): Promise<void>;
-  /** Flush pending writes and release the cached handle so GC can reclaim it. */
+  /** Write the current working-set to head.json as a read-acceleration cache.
+   * Not an authoritative state transition — does not write a tape record. */
+  refreshCache(threadId: string): Promise<void>;
+  /** Flush the cache and release the cached handle so GC can reclaim it. */
   release(threadId: string): Promise<void>;
 }
 
@@ -103,7 +105,12 @@ class HandleCache {
   private evictIfNeeded(): void {
     while (this.map.size >= this.maxSize && this.accessOrder.length > 0) {
       const oldest = this.accessOrder.shift()!;
+      const evicted = this.map.get(oldest);
       this.map.delete(oldest);
+      // Best-effort cache refresh before dropping the reference.
+      if (evicted !== undefined) {
+        void evicted.then((handle) => handle.refreshCache()).catch(() => {});
+      }
     }
   }
 }
@@ -190,16 +197,16 @@ export const createFileSystemConversationStateStore = (): ConversationStateStore
       const handle = await getHandle(threadId);
       await handle.appendLaneCheckpoint(messages, sourceOffsets);
     },
-    flush: async (threadId) => {
+    refreshCache: async (threadId) => {
       const handle = await getHandle(threadId);
-      await handle.flush();
+      await handle.refreshCache();
     },
     release: async (threadId) => {
       const cached = handles.get(threadId);
       if (cached === undefined) return;
       try {
         const handle = await cached;
-        await handle.flush();
+        await handle.refreshCache();
       } finally {
         handles.delete(threadId);
       }

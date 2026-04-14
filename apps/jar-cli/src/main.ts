@@ -7,7 +7,7 @@ import {
   maybeExecuteSideQuestionIngress,
   listThreads,
   loadRuntimeConfig,
-  openConversationHandle,
+  loadThreadMessages,
   preparePromptWithSkills,
   type MessageIngressCommand,
 } from "@hijarvis/jar-core";
@@ -54,7 +54,7 @@ const main = async (): Promise<void> => {
   }
   if (cliOptions.repl) {
     const threadId = cliOptions.threadId ?? "main";
-    const session = await openConversationHandle({
+    const initialMessages = await loadThreadMessages({
       rootDir: config.sessions.rootDir,
       provider: config.agent.provider,
       model: config.agent.model,
@@ -63,7 +63,7 @@ const main = async (): Promise<void> => {
 
     const prompt = await readPrompt(cliOptions.prompt);
     await runRepl({
-      initialMessages: session.messages,
+      initialMessages,
       executePrompt: async (
         input: string,
         _writers: { stderr: Pick<NodeJS.WriteStream, "write"> },
@@ -71,7 +71,7 @@ const main = async (): Promise<void> => {
       ) => {
         const sideQuestion = await maybeExecuteSideQuestionIngress({
           config,
-          parentThreadId: session.threadId,
+          parentThreadId: threadId,
           input,
           source: { platform: "cli" },
         });
@@ -87,7 +87,7 @@ const main = async (): Promise<void> => {
             platform: "cli",
             scope: {
               kind: "local_thread",
-              threadId: session.threadId,
+              threadId,
             },
           },
           message: {
@@ -156,12 +156,7 @@ const main = async (): Promise<void> => {
       skills: config.skills,
       triggerText: prompt,
     });
-    const oneShotSession = await openConversationHandle({
-      rootDir: config.sessions.rootDir,
-      provider: config.agent.provider,
-      model: config.agent.model,
-      threadId: `oneshot__${Date.now()}`,
-    });
+    const oneShotThreadId = `oneshot__${Date.now()}`;
     const command: MessageIngressCommand = {
       kind: "message",
       source: { platform: "cli" },
@@ -169,7 +164,7 @@ const main = async (): Promise<void> => {
         platform: "cli",
         scope: {
           kind: "local_thread",
-          threadId: oneShotSession.threadId,
+          threadId: oneShotThreadId,
         },
       },
       message: { text: prompt },
@@ -179,7 +174,7 @@ const main = async (): Promise<void> => {
         source: { platform: "cli" },
         routing: {
           platform: "cli",
-          scope: { kind: "local_thread", threadId: oneShotSession.threadId },
+          scope: { kind: "local_thread", threadId: oneShotThreadId },
         },
         message: { text: prompt },
         prompt,

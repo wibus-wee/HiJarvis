@@ -65,7 +65,7 @@ export const classifyError = (error: unknown): Fault => {
     return mapPromptCategory(promptCategory, message, error);
   }
 
-  if (normalized.includes("rate limit")) {
+  if (includesAny(normalized, ["rate limit", "too many requests", "429"])) {
     return {
       kind: "rate_limit",
       code,
@@ -77,7 +77,18 @@ export const classifyError = (error: unknown): Fault => {
     };
   }
 
-  if (includesAny(normalized, ["unauthorized", "forbidden", "invalid api key", "permission denied"])) {
+  if (
+    includesAny(normalized, [
+      "unauthorized",
+      "forbidden",
+      "invalid api key",
+      "authentication",
+      "permission denied",
+      "insufficient_quota",
+      "401",
+      "403",
+    ])
+  ) {
     return {
       kind: "auth",
       code,
@@ -101,7 +112,26 @@ export const classifyError = (error: unknown): Fault => {
     };
   }
 
-  if (includesAny(normalized, ["econnreset", "econnrefused", "enotfound", "network", "socket hang up"])) {
+  if (
+    includesAny(normalized, [
+      "econnreset",
+      "econnrefused",
+      "etimedout",
+      "enotfound",
+      "network",
+      "fetch failed",
+      "socket hang up",
+      "temporarily unavailable",
+      "service unavailable",
+      "gateway timeout",
+      "bad gateway",
+      "web server is down",
+      "host error",
+      "origin error",
+      "cloudflare",
+    ])
+    || hasRetryableServerStatus(normalized)
+  ) {
     return {
       kind: "transport",
       code,
@@ -113,14 +143,25 @@ export const classifyError = (error: unknown): Fault => {
     };
   }
 
-  if (includesAny(normalized, ["tool", "workspace", "apply_patch"])) {
+  if (
+    includesAny(normalized, [
+      "invalid request",
+      "bad request",
+      "context length",
+      "maximum context",
+      "token limit",
+      "model does not exist",
+      "unsupported",
+      "400",
+    ])
+  ) {
     return {
-      kind: "tool",
+      kind: "validation",
       code,
       message,
       retryable: false,
       severity: "error",
-      source: "tool",
+      source: "model",
       cause: error,
     };
   }
@@ -137,11 +178,23 @@ export const classifyError = (error: unknown): Fault => {
     };
   }
 
+  if (includesAny(normalized, ["tool", "workspace", "apply_patch"])) {
+    return {
+      kind: "tool",
+      code,
+      message,
+      retryable: false,
+      severity: "error",
+      source: "tool",
+      cause: error,
+    };
+  }
+
   return {
     kind: "unknown",
     code,
     message,
-    retryable: false,
+    retryable: true,
     severity: "error",
     source: "execution",
     cause: error,
@@ -294,6 +347,10 @@ const mapPromptCategory = (
         cause,
       };
   }
+};
+
+const hasRetryableServerStatus = (normalizedMessage: string): boolean => {
+  return /\b5\d{2}\b/.test(normalizedMessage);
 };
 
 const includesAny = (value: string, needles: string[]): boolean => {

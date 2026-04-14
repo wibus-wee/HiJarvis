@@ -27,7 +27,10 @@ export type ConversationHandle = {
   appendRun: (run: ThreadRun) => Promise<void>;
   appendItem: (item: ThreadItem) => Promise<void>;
   appendLaneCheckpoint: (messages: AgentMessage[], sourceOffsets: number[]) => Promise<void>;
-  flush: () => Promise<void>;
+  /** Write the current working-set messages to head.json as a read-acceleration cache.
+   * This is NOT an authoritative state transition — it does not write a tape record.
+   * Call appendLaneCheckpoint() for authoritative compaction checkpoints. */
+  refreshCache: () => Promise<void>;
 };
 
 type OpenConversationHandleOptions = {
@@ -161,7 +164,7 @@ export const openConversationHandle = async (
         messages: checkpointMessages,
       }, null, 2)}\n`, "utf8");
     },
-    flush: async () => {
+    refreshCache: async () => {
       await writeFile(headPath, `${JSON.stringify({
         v: 1,
         threadId: options.threadId,

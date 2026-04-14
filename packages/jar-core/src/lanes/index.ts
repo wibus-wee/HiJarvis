@@ -5,6 +5,7 @@ export {
 export {
   ensureThreadMeta,
   listThreads,
+  loadThreadMessages,
   touchThread,
   type ThreadListItem,
 } from "./thread-store.js";
