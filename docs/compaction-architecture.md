@@ -194,7 +194,7 @@ Recovery on the new path materializes the current lane view from tape plus the l
 
 ## Event Flow Through a Running Session
 
-`executePromptInSession(...)` in `packages/jar-core/src/thread-executor.ts` is where compaction joins execution, persistence, and audit tracking.
+`packages/jar-core/src/execution/phase-subscribe.ts` is where compaction joins execution, persistence, and audit tracking.
 
 Flow:
 
@@ -238,6 +238,6 @@ The current system is best understood as:
 - oldest-message snip reduction: `packages/jar-core/src/compaction/snip.ts`
 - usage-based compaction policy: `packages/jar-core/src/compaction/policy.ts`
 - runtime integration: `packages/jar-core/src/runtime.ts`
-- thread execution integration: `packages/jar-core/src/thread-executor.ts`
+- thread execution integration: `packages/jar-core/src/execution/phase-subscribe.ts`
 - structured turn/run/item tracking: `packages/jar-core/src/thread-execution.ts`
 - lane substrate and materialization: `packages/jar-core/src/lanes/`

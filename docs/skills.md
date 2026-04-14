@@ -79,5 +79,5 @@ Jar 通过两层清洗来保证这一点：
   `[skills]` 配置解析与 runtime 初始化。
 - `packages/jar-core/src/runtime.ts`
   把 catalog 追加到 runtime prompt overlay，并在 compaction 前清洗旧的 memory-excluded fragments。
-- `packages/jar-core/src/session-executor.ts`
+- `packages/jar-core/src/execution-service.ts`
   执行前把 skill fragments 注入当前 turn，并在默认持久化路径里去掉 memory-excluded fragments。

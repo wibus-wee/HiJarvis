@@ -19,10 +19,12 @@
 │   ├── jar-core
 │   │   └── src
 │   │       ├── compaction - staged history compaction pipeline with assembly, policy, prompting, summaries, snipping, and lightweight passes
+│   │       ├── execution - phased execution pipeline with agent creation, session loading, prompt preparation, event subscription, and finalization
 │   │       ├── hooks - typed hook registry for intercepting and observing the execution pipeline (ingress, prompt, tools, response, errors)
 │   │       ├── lanes - tape-backed thread/lane persistence, materialization, checkpoints, and audit records
+│   │       ├── memory - long-term memory provider interface, filesystem provider, and memory tools
+│   │       ├── side-question - /btw side-question live-thread registry and executor for ephemeral queries
 │   │       └── tools - built-in file, patch, bash, and web tools plus shared workspace safety helpers
-│   ├── jar-manager - workspace package reserved for manager-oriented functionality
 │   └── jar-repl-ink - Ink-based TUI package for the `--repl` experience
 └── research
     ├── claude-code-compaction - research notes on Claude Code's compaction system
