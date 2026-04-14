@@ -11,7 +11,7 @@ import type {
   UsageStore,
 } from "../persistence.js";
 import type { MessageIngressCommand } from "../ingress.js";
-import type { SkillPromptInjection } from "../skills.js";
+import type { SkillEntry, SkillPromptInjection } from "../skills.js";
 import type { ThreadExecutionTracker } from "../thread-execution.js";
 
 // ── Result types ──────────────────────────────────────────────
@@ -48,6 +48,7 @@ export type StoresContext = {
   eventStore: EventLogStore;
   usageStore: UsageStore;
   startTime: number;
+  pluginSkills?: SkillEntry[];
 };
 
 /**

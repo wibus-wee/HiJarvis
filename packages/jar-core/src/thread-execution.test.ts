@@ -76,6 +76,7 @@ test("startThreadExecutionTracker records turn, run, and items", async () => {
           },
         },
       },
+      plugins: [],
       entities: {},
       platformIdentities: {},
       platform: {},

@@ -23,6 +23,7 @@
 │   │       ├── hooks - typed hook registry for intercepting and observing the execution pipeline (ingress, prompt, tools, response, errors)
 │   │       ├── lanes - tape-backed thread/lane persistence, materialization, checkpoints, and audit records
 │   │       ├── memory - long-term memory provider interface, filesystem provider, and memory tools
+│   │       ├── plugins - plugin system: JarPlugin interface, PluginFactory, dynamic module loader, and skill/hook contribution model
 │   │       ├── side-question - /btw side-question live-thread registry and executor for ephemeral queries
 │   │       └── tools - built-in file, patch, bash, and web tools plus shared workspace safety helpers
 │   └── jar-repl-ink - Ink-based TUI package for the `--repl` experience

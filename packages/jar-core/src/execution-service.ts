@@ -113,7 +113,7 @@ const executeMessageCommand = async (
     command = transformed.command;
   }
 
-  const stores = initStores(config, command, logger, hooks);
+  const stores = await initStores(config, command, logger, hooks);
   let session: Awaited<ReturnType<typeof loadSession>> | undefined;
   let tracker: PreparedPromptContext["tracker"] | undefined;
   let phase: FaultEnvelope["phase"] = "ingress";

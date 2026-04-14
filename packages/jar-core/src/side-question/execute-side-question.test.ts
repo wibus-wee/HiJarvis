@@ -183,6 +183,7 @@ const createRuntimeConfig = (): LoadedRuntimeConfig => ({
       },
     },
   },
+  plugins: [],
   entities: {
     jarvis: {
       id: "jarvis",

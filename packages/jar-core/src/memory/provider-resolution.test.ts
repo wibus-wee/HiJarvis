@@ -52,6 +52,7 @@ const createConfig = (overrides: Partial<LoadedRuntimeConfig["memory"]> = {}): L
     },
     ...overrides,
   },
+  plugins: [],
   entities: {
     jarvis: { id: "jarvis", displayName: "Jarvis" },
   },

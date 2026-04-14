@@ -239,6 +239,20 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 - 每一轮只会根据用户显式写出的 `$skill-name` 去读取对应 `SKILL.md` 正文，并把正文作为 turn-scoped block 注入到当前 prompt。
 - 注入过的 `<skill>...</skill>` block 不会长期保存在 session 历史里；旧消息会在后续轮次进入模型前被清洗掉。
 
+### `[plugins]`
+
+- `plugins`: plugin 模块列表。支持两种写法：
+  - 简单字符串：`plugins = ["./my-plugin.js", "@hijarvis/plugin-redis"]`
+  - 带配置对象：`plugins = [{ module = "./my-plugin.js", config = { host = "localhost" } }]`
+
+Plugin 系统在 `phase-init-stores` 时加载，支持三种扩展能力：
+
+- **注册 hooks**：通过 `context.hooks.register()` 接入任意 pipeline 阶段
+- **贡献 Skills**：返回 `{ skills: [...] }` 直接注入 catalog，不需要文件系统路径
+- **封装 Memory Provider**：通过 `tools:resolve` hook 追加 memory tools，非侵入式
+
+Plugin 模块期望导出 `createPlugin: PluginFactory` 或 `default: JarPlugin`。详见 [Plugins](./plugins.md)。
+
 ### `[memory]`
 
 - `enabled`: 是否启用长期记忆工具。默认：`true`。
@@ -337,3 +351,5 @@ When config semantics change, update these files in the same patch:
 - `jar.example.toml`
 - `docs/configuration.md`
 - `docs/README.md` when a new config-related document is added
+
+When plugin system changes, also update `docs/plugins.md`.

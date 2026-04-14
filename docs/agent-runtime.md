@@ -255,7 +255,7 @@ Jar is intentionally minimal right now:
 - prompt compaction is applied via the `packages/jar-core/src/compaction/` subsystem to keep long conversations within context limits; runtime sanitizes the current materialized lane view, then runs a staged pipeline of snip-style oldest-history trimming, lightweight tool-result reduction, summary compaction, and final payload assembly; summary generation also retries with progressively truncated history if the compaction request itself is too large, and compaction metadata is persisted into lane events/items while the compacted head is recorded as a lane checkpoint rather than as authoritative snapshot truth
 - skills catalog overlays are supported, but full skill bodies remain turn-scoped and are not persisted as long-lived system prompt text
 - no built-in tools beyond text file IO and shell execution
-- hooks are available for internal feature decomposition but not yet exposed as an external plugin API
+- hooks are available and exposed as an external plugin API via the plugin system (see [Plugins](./plugins.md))
 
 ## Hooks
 

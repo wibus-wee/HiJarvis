@@ -13,8 +13,13 @@ export const preparePrompt = async (
     ?? ctx.command.skillTriggerText
     ?? buildDefaultSkillTriggerText(ctx.command);
 
+  // Merge plugin-contributed skills into the runtime skills catalog
+  const skills = ctx.pluginSkills && ctx.pluginSkills.length > 0 && ctx.config.skills
+    ? { ...ctx.config.skills, entries: [...ctx.config.skills.entries, ...ctx.pluginSkills] }
+    : ctx.config.skills;
+
   const prepared = await preparePromptWithSkills(promptOverride ?? ctx.command.prompt, {
-    skills: ctx.config.skills,
+    skills,
     triggerText: skillTriggerText,
     logger: ctx.requestLogger,
   });

@@ -233,6 +233,15 @@ export {
   serializeFaultError,
 } from "./fault.js";
 
+// --- Plugin system ---
+export type {
+  JarPlugin,
+  LoadedPlugin,
+  PluginFactory,
+  PluginInstallContext,
+  PluginInstallResult,
+} from "./plugins/index.js";
+
 // --- Re-exported upstream types ---
 export type { AgentMessage } from "@mariozechner/pi-agent-core";
 export type { ImageContent, UserMessage } from "@mariozechner/pi-ai";

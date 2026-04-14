@@ -58,6 +58,7 @@ const createConfig = (memory: Partial<LoadedMemoryConfig> = {}): LoadedRuntimeCo
     },
     ...memory,
   },
+  plugins: [],
   entities: {
     jarvis: {
       id: "jarvis",

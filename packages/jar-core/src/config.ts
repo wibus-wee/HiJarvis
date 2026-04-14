@@ -60,6 +60,14 @@ const entityConfigSchema = z.object({
   system_prompt: nonEmptyString.optional(),
 }).strict();
 
+const pluginEntrySchema = z.union([
+  nonEmptyString,
+  z.object({
+    module: nonEmptyString,
+    config: z.record(z.string(), z.unknown()).optional(),
+  }).strict(),
+]);
+
 const rawConfigSchema = z.object({
   agent: z.object({
     provider: nonEmptyString,
@@ -94,6 +102,7 @@ const rawConfigSchema = z.object({
   }).strict().default({}),
   memory: memoryConfigSchema.default({}),
   skills: skillsConfigSchema.default({}),
+  plugins: z.array(pluginEntrySchema).default([]),
   entities: z.record(nonEmptyString, entityConfigSchema).default({}),
 }).strict();
 
@@ -118,6 +127,7 @@ export type LoadedBaseConfig = {
     rootDir: string;
   };
   memory: LoadedMemoryConfig;
+  plugins: Array<{ module: string; config: Record<string, unknown> }>;
   entities: Record<string, LoadedEntityConfig>;
   platformIdentities: Record<string, PlatformIdentityRef>;
   platform: Record<string, unknown>;
@@ -164,6 +174,7 @@ export const loadBaseConfig = async (
     parsedConfig.sessions.root_dir ?? ".jar/sessions",
   );
   const memoryConfig = normalizeMemoryConfig(parsedConfig.memory, configDirectory);
+  const pluginsConfig = normalizePluginsConfig(parsedConfig.plugins, configDirectory);
 
   return {
     configFilePath: absoluteConfigPath,
@@ -205,6 +216,7 @@ export const loadBaseConfig = async (
       rootDir: sessionRoot,
     },
     memory: memoryConfig,
+    plugins: pluginsConfig,
     entities: normalizeEntitiesConfig(parsedConfig.entities),
     platformIdentities: normalizePlatformIdentities(
       parsedConfig.platform,
@@ -212,6 +224,22 @@ export const loadBaseConfig = async (
     ),
     platform: parsedConfig.platform,
   };
+};
+
+const normalizePluginsConfig = (
+  plugins: RawConfig["plugins"],
+  configDirectory: string,
+): Array<{ module: string; config: Record<string, unknown> }> => {
+  return plugins.map((entry) => {
+    if (typeof entry === "string") {
+      const modulePath = path.isAbsolute(entry) ? entry : path.resolve(configDirectory, entry);
+      return { module: modulePath, config: {} };
+    }
+    const modulePath = path.isAbsolute(entry.module)
+      ? entry.module
+      : path.resolve(configDirectory, entry.module);
+    return { module: modulePath, config: entry.config ?? {} };
+  });
 };
 
 const normalizeMemoryConfig = (

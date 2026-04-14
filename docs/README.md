@@ -18,6 +18,7 @@
 | [Tools](./tools.md) | 内置工具定义、参数形状、返回值与工作区安全规则 |
 | [Memory](./memory.md) | 长期记忆 provider 模型、per-entity 隔离、filesystem 存储与记忆工具 |
 | [Skills](./skills.md) | Skill 发现、catalog 渲染、显式 per-turn 注入与持久化规则 |
+| [Plugins](./plugins.md) | Plugin 系统：JarPlugin 接口、配置声明、hooks 注册、skills 注入与 memory provider 封装 |
 
 ## Gateways & Surfaces
 
