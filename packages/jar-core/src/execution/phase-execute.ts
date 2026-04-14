@@ -2,7 +2,7 @@ import {
   executePromptWithPolicy,
   type PromptExecutionObserver,
 } from "../prompt-executor.js";
-import { IngressExecutionError, type MessageIngressResult, type SubscribedContext } from "./types.js";
+import { type MessageIngressResult, type SubscribedContext } from "./types.js";
 
 const defaultWriters = {
   stderr: process.stderr,
@@ -36,13 +36,7 @@ export const executeAndFinalize = async (ctx: SubscribedContext): Promise<Messag
       durationMs: Date.now() - ctx.startTime,
       message,
     });
-    throw new IngressExecutionError({
-      message,
-      threadId: ctx.conversation.threadId,
-      turnId: ctx.tracker.turnId,
-      runId: ctx.tracker.runId,
-      cause: error,
-    });
+    throw error;
   }
 
   await ctx.tracker.complete(ctx.outputRef.text);

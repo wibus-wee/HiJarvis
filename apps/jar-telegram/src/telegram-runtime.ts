@@ -10,7 +10,7 @@ import {
   parseSideQuestionCommand,
   executeIngressCommand,
   loadRuntimeConfig,
-  IngressExecutionError,
+  getFaultEnvelope,
   maybeExecuteSideQuestionIngress,
   type MessageIngressCommand,
   type LoadedRuntimeConfig,
@@ -889,13 +889,16 @@ const respondInTelegramConversation = async (options: {
       runId = runId ?? settledResult.runId;
     }
     const normalizedError = toError(error);
+    const envelope = getFaultEnvelope(error);
     options.logger.error("telegram.reply_failed", {
       durationMs: Date.now() - startedAt,
       message: normalizedError.message,
       threadId: options.threadId,
-      turnId: turnId ?? (error instanceof IngressExecutionError ? error.turnId : undefined),
-      runId: runId ?? (error instanceof IngressExecutionError ? error.runId : undefined),
+      turnId: turnId ?? envelope?.turnId,
+      runId: runId ?? envelope?.runId,
       conversationKey: options.conversationKey,
+      fault: envelope?.fault,
+      phase: envelope?.phase,
     });
 
     if (!emittedText) {

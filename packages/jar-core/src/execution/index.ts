@@ -20,4 +20,4 @@ export type {
   SideQuestionIngressResult,
   IngressResult,
 } from "./types.js";
-export { IngressExecutionError } from "./types.js";
+export type { FaultEnvelope, Fault, FaultKind, FaultPhase, FaultSeverity, FaultSource } from "./types.js";

@@ -103,7 +103,7 @@ export interface HookMap {
 
   /** Fired when an error is caught during execution. Observe only. */
   "error:caught": {
-    in: { error: unknown; phase: string };
+    in: { error: unknown; phase: string; envelope?: unknown };
     out: void;
   };
 }

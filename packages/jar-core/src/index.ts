@@ -165,7 +165,6 @@ export {
 } from "./ingress.js";
 export {
   executeIngressCommand,
-  IngressExecutionError,
   maybeExecuteSideQuestionIngress,
   resolveEntityMemoryScope,
   resolveMessageTools,
@@ -173,6 +172,14 @@ export {
   type MessageIngressResult,
   type SideQuestionIngressResult,
 } from "./execution-service.js";
+export type {
+  Fault,
+  FaultEnvelope,
+  FaultKind,
+  FaultPhase,
+  FaultSeverity,
+  FaultSource,
+} from "./execution/index.js";
 export type {
   AppendConversationMessageInput,
   ApplyCheckpointInput,
@@ -216,6 +223,14 @@ export type {
   TapHookPoint,
   TransformHookPoint,
 } from "./hooks/index.js";
+
+// --- Error & fault utilities ---
+export {
+  attachFaultEnvelope,
+  classifyError,
+  getFaultEnvelope,
+  serializeFaultError,
+} from "./fault.js";
 
 // --- Re-exported upstream types ---
 export type { AgentMessage } from "@mariozechner/pi-agent-core";

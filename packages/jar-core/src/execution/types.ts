@@ -33,32 +33,6 @@ export type SideQuestionIngressResult = {
 
 export type IngressResult = MessageIngressResult | SideQuestionIngressResult;
 
-export class IngressExecutionError extends Error {
-  readonly threadId?: string;
-  readonly turnId?: string;
-  readonly runId?: string;
-
-  constructor(options: {
-    message: string;
-    threadId?: string;
-    turnId?: string;
-    runId?: string;
-    cause?: unknown;
-  }) {
-    super(options.message, options.cause === undefined ? {} : { cause: options.cause });
-    this.name = "IngressExecutionError";
-    if (options.threadId !== undefined) {
-      this.threadId = options.threadId;
-    }
-    if (options.turnId !== undefined) {
-      this.turnId = options.turnId;
-    }
-    if (options.runId !== undefined) {
-      this.runId = options.runId;
-    }
-  }
-}
-
 // ── Phase context types ───────────────────────────────────────
 
 /**
@@ -114,3 +88,5 @@ export type AgentContext = PreparedPromptContext & {
 export type SubscribedContext = AgentContext & {
   outputRef: { text: string };
 };
+
+export type { FaultEnvelope, Fault, FaultKind, FaultPhase, FaultSeverity, FaultSource } from "../fault.js";

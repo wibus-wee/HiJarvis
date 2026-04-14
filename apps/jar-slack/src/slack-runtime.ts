@@ -7,7 +7,7 @@ import {
   buildThreadIdFromScope,
   createLogger,
   executeIngressCommand,
-  IngressExecutionError,
+  getFaultEnvelope,
   loadRuntimeConfig,
   maybeExecuteSideQuestionIngress,
   type MessageIngressCommand,
@@ -1012,13 +1012,16 @@ const respondInSlackThread = async ({
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const envelope = getFaultEnvelope(error);
     logger.error("slack.reply_failed", {
       durationMs: Date.now() - startedAt,
       message,
       threadId,
-      turnId: turnId ?? (error instanceof IngressExecutionError ? error.turnId : undefined),
-      runId: runId ?? (error instanceof IngressExecutionError ? error.runId : undefined),
+      turnId: turnId ?? envelope?.turnId,
+      runId: runId ?? envelope?.runId,
       scopeKey,
+      fault: envelope?.fault,
+      phase: envelope?.phase,
     });
 
     const fallback = await client.slackClient.chat.postMessage({

@@ -228,6 +228,21 @@ Errors can come from several layers:
 
 `packages/jar-core/src/prompt-executor.ts` classifies failures into categories (`timeout`, `rate_limit`, `network`, `auth`, `input`, `tool`, `aborted`, `unknown`) and retries retryable failures using exponential backoff. Upstream `5xx` responses, including HTML error pages returned by reverse proxies such as Cloudflare, are treated as retryable `network` failures rather than terminal `input` errors.
 
+### Core Fault Model
+
+Jar now normalizes runtime failures into a lightweight fault envelope so the root cause stack is preserved while execution context is explicit.
+
+- **Fault**: the root-cause classification (`kind`, `code`, `retryable`, `severity`, `source`, `cause`).
+- **FaultEnvelope**: attaches execution context (`phase`, `threadId`, `turnId`, `runId`, `durationMs`).
+
+The pipeline applies a single classification step at the execution boundary and attaches the envelope without rewriting stack traces. Hooks receive the envelope for observability and do not alter control flow.
+
+Key rules:
+
+- Only the ingress boundary attaches the envelope.
+- Phases do not wrap errors; they throw the raw cause.
+- Logs record `fault` plus a serialized error/cause tree so root stacks remain visible.
+
 ## Current Boundaries
 
 Jar is intentionally minimal right now:

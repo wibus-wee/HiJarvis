@@ -152,7 +152,7 @@ describe("createHookRegistry", () => {
 
     assert.equal(registry.has("error:caught"), false);
 
-    await registry.tap("error:caught", { error: new Error("test"), phase: "test" });
+    await registry.tap("error:caught", { error: new Error("test"), phase: "test", envelope: undefined });
     assert.equal(called, false);
   });
 
@@ -255,7 +255,7 @@ describe("createHookRegistry", () => {
   it("tap with no hooks is a no-op", async () => {
     const registry = createHookRegistry();
     // Should resolve immediately without error.
-    await registry.tap("error:caught", { error: null, phase: "test" });
+    await registry.tap("error:caught", { error: null, phase: "test", envelope: undefined });
   });
 
   it("multiple hooks on different points are independent", async () => {
@@ -277,7 +277,7 @@ describe("createHookRegistry", () => {
     await registry.tap("session:loaded", {} as any);
     assert.deepEqual(calls, ["session"]);
 
-    await registry.tap("error:caught", { error: null, phase: "test" });
+    await registry.tap("error:caught", { error: null, phase: "test", envelope: undefined });
     assert.deepEqual(calls, ["session", "error"]);
   });
 });

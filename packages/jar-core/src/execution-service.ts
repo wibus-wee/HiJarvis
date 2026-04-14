@@ -19,11 +19,17 @@ import {
   subscribeEvents,
   executeAndFinalize,
 } from "./execution/index.js";
+import {
+  attachFaultEnvelope,
+  classifyError,
+  getFaultEnvelope,
+  serializeFaultError,
+  type FaultEnvelope,
+} from "./fault.js";
 
 // Re-export types and utilities that were previously defined here,
 // so the public API surface remains unchanged.
 export {
-  IngressExecutionError,
   type MessageIngressResult,
   type SideQuestionIngressResult,
   type IngressResult,
@@ -37,6 +43,7 @@ import type {
   MessageIngressResult,
   SideQuestionIngressResult,
   IngressResult,
+  PreparedPromptContext,
 } from "./execution/types.js";
 
 export const executeIngressCommand = async (options: {
@@ -108,8 +115,11 @@ const executeMessageCommand = async (
 
   const stores = initStores(config, command, logger, hooks);
   let session: Awaited<ReturnType<typeof loadSession>> | undefined;
+  let tracker: PreparedPromptContext["tracker"] | undefined;
+  let phase: FaultEnvelope["phase"] = "ingress";
 
   try {
+    phase = "session";
     session = await loadSession(stores);
 
     // ── Hook: session:loaded ─────────────────────────────────────
@@ -131,18 +141,23 @@ const executeMessageCommand = async (
       skillTriggerText = transformed.skillTriggerText;
     }
 
+    phase = "prompt";
     const prompt = await preparePrompt(session, promptInput, skillTriggerText);
+    tracker = prompt.tracker;
 
     // ── Hook: prompt:prepared ────────────────────────────────────
     if (hooks?.has("prompt:prepared")) {
       await hooks.tap("prompt:prepared", prompt);
     }
 
+    phase = "agent";
     const agentCtx = await createAgentContext(prompt);
     const subscribed = subscribeEvents(agentCtx);
+    phase = "execution";
     const result = await executeAndFinalize(subscribed);
 
     // ── Hook: response:transform ─────────────────────────────────
+    phase = "response";
     const durationMs = Date.now() - stores.startTime;
     if (hooks?.has("response:transform")) {
       const transformed = await hooks.transform("response:transform", {
@@ -159,11 +174,34 @@ const executeMessageCommand = async (
 
     return result;
   } catch (error) {
+    const durationMs = Date.now() - stores.startTime;
+    const existingEnvelope = getFaultEnvelope(error);
+    const envelope: FaultEnvelope = existingEnvelope ?? {
+      fault: classifyError(error),
+      phase,
+      threadId: session?.conversation.threadId,
+      turnId: tracker?.turnId,
+      runId: tracker?.runId,
+      startedAt: stores.startTime,
+      durationMs,
+    };
+    const wrapped = existingEnvelope ? error : attachFaultEnvelope(error, envelope);
+
+    session?.requestLogger?.error("thread.execution_failed", {
+      phase: envelope.phase,
+      durationMs,
+      threadId: envelope.threadId,
+      turnId: envelope.turnId,
+      runId: envelope.runId,
+      fault: envelope.fault,
+      error: serializeFaultError(wrapped),
+    });
+
     // ── Hook: error:caught ───────────────────────────────────────
     if (hooks?.has("error:caught")) {
-      await hooks.tap("error:caught", { error, phase: "execution" });
+      await hooks.tap("error:caught", { error: wrapped, phase: envelope.phase, envelope });
     }
-    throw error;
+    throw wrapped;
   } finally {
     if (session) {
       unregisterLiveThreadForSideQuestion(session.conversation.threadId);
