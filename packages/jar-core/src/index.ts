@@ -237,10 +237,18 @@ export {
 export type {
   JarPlugin,
   LoadedPlugin,
+  PluginContribution,
+  PluginDiagnostic,
+  PluginDiagnosticLevel,
+  PluginDiagnosticPhase,
   PluginFactory,
   PluginInstallContext,
   PluginInstallResult,
+  PluginManager,
+  PluginManagerFailureMode,
+  PluginManagerOptions,
 } from "./plugins/index.js";
+export { createPluginManager } from "./plugins/index.js";
 
 // --- Re-exported upstream types ---
 export type { AgentMessage } from "@mariozechner/pi-agent-core";

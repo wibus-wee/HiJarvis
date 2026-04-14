@@ -1,0 +1,306 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+import type { LoadedRuntimeConfig } from "../config.js";
+import type { HookRegistry } from "../hooks/index.js";
+import type { SkillEntry } from "../skills.js";
+import type { PromptSection } from "../prompt-builder.js";
+import type {
+  JarPlugin,
+  PluginContribution,
+  PluginDiagnostic,
+  PluginManager,
+  PluginManagerFailureMode,
+  PluginManagerOptions,
+  PluginFactory,
+} from "./types.js";
+
+type PluginModule = {
+  createPlugin?: PluginFactory;
+  default?: JarPlugin;
+};
+
+type InstalledPlugin = {
+  name: string;
+  modulePath: string;
+  skills: SkillEntry[];
+  overlays: PromptSection[];
+  cleanup?: () => void | Promise<void>;
+};
+
+export const createPluginManager = (options: PluginManagerOptions): PluginManager => {
+  const config: LoadedRuntimeConfig = options.config;
+  const hooks: HookRegistry = options.hooks;
+  const logger = options.logger;
+  const failureMode: PluginManagerFailureMode = options.defaultFailureMode ?? "isolate";
+  const pluginEntries = options.plugins ?? config.plugins;
+
+  let loaded = false;
+  let shutdown = false;
+
+  const diagnostics: PluginDiagnostic[] = [];
+  const installed: InstalledPlugin[] = [];
+  const pluginNames = new Set<string>();
+
+  const record = (diag: PluginDiagnostic): void => {
+    diagnostics.push(diag);
+    const eventName = `plugin.v2.${diag.phase}`;
+    if (diag.level === "error") {
+      logger?.error?.(eventName, diag);
+    } else if (diag.level === "warn") {
+      logger?.warn?.(eventName, diag);
+    } else {
+      logger?.info?.(eventName, diag);
+    }
+  };
+
+  const isolate = async (fn: () => Promise<void>): Promise<void> => {
+    if (failureMode === "fail_fast") {
+      await fn();
+      return;
+    }
+    try {
+      await fn();
+    } catch {
+      // Diagnostics should already include the failure details.
+    }
+  };
+
+  const manager: PluginManager = {
+    async load(): Promise<void> {
+      if (shutdown) {
+        throw new Error("PluginManager.load() called after shutdown().");
+      }
+      if (loaded) {
+        return;
+      }
+      loaded = true;
+
+      for (const entry of pluginEntries) {
+        const modulePath = entry.module;
+        const pluginConfig = entry.config;
+
+        await isolate(async () => {
+          let plugin: JarPlugin;
+          try {
+            plugin = await loadPluginFromModule(modulePath, pluginConfig);
+          } catch (error) {
+            record({
+              modulePath,
+              phase: "import",
+              level: "error",
+              message: toErrorMessage(error, `Failed to import plugin module "${modulePath}"`),
+            });
+            throw error;
+          }
+
+          if (pluginNames.has(plugin.name)) {
+            record({
+              pluginName: plugin.name,
+              modulePath,
+              phase: "contribution_merge",
+              level: "warn",
+              message: `Duplicate plugin name "${plugin.name}" detected. Skipping module "${modulePath}".`,
+            });
+            return;
+          }
+          pluginNames.add(plugin.name);
+
+          let result: Awaited<ReturnType<JarPlugin["install"]>>;
+          try {
+            result = await plugin.install({ config, hooks });
+          } catch (error) {
+            record({
+              pluginName: plugin.name,
+              modulePath,
+              phase: "install",
+              level: "error",
+              message: toErrorMessage(error, `Plugin "${plugin.name}" install() failed`),
+            });
+            throw error;
+          }
+
+          installed.push({
+            name: plugin.name,
+            modulePath,
+            skills: result.skills ?? [],
+            overlays: result.overlays ?? [],
+            cleanup: result.cleanup,
+          });
+
+          record({
+            pluginName: plugin.name,
+            modulePath,
+            phase: "install",
+            level: "info",
+            message: `Plugin "${plugin.name}" installed.`,
+          });
+        });
+      }
+    },
+
+    getContributions(): PluginContribution {
+      const skills: SkillEntry[] = [];
+      const overlays: PromptSection[] = [];
+
+      for (const plugin of installed) {
+        skills.push(...plugin.skills);
+        overlays.push(...plugin.overlays);
+      }
+
+      const skillsOverlay = renderPluginSkillsOverlay(skills, config.skills?.maxCatalogChars ?? 12_000);
+      if (skillsOverlay !== null) {
+        overlays.push(skillsOverlay);
+      }
+
+      return { skills, overlays };
+    },
+
+    getDiagnostics(): PluginDiagnostic[] {
+      return diagnostics.slice();
+    },
+
+    async shutdown(): Promise<void> {
+      if (shutdown) {
+        return;
+      }
+      shutdown = true;
+
+      for (let index = installed.length - 1; index >= 0; index -= 1) {
+        const plugin = installed[index];
+        if (!plugin?.cleanup) {
+          continue;
+        }
+
+        await isolate(async () => {
+          try {
+            await plugin.cleanup?.();
+          } catch (error) {
+            record({
+              pluginName: plugin.name,
+              modulePath: plugin.modulePath,
+              phase: "shutdown",
+              level: "error",
+              message: toErrorMessage(error, `Plugin "${plugin.name}" cleanup() failed`),
+            });
+            throw error;
+          }
+
+          record({
+            pluginName: plugin.name,
+            modulePath: plugin.modulePath,
+            phase: "shutdown",
+            level: "info",
+            message: `Plugin "${plugin.name}" cleanup() completed.`,
+          });
+        });
+      }
+    },
+  };
+
+  return manager;
+};
+
+const loadPluginFromModule = async (
+  modulePath: string,
+  pluginConfig: Record<string, unknown>,
+): Promise<JarPlugin> => {
+  const importTarget = path.isAbsolute(modulePath)
+    ? pathToFileURL(modulePath).href
+    : modulePath;
+
+  let mod: PluginModule;
+  try {
+    mod = await import(importTarget) as PluginModule;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to import plugin module "${modulePath}": ${message}`);
+  }
+
+  if (typeof mod.createPlugin === "function") {
+    let plugin: unknown;
+    try {
+      plugin = await mod.createPlugin(pluginConfig);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Plugin factory createPlugin() in "${modulePath}" failed: ${message}`);
+    }
+    assertPlugin(plugin, modulePath);
+    return plugin as JarPlugin;
+  }
+
+  if (mod.default !== undefined && mod.default !== null) {
+    assertPlugin(mod.default, modulePath);
+    return mod.default as JarPlugin;
+  }
+
+  throw new Error(
+    `Plugin module "${modulePath}" must export either createPlugin() or a default JarPlugin object`,
+  );
+};
+
+const assertPlugin = (value: unknown, modulePath: string): void => {
+  if (
+    value !== null &&
+    typeof value === "object" &&
+    typeof (value as JarPlugin).name === "string" &&
+    (value as JarPlugin).name.trim().length > 0 &&
+    typeof (value as JarPlugin).install === "function"
+  ) {
+    return;
+  }
+
+  throw new Error(
+    `Plugin module "${modulePath}" did not return a valid JarPlugin (requires non-empty name and install function)`,
+  );
+};
+
+const toErrorMessage = (error: unknown, fallback: string): string => {
+  if (error instanceof Error) {
+    return `${fallback}: ${error.message}`;
+  }
+  return `${fallback}: ${String(error)}`;
+};
+
+const renderPluginSkillsOverlay = (
+  entries: SkillEntry[],
+  maxChars: number,
+): PromptSection | null => {
+  const skills = entries.filter((skill) => skill.allowImplicitInvocation);
+  if (skills.length === 0) {
+    return null;
+  }
+
+  const headerLines = [
+    "## Plugin Skills",
+    "The following skills were contributed by plugins.",
+    "To use a skill, mention it as `$SkillName` in your message.",
+    "### Available plugin skills",
+  ];
+
+  const skillLines = skills.map((skill) => `- ${skill.name}: ${skill.description} (file: ${skill.path})`);
+  const lines = [...headerLines, ...skillLines];
+
+  if (estimateJoinedLength(lines) <= maxChars) {
+    return { body: lines.join("\n") };
+  }
+
+  const trimmed = skillLines.slice();
+  while (trimmed.length > 0) {
+    const candidate = [...headerLines, ...trimmed];
+    if (estimateJoinedLength(candidate) <= maxChars) {
+      return { body: candidate.join("\n") };
+    }
+    trimmed.pop();
+  }
+
+  return { body: headerLines.join("\n") };
+};
+
+const estimateJoinedLength = (lines: string[]): number => {
+  if (lines.length === 0) {
+    return 0;
+  }
+  return lines.reduce((total, line) => total + line.length, 0) + (lines.length - 1);
+};
+

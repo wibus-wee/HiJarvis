@@ -32,8 +32,14 @@ export const createAgentContext = async (ctx: PreparedPromptContext): Promise<Ag
       }
     : undefined;
 
+  const systemPromptOverlays = [
+    ...(ctx.config.agent.systemPromptOverlays ?? []),
+    ...(ctx.pluginOverlays ?? []),
+  ];
+
   const agent = createAgent({
     ...ctx.config.agent,
+    systemPromptOverlays,
     tools,
     logger: ctx.requestLogger,
     beforeToolCall,

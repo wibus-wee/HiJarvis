@@ -10,6 +10,8 @@ import type { Logger } from "./logger.js";
 import type { PromptInput } from "./prompt-executor.js";
 import { executeSideQuestion } from "./side-question/execute-side-question.js";
 import { unregisterLiveThreadForSideQuestion } from "./side-question/live-thread-registry.js";
+import type { PromptSection } from "./prompt-builder.js";
+import type { SkillEntry } from "./skills.js";
 
 import {
   initStores,
@@ -51,6 +53,7 @@ export const executeIngressCommand = async (options: {
   command: IngressCommand;
   logger?: Logger;
   hooks?: HookRegistry;
+  pluginOverrides?: { skills?: SkillEntry[]; overlays?: PromptSection[] };
 }): Promise<IngressResult> => {
   if (options.command.kind === "side_question") {
     const result = await executeSideQuestion({
@@ -68,7 +71,13 @@ export const executeIngressCommand = async (options: {
     };
   }
 
-  return executeMessageCommand(options.config, options.command, options.logger, options.hooks);
+  return executeMessageCommand(
+    options.config,
+    options.command,
+    options.logger,
+    options.hooks,
+    options.pluginOverrides,
+  );
 };
 
 export const maybeExecuteSideQuestionIngress = async (options: {
@@ -105,6 +114,7 @@ const executeMessageCommand = async (
   command: MessageIngressCommand,
   logger?: Logger,
   hooks?: HookRegistry,
+  pluginOverrides?: { skills?: SkillEntry[]; overlays?: PromptSection[] },
 ): Promise<MessageIngressResult> => {
 
   // ── Hook: ingress:before ─────────────────────────────────────
@@ -113,7 +123,7 @@ const executeMessageCommand = async (
     command = transformed.command;
   }
 
-  const stores = await initStores(config, command, logger, hooks);
+  const stores = await initStores(config, command, logger, hooks, pluginOverrides);
   let session: Awaited<ReturnType<typeof loadSession>> | undefined;
   let tracker: PreparedPromptContext["tracker"] | undefined;
   let phase: FaultEnvelope["phase"] = "ingress";

@@ -13,6 +13,7 @@ import type {
 import type { MessageIngressCommand } from "../ingress.js";
 import type { SkillEntry, SkillPromptInjection } from "../skills.js";
 import type { ThreadExecutionTracker } from "../thread-execution.js";
+import type { PromptSection } from "../prompt-builder.js";
 
 // ── Result types ──────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ export type StoresContext = {
   usageStore: UsageStore;
   startTime: number;
   pluginSkills?: SkillEntry[];
+  pluginOverlays?: PromptSection[];
 };
 
 /**

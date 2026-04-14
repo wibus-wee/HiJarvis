@@ -1,6 +1,7 @@
 import type { LoadedRuntimeConfig } from "../config.js";
 import type { HookRegistry } from "../hooks/index.js";
 import type { SkillEntry } from "../skills.js";
+import type { PromptSection } from "../prompt-builder.js";
 
 // ── Plugin context ───────────────────────────────────
 
@@ -35,12 +36,61 @@ export type PluginInstallResult = {
   skills?: SkillEntry[];
 
   /**
+   * Additional prompt overlay sections to inject into the system prompt.
+   *
+   * This is intentionally low-level: it is a plain prompt section that is
+   * appended at agent creation time (opt-in by the caller).
+   */
+  overlays?: PromptSection[];
+
+  /**
    * Optional teardown function.
    *
    * Called when the plugin is unloaded (e.g. on process exit or config reload).
    * Use this to close connections, flush buffers, etc.
    */
   cleanup?: () => void | Promise<void>;
+};
+
+// ── v2: manager-facing diagnostics and contributions ─────────
+
+export type PluginContribution = {
+  skills: SkillEntry[];
+  overlays: PromptSection[];
+};
+
+export type PluginDiagnosticPhase =
+  | "import"
+  | "create"
+  | "install"
+  | "contribution_merge"
+  | "shutdown";
+
+export type PluginDiagnosticLevel = "info" | "warn" | "error";
+
+export type PluginDiagnostic = {
+  pluginName?: string;
+  modulePath: string;
+  phase: PluginDiagnosticPhase;
+  level: PluginDiagnosticLevel;
+  message: string;
+};
+
+export type PluginManagerFailureMode = "isolate" | "fail_fast";
+
+export type PluginManagerOptions = {
+  config: LoadedRuntimeConfig;
+  hooks: HookRegistry;
+  logger?: { info?: (msg: string, fields?: any) => void; warn?: (msg: string, fields?: any) => void; error?: (msg: string, fields?: any) => void };
+  defaultFailureMode?: PluginManagerFailureMode;
+  plugins?: Array<{ module: string; config: Record<string, unknown> }>;
+};
+
+export type PluginManager = {
+  load(): Promise<void>;
+  getContributions(): PluginContribution;
+  getDiagnostics(): PluginDiagnostic[];
+  shutdown(): Promise<void>;
 };
 
 // ── Plugin interface ─────────────────────────────────
