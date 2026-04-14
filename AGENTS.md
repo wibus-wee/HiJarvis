@@ -47,4 +47,4 @@ If you have questions about how to use pi-mono's agent framework, these resource
 - https://github.com/badlogic/pi-mono/blob/main/packages/agent/README.md
 - node_modules/@mariozechner/pi-agent-core
 - node_modules/@mariozechner/pi-ai
-- agent-design-skill: Guide for designing and implementing agents.
+- agent-design: Guide for designing and implementing agents.
