@@ -19,14 +19,13 @@ You can also pipe the prompt through stdin:
 echo "Run git status and explain the workspace state." | pnpm dev -- --config ./apps/jar-cli/jar.toml
 ```
 
-For long-running adapters, the workspace uses the same source-first model during development:
+For long-running gateway plugins, the workspace uses the same source-first model during development:
 
 ```bash
-pnpm dev:slack
-pnpm --filter @hijarvis/jar-telegram dev -- --config ../../jar.toml
+pnpm dev:runtime -- --config ../../jar.toml
 ```
 
-Both commands run via `tsx`, and internal packages such as `@hijarvis/jar-core` are consumed from source without a separate build step.
+The runtime process runs via `tsx`, and internal packages such as `@hijarvis/jar-core`, `@hijarvis/jar-plugin-slack`, and `@hijarvis/jar-plugin-telegram` are consumed from source without a separate build step.
 
 ## Config Layout
 
@@ -174,7 +173,7 @@ The built-in `web_search` tool reads the same active provider selection. Today t
 
 每个 Slack identity 代表一个真实 Slack bot/app 身份。一个 identity 绑定一个 entity，并拥有自己独立的 Socket Mode 凭证、观察窗口和会话命名空间。
 
-core 只会把这些配置归一化成一个最小引用 `{ id, platform, entityId }`。Slack 特定字段仍然保留在 `jar.toml` 中，但只由 Slack gateway 自己解析和校验。
+core 只会把这些配置归一化成一个最小引用 `{ id, platform, entityId }`。Slack 特定字段仍然保留在 `jar.toml` 中，但只由 Slack gateway plugin 自己解析和校验。
 
 - `entity`: 该 Slack bot 绑定到哪个 Jarvis entity。
 - `bot_token`: Slack bot token。用于 Socket Mode + Web API 调用。
@@ -182,7 +181,7 @@ core 只会把这些配置归一化成一个最小引用 `{ id, platform, entity
 - `signing_secret`: Slack signing secret，用于 SDK 初始化。
 - `context_lookback_minutes`: 当该 bot 在某个 channel scope 里还没有上一轮回复时，bootstrap fallback 向前回看顶层消息的时间窗。默认：`15`。
 - `context_message_limit`: 每一轮 channel-scope prompt 里，最多带入多少条顶层 channel 消息。默认：`12`。
-Slack gateway 现在读取 `jar.toml` 里的 `platform.slack.identities.*`，并为每个 identity 启动一个独立的 Slack runtime state。
+Slack gateway plugin 现在读取 `jar.toml` 里的 `platform.slack.identities.*`，并为每个 identity 启动一个独立的 Slack runtime state。
 
 这些环境变量仍然可以覆盖对应配置：
 
@@ -198,14 +197,14 @@ Slack gateway 现在读取 `jar.toml` 里的 `platform.slack.identities.*`，并
 
 每个 Telegram identity 代表一个真实 Telegram bot token。一个 identity 绑定一个 entity，并维护自己独立的 allowlist 和会话命名空间。
 
-core 同样只保留 `{ id, platform, entityId }` 这组通用 identity 引用；Telegram 特定字段继续由 Telegram gateway 自己解析和校验。
+core 同样只保留 `{ id, platform, entityId }` 这组通用 identity 引用；Telegram 特定字段继续由 Telegram gateway plugin 自己解析和校验。
 
 - `entity`: 该 Telegram bot 绑定到哪个 Jarvis entity。
 - `bot_token`: Telegram bot token。
 - `allowed_chat_ids`: 可选 chat id allowlist。配置后，这个 bot 只会处理这些 chat 的消息。
 - `allowed_usernames`: 可选 username allowlist。配置后，这个 bot 只会处理这些发送者发来的消息。
 
-Telegram gateway 默认使用 long polling，而不是 webhook，并且现在以 `platform.telegram.identities.*` 作为真实多 bot 配置入口。
+Telegram gateway plugin 默认使用 long polling，而不是 webhook，并且现在以 `platform.telegram.identities.*` 作为真实多 bot 配置入口。
 
 这些环境变量可以覆盖对应配置：
 
@@ -302,8 +301,8 @@ Plugin 模块期望导出 `createPlugin: PluginFactory` 或 `default: JarPlugin`
 ## Runtime Notes
 
 - `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-core` and wires it into the same core package.
-- `apps/jar-slack/src/slack-runtime.ts` reads `platform.slack`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
-- `apps/jar-telegram/src/telegram-runtime.ts` reads `platform.telegram`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
+- `packages/jar-plugin-slack/src/runtime.ts` reads `platform.slack`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
+- `packages/jar-plugin-telegram/src/runtime.ts` reads `platform.telegram`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
 - `packages/jar-core/src/config.ts` resolves `skills` at startup and passes the catalog/runtime metadata into `packages/jar-core/src/runtime.ts` and `packages/jar-core/src/thread-executor.ts`.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
@@ -318,17 +317,17 @@ Plugin 模块期望导出 `createPlugin: PluginFactory` 或 `default: JarPlugin`
 
 ## Validation
 
-Core runtime parsing lives in `packages/jar-core/src/config.ts`, using `smol-toml` for TOML parsing and `zod` for schema validation. Adapter-specific validation is handled by the adapters themselves.
+Core runtime parsing lives in `packages/jar-core/src/config.ts`, using `smol-toml` for TOML parsing and `zod` for schema validation. Platform-specific validation is handled by the gateway plugins themselves.
 
 Core validation happens in two stages:
 
 1. Validate the top-level TOML shape.
 2. Validate the active provider config selected by `agent.provider`.
 
-Platform-specific tables are validated when the adapter starts:
+Platform-specific tables are validated when the gateway plugin starts:
 
-- Slack: `apps/jar-slack/src/slack-config.ts`
-- Telegram: `apps/jar-telegram/src/telegram-config.ts`
+- Slack: `packages/jar-plugin-slack/src/config.ts`
+- Telegram: `packages/jar-plugin-telegram/src/config.ts`
 
 Common failure cases:
 
@@ -346,8 +345,8 @@ Common failure cases:
 When config semantics change, update these files in the same patch:
 
 - `packages/jar-core/src/config.ts`
-- `apps/jar-slack/src/slack-config.ts`
-- `apps/jar-telegram/src/telegram-config.ts`
+- `packages/jar-plugin-slack/src/config.ts`
+- `packages/jar-plugin-telegram/src/config.ts`
 - `jar.example.toml`
 - `docs/configuration.md`
 - `docs/README.md` when a new config-related document is added

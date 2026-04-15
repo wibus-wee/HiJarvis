@@ -4,11 +4,13 @@ This page documents how Jar boots inside the workspace, resolves configuration, 
 
 ## Current Shape
 
-Jar 现在支持两类 runtime surface：
+Jar 现在需要区分三个层次：
 
-1. `apps/jar-cli`：one-shot CLI 和 Ink REPL。
-2. `apps/jar-slack`：基于 Slack Socket Mode 的 Slack gateway。
-3. `apps/jar-telegram`：基于 grammY long polling 的 Telegram gateway。
+1. process surface：如 `apps/jar-cli`，负责启动一个本地进程和交互界面。
+2. core runtime：`packages/jar-core`，负责配置、execution pipeline、hooks、prompt、tools、lanes、memory、skills。
+3. plugin-installed runtimes：通过 `plugins` 安装进 core runtime 的长期能力包，例如 Slack / Telegram gateway plugin。
+
+当前主线已经不是“每个平台都有一个完全独立的 app”。更准确地说：Jar 使用 source-first 的 core runtime，然后允许平台接入层既可以做成独立 app，也可以做成 plugin。
 
 CLI invocation 现在统一走 ingress command 流程：
 
@@ -22,29 +24,29 @@ CLI invocation 现在统一走 ingress command 流程：
 8. Either streams assistant text to stdout through the CLI adapter or renders the Ink TUI package (`--repl`).
 9. Persists lane tape facts plus turn/run/item and raw event projections through the persistence ports in `packages/jar-core/src/persistence.ts` backed by `packages/jar-core/src/lanes/`.
 
-Slack gateway 的流程不同：
+Slack gateway plugin 的流程是：
 
-1. Starts an HTTP server in `apps/jar-slack/src/main.ts`.
-2. Loads the same `jar.toml` through `packages/jar-core/src/config.ts`.
-3. Iterates `platform.slack.identities.*` and starts one Slack Socket Mode runtime per configured identity.
+1. `phase-init-stores` loads `@hijarvis/jar-plugin-slack` through `createPluginManager()`.
+2. The plugin reads `platform.slack.identities.*` from the loaded runtime config.
+3. The plugin starts one Slack Socket Mode runtime per configured identity inside `install()`.
 4. Each Slack runtime handles `app_mention` and message events for its own bot connection.
 5. On a new `@mention`, the current Slack identity subscribes the thread, collects a bounded window of top-level channel messages before the mention, and composes an observed-context prompt.
 6. On follow-up messages inside a subscribed Slack thread, the current identity routes the message into that identity's local thread without rebuilding channel history.
-7. Builds a Slack-scoped ingress command and executes it through `packages/jar-core/src/execution-service.ts`.
-8. Persists tape/event/checkpoint data plus thread-scoped turn/run/item records through `packages/jar-core/src/lanes/`.
-9. Emits summary logs through `packages/jar-core/src/logger.ts` so the request path is readable without replaying raw events.
+7. The plugin builds a Slack-scoped ingress command and executes it through `packages/jar-core/src/execution-service.ts`.
+8. `jar-core` persists tape/event/checkpoint data plus thread-scoped turn/run/item records through `packages/jar-core/src/lanes/`.
+9. The plugin returns a `cleanup()` function so shutdown can stop all Socket Mode runtimes in reverse install order.
 
-Telegram gateway 则是：
+Telegram gateway plugin 则是：
 
-1. Starts an HTTP health server in `apps/jar-telegram/src/main.ts`.
-2. Loads the same `jar.toml` through `packages/jar-core/src/config.ts`.
-3. Iterates `platform.telegram.identities.*` and starts one grammY bot per configured identity.
+1. `phase-init-stores` loads `@hijarvis/jar-plugin-telegram` through `createPluginManager()`.
+2. The plugin reads `platform.telegram.identities.*` from the loaded runtime config.
+3. The plugin starts one grammY bot per configured identity inside `install()`.
 4. Each Telegram bot handles all private chat messages, plus group messages that explicitly mention that bot or reply to that bot's message.
-5. Coalesces rapid follow-up messages per chat/topic in memory so long-running LLM turns do not interleave.
-6. Builds a Telegram prompt from the current message, optional reply context, and any skipped messages.
-7. Builds a Telegram-scoped ingress command and executes it through `packages/jar-core/src/execution-service.ts`.
-8. Streams assistant text back to Telegram through `@grammyjs/stream`.
-9. Persists tape/event/checkpoint data plus thread-scoped turn/run/item records through `packages/jar-core/src/lanes/`.
+5. The plugin coalesces rapid follow-up messages per chat/topic in memory so long-running LLM turns do not interleave.
+6. The plugin builds a Telegram prompt from the current message, optional reply context, and any skipped messages.
+7. The plugin builds a Telegram-scoped ingress command and executes it through `packages/jar-core/src/execution-service.ts`.
+8. Assistant text is streamed back to Telegram through `@grammyjs/stream`.
+9. The plugin returns a `cleanup()` function so shutdown can stop all Telegram runners.
 
 ## Entrypoint
 
@@ -64,15 +66,18 @@ Responsibilities:
 The workspace packages are split as follows:
 
 - `packages/jar-core`: ingress normalization, application-layer execution services, runtime assembly, prompt execution policy, TOML config loading, tool registration, and tape-backed thread/lane persistence
+- `packages/jar-plugin-slack`: Slack platform runtime packaged as a Jar plugin
+- `packages/jar-plugin-telegram`: Telegram platform runtime packaged as a Jar plugin
 - `packages/jar-repl-ink`: Ink UI and TUI state handling
 - `apps/jar-cli`: argv parsing, one-shot output rendering, workspace wiring
-- `apps/jar-slack`: Slack Socket Mode gateway, observed context collection, and thread-first reply behavior
-- `apps/jar-telegram`: grammY-based Telegram gateway, trigger filtering, queue coalescing, and streaming replies
+
+The old “gateway as dedicated app” shape may still exist in some docs or historical code paths, but the plugin-based path is now the architecture that `jar.toml [[plugins]]` activates.
 
 The workspace now uses a source-first runtime model:
 
 - `packages/jar-core` and `packages/jar-repl-ink` export `src/index.ts` directly.
-- `apps/jar-cli`, `apps/jar-slack`, and `apps/jar-telegram` execute through `tsx`.
+- `apps/jar-cli` executes through `tsx`.
+- plugin packages such as `@hijarvis/jar-plugin-slack` and `@hijarvis/jar-plugin-telegram` are consumed source-first through workspace package resolution.
 - local development does not require a prebuild step for internal workspace packages before starting an app.
 
 ## CLI Contract
@@ -114,10 +119,10 @@ After schema validation, runtime-specific checks happen:
 - tool limits such as `max_file_bytes` and `command_timeout_ms` must be positive integers
 - retry and timeout values must satisfy policy constraints (for example, `retry_max_delay_ms >= retry_initial_delay_ms`)
 
-Adapter-specific tables are validated when each adapter starts:
+Platform-specific tables are validated when each gateway plugin starts:
 
-- Slack: `apps/jar-slack/src/slack-config.ts`
-- Telegram: `apps/jar-telegram/src/telegram-config.ts`
+- Slack: `packages/jar-plugin-slack/src/config.ts`
+- Telegram: `packages/jar-plugin-telegram/src/config.ts`
 
 ## Model Resolution
 
@@ -248,8 +253,8 @@ Key rules:
 Jar is intentionally minimal right now:
 
 - default CLI runs a single prompt per process (multi-turn is available in REPL/thread mode)
-- Slack transport exists, but only as a dedicated Socket Mode app in `apps/jar-slack`
-- Telegram transport exists as a dedicated grammY long-polling app in `apps/jar-telegram`
+- Slack transport is currently provided by `@hijarvis/jar-plugin-slack`
+- Telegram transport is currently provided by `@hijarvis/jar-plugin-telegram`
 - no provider-specific auth refresh flow
 - retry behavior is process-local and config-driven, but retry notices are now mirrored into session `items`
 - prompt compaction is applied via the `packages/jar-core/src/compaction/` subsystem to keep long conversations within context limits; runtime sanitizes the current materialized lane view, then runs a staged pipeline of snip-style oldest-history trimming, lightweight tool-result reduction, summary compaction, and final payload assembly; summary generation also retries with progressively truncated history if the compaction request itself is too large, and compaction metadata is persisted into lane events/items while the compacted head is recorded as a lane checkpoint rather than as authoritative snapshot truth

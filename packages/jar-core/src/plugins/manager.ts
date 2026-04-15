@@ -1,4 +1,5 @@
 import path from "node:path";
+import { access, readFile, readdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
 import type { AgentTool } from "@mariozechner/pi-agent-core";
@@ -91,7 +92,7 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
         await isolate(async () => {
           let plugin: JarPlugin;
           try {
-            plugin = await loadPluginFromModule(modulePath, pluginConfig);
+            plugin = await loadPluginFromModule(modulePath, pluginConfig, config.configFilePath);
           } catch (error) {
             record({
               modulePath,
@@ -224,10 +225,9 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
 const loadPluginFromModule = async (
   modulePath: string,
   pluginConfig: Record<string, unknown>,
+  configFilePath: string,
 ): Promise<JarPlugin> => {
-  const importTarget = path.isAbsolute(modulePath)
-    ? pathToFileURL(modulePath).href
-    : modulePath;
+  const importTarget = await resolvePluginImportTarget(modulePath, configFilePath);
 
   let mod: PluginModule;
   try {
@@ -257,6 +257,144 @@ const loadPluginFromModule = async (
   throw new Error(
     `Plugin module "${modulePath}" must export either createPlugin() or a default JarPlugin object`,
   );
+};
+
+const resolvePluginImportTarget = async (
+  modulePath: string,
+  configFilePath: string,
+): Promise<string> => {
+  if (path.isAbsolute(modulePath)) {
+    return pathToFileURL(modulePath).href;
+  }
+
+  try {
+    await import(modulePath);
+    return modulePath;
+  } catch (error) {
+    const workspaceModulePath = await resolveWorkspacePluginModule(modulePath, configFilePath);
+    if (workspaceModulePath !== null) {
+      return pathToFileURL(workspaceModulePath).href;
+    }
+    throw error;
+  }
+};
+
+const resolveWorkspacePluginModule = async (
+  packageName: string,
+  configFilePath: string,
+): Promise<string | null> => {
+  if (packageName.startsWith(".") || packageName.startsWith("/") || packageName.includes(":")) {
+    return null;
+  }
+
+  const workspaceRoot = await findWorkspaceRoot(path.dirname(configFilePath));
+  if (workspaceRoot === null) {
+    return null;
+  }
+
+  for (const workspaceDirectory of ["packages", "apps", "3rd"]) {
+    const manifestPath = await findWorkspacePackageManifest(
+      path.join(workspaceRoot, workspaceDirectory),
+      packageName,
+    );
+    if (manifestPath === null) {
+      continue;
+    }
+
+    const entryPath = await resolvePluginEntryFromManifest(manifestPath);
+    if (entryPath !== null) {
+      return entryPath;
+    }
+  }
+
+  return null;
+};
+
+const findWorkspaceRoot = async (startDirectory: string): Promise<string | null> => {
+  let currentDirectory = path.resolve(startDirectory);
+
+  while (true) {
+    try {
+      await access(path.join(currentDirectory, "pnpm-workspace.yaml"));
+      return currentDirectory;
+    } catch {
+      // Keep walking upward.
+    }
+
+    const parentDirectory = path.dirname(currentDirectory);
+    if (parentDirectory === currentDirectory) {
+      return null;
+    }
+    currentDirectory = parentDirectory;
+  }
+};
+
+const findWorkspacePackageManifest = async (
+  baseDirectory: string,
+  packageName: string,
+): Promise<string | null> => {
+  try {
+    const entries = await readdir(baseDirectory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const manifestPath = path.join(baseDirectory, entry.name, "package.json");
+      const manifest = await readPackageManifest(manifestPath);
+      if (manifest?.name === packageName) {
+        return manifestPath;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
+
+const resolvePluginEntryFromManifest = async (manifestPath: string): Promise<string | null> => {
+  const manifest = await readPackageManifest(manifestPath);
+  if (manifest === null) {
+    return null;
+  }
+
+  const packageDirectory = path.dirname(manifestPath);
+  const exportRoot = typeof manifest.exports === "object" && manifest.exports !== null
+    ? manifest.exports["."]
+    : undefined;
+  const candidates = [
+    typeof manifest.exports === "string" ? manifest.exports : undefined,
+    typeof exportRoot === "string" ? exportRoot : undefined,
+    typeof manifest.main === "string" ? manifest.main : undefined,
+    "./src/plugin.ts",
+    "./src/index.ts",
+    "./dist/plugin.js",
+    "./dist/index.js",
+  ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
+
+  for (const candidate of candidates) {
+    const resolvedPath = path.resolve(packageDirectory, candidate);
+    try {
+      await access(resolvedPath);
+      return resolvedPath;
+    } catch {
+      // Try next candidate.
+    }
+  }
+
+  return null;
+};
+
+const readPackageManifest = async (
+  manifestPath: string,
+): Promise<{ name?: string; main?: string; exports?: string | Record<string, unknown> } | null> => {
+  try {
+    const content = await readFile(manifestPath, "utf8");
+    return JSON.parse(content) as { name?: string; main?: string; exports?: string | Record<string, unknown> };
+  } catch {
+    return null;
+  }
 };
 
 const assertPlugin = (value: unknown, modulePath: string): void => {
@@ -323,4 +461,3 @@ const estimateJoinedLength = (lines: string[]): number => {
   }
   return lines.reduce((total, line) => total + line.length, 0) + (lines.length - 1);
 };
-

@@ -2,7 +2,7 @@
 
 Jar's long-term memory subsystem adds explicit, tool-driven memory on top of the existing thread/lane session history.
 
-Separately, the optional `memory-workspace` plugin provides a much thinner pattern: it reads a per-entity `MEMORY.md` file from the workspace and injects that content directly into the current turn prompt. It does not define a separate memory workflow or bespoke memory tools.
+Separately, the optional `memory-workspace` plugin provides a much thinner pattern: it injects a fixed `Workspace & Memory` guide into the system prompt, then reads a per-entity `MEMORY.md` file from the workspace and injects that content directly into the current turn prompt. It does not define a separate memory workflow or bespoke memory tools.
 
 The design goal is local-first memory with explicit promotion:
 
@@ -108,3 +108,9 @@ Core coverage lives in:
 - `packages/jar-core/src/memory/memory-tools.test.ts`
 - `packages/jar-core/src/execution-service.memory.test.ts`
 - `packages/jar-core/src/config.test.ts`
+
+## Workspace Memory (MEMORY.md + notes/)
+
+If you want compaction-safe, always-present context, see:
+
+- `docs/memory-workspace.md`

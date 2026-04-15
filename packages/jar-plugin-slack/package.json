@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/plugin.ts"
+  },
   "scripts": {
     "test": "tsx --test src/*.test.ts src/**/*.test.ts",
     "check": "tsc --noEmit",

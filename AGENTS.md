@@ -9,9 +9,7 @@
 ├── 3rd
 │   └── wechat-sdk - extracted WeChat API SDK with api, auth, media, messaging, storage, and util modules
 ├── apps
-│   ├── jar-cli - CLI entrypoint for one-shot runs, thread commands, and the Ink REPL surface
-│   ├── jar-slack - Slack Socket Mode gateway and identity supervisor with thread-first routing
-│   └── jar-telegram - Telegram long-polling gateway and identity supervisor with chat/topic routing
+│   └── jar-cli - CLI entrypoint for one-shot runs, thread commands, and the Ink REPL surface
 ├── docs
 │   ├── README.md - documentation index for runtime, compaction, sessions, tools, gateways, TUI, and SDK docs
 │   └── exec-plans - living implementation plans for large refactors and features
@@ -22,10 +20,12 @@
 │   │       ├── execution - phased execution pipeline with agent creation, session loading, prompt preparation, event subscription, and finalization
 │   │       ├── hooks - typed hook registry for intercepting and observing the execution pipeline (ingress, prompt, tools, response, errors)
 │   │       ├── lanes - tape-backed thread/lane persistence, materialization, checkpoints, and audit records
-│   │       ├── memory - long-term memory provider interface, filesystem provider, and memory tools
-│   │       ├── plugins - plugin system: JarPlugin interface, PluginFactory, dynamic module loader, and skill/hook contribution model
+│   │       ├── memory - long-term memory provider interface, filesystem provider, memory tools, and a MEMORY.md workspace plugin
+│   │       ├── plugins - plugin system: JarPlugin interface, package/path resolution, workspace package fallback, dynamic module loader, and skill/hook/tool/memory contribution model
 │   │       ├── side-question - /btw side-question live-thread registry and executor for ephemeral queries
 │   │       └── tools - built-in file, patch, bash, and web tools plus shared workspace safety helpers
+│   ├── jar-plugin-slack - Slack Socket Mode gateway packaged as a runtime plugin installed from `jar.toml`
+│   ├── jar-plugin-telegram - Telegram long-polling gateway packaged as a runtime plugin installed from `jar.toml`
 │   └── jar-repl-ink - Ink-based TUI package for the `--repl` experience
 └── research
     ├── claude-code-compaction - research notes on Claude Code's compaction system

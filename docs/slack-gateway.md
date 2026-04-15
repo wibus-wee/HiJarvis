@@ -1,6 +1,6 @@
 # Slack Gateway
 
-本页说明 `apps/jar-slack` 这个第一版 Slack 平台接入的运行方式、上下文组装规则，以及它和现有 Jar thread/lane runtime 的边界。
+本页说明 `@hijarvis/jar-plugin-slack` 这个 Slack 平台接入 plugin 的运行方式、上下文组装规则，以及它和现有 Jar thread/lane runtime 的边界。
 
 ## 目标
 
@@ -20,12 +20,12 @@
 
 ## 当前形态
 
-`apps/jar-slack` 是一个单独的 Node.js daemon，但它现在是一个 Slack identity supervisor，而不是单 bot daemon。它会为 `platform.slack.identities.*` 下的每个配置启动一个独立的 Slack Socket Mode runtime。
+`@hijarvis/jar-plugin-slack` 不是一个独立 app，而是安装在 Jar runtime 里的 Slack identity supervisor plugin。它会为 `platform.slack.identities.*` 下的每个配置启动一个独立的 Slack Socket Mode runtime。
 
-入口是：
+主要入口是：
 
-- `apps/jar-slack/src/main.ts`
-- `apps/jar-slack/src/slack-runtime.ts`
+- `packages/jar-plugin-slack/src/plugin.ts`
+- `packages/jar-plugin-slack/src/runtime.ts`
 
 服务会：
 
@@ -43,26 +43,31 @@
 开发时：
 
 ```bash
-pnpm dev:slack
+pnpm dev:runtime -- --config ../../jar.toml
 ```
 
-显式指定配置文件：
+这个命令会启动 Jar runtime，并在 `jar.toml` 声明了 `@hijarvis/jar-plugin-slack` 时装入 Slack gateway plugin。
 
-```bash
-pnpm --filter @hijarvis/jar-slack dev -- --config ./jar.toml
+核心前提是：
+
+```toml
+[[plugins]]
+module = "@hijarvis/jar-plugin-slack"
 ```
 
 如果你已经在 `jar.toml` 里配置了 `[logging].file_path`，开发时建议直接 `tail -f` 这个文件，而不是只盯着 Slack thread 本身。当前默认是 `stderr` 走 `pino-pretty`，文件走 `pino` JSONL。
 
 ## 配置来源
 
-Slack gateway 现在优先从 `jar.toml` 的 `platform.slack.identities.*` 读取配置。
+Slack gateway plugin 现在优先从 `jar.toml` 的 `platform.slack.identities.*` 读取配置。
 
 Socket Mode 需要在 Slack App 设置里开启，并生成 `xapp-...` app-level token。这个 token 必须带 `connections:write` 权限，用来调用 `apps.connections.open` 建立 WebSocket 连接。启用后不需要配置 `request_url`，但仍需勾选所需的 Event Subscriptions。
 
 仓库里提供了一份可导入的 manifest：
 
 - `apps/jar-slack/slack-app-manifest.yaml`
+
+这里的 `apps/jar-slack` 目前只保留 Slack app manifest 这类配套资源；主 runtime 路径已经迁移到 plugin 包。
 
 注意：
 
@@ -111,7 +116,7 @@ SLACK_APP_TOKEN=xapp-...
 SLACK_SIGNING_SECRET=...
 ```
 
-Jar Slack gateway 自己支持的 override：
+Jar Slack gateway plugin 自己支持的 override：
 
 ```bash
 JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES=15
@@ -128,7 +133,7 @@ JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT=12
 
 ## 运行日志
 
-Slack gateway 现在会输出一层摘要型运行日志，用于回答“这条请求现在跑到哪一步了”。
+Slack gateway plugin 现在会输出一层摘要型运行日志，用于回答“这条请求现在跑到哪一步了”。
 
 推荐把这层日志理解成开发排障视图，而不是最终审计真相：
 
@@ -151,7 +156,7 @@ Slack gateway 现在会输出一层摘要型运行日志，用于回答“这条
 
 ## 交互规则
 
-Slack gateway 现在明确把输入处理拆成三层：
+Slack gateway plugin 现在明确把输入处理拆成三层：
 
 1. transport event
 2. canonical message
@@ -213,7 +218,7 @@ Slack 现在支持在当前 identity thread 内直接使用 `/btw <question>`。
 
 ## Entity 与 Session 映射
 
-Slack gateway 现在不再把 Slack scope 直接当成“Jarvis 自己”。
+Slack gateway plugin 现在不再把 Slack scope 直接当成“Jarvis 自己”。
 
 真实形态是：
 
@@ -254,11 +259,11 @@ identity__slack_main__slack__thread__{channelId}__{threadTs}
 
 ## 上下文组装
 
-Slack adapter 只负责组装每一轮的 turn prompt，不负责 system prompt。system prompt 的最终文本由 `packages/jar-core/src/prompt-builder.ts` 在 runtime 层统一构造；Slack 通过同一个模块里的 `buildTurnPrompt()` 组装平台上下文。
+Slack plugin runtime 只负责组装每一轮的 turn prompt，不负责 system prompt。system prompt 的最终文本由 `packages/jar-core/src/prompt-builder.ts` 在 runtime 层统一构造；Slack 通过同一个模块里的 `buildTurnPrompt()` 组装平台上下文。
 
 ## 回复格式化
 
-Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标准 Markdown 先转换成 `mrkdwn` 再塞进 `section`。
+Slack gateway plugin 现在优先使用 Slack 官方 `markdown` block，而不是把标准 Markdown 先转换成 `mrkdwn` 再塞进 `section`。
 
 当前策略是：
 
@@ -316,7 +321,7 @@ Slack gateway 现在优先使用 Slack 官方 `markdown` block，而不是把标
 
 最小验证路径：
 
-1. 启动 `apps/jar-slack`
+1. 启动带有 `@hijarvis/jar-plugin-slack` 的 Jar runtime
 2. 在 Slack App 中启用 Socket Mode，并配置 `SLACK_APP_TOKEN`
 3. 在一个 channel 中连续发几条顶层消息
 4. `@mention` Jarvis，确认它在 thread 中回复，并能引用上一次 Jarvis channel 回复之后的顶层消息

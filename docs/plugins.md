@@ -1,8 +1,26 @@
 # Plugins
 
-Plugin 系统让外部模块可以通过一个统一的 `plugins:` 配置字段扩展 Jar 的运行时行为，而无需修改 `jar-core` 内部代码。
+Plugin 系统让外部模块可以通过统一的 `plugins` 配置字段扩展 Jar 的运行时行为，而无需修改 `jar-core` 内部代码。
 
-一个典型的“轻插件”例子是 `packages/jar-core/src/memory/workspace-plugin.ts`：它不增加新系统边界，只是在 `prompt:transform` 里读取工作区内的 `MEMORY.md` 并直接注入当前 turn prompt。
+一个典型的“轻插件”例子是 `packages/jar-core/src/memory/workspace-plugin.ts`：它不增加新系统边界，而是把固定的 `Workspace & Memory` 说明作为 system prompt overlay 注入，同时在 `prompt:transform` 里按当前 entity 读取工作区内的 `MEMORY.md` 并注入当前 turn prompt。
+
+另一个更重要的例子是当前仓库内的 Slack / Telegram gateway plugin：它们不是“给 agent 多加一个 tool”，而是把整个平台 runtime 作为 plugin 安装进来。这意味着 plugin 在 Jar 里已经不是纯粹的附加机制，而是 runtime 装配层的一部分。
+
+## Runtime Positioning
+
+当前架构里，plugin 位于 `jar-core` 执行管线之外、adapter surface 之内：
+
+1. `jar.toml` 先声明要装入哪些 plugin。
+2. `loadRuntimeConfig()` 负责把 plugin module 字段规范化，但不会提前 import 模块。
+3. `phase-init-stores` 调用 `createPluginManager().load()`，在任何 turn 执行前完成 plugin import 和 install。
+4. plugin 可以在 install 阶段启动长期运行的 adapter/gateway，并把 hooks、tools、skills、memory provider 注入主 runtime。
+5. 后续所有 ingress execution 都运行在“core runtime + installed plugins”这个组合体上。
+
+因此更准确的边界应该是：
+
+- `jar-core`: 通用执行内核、hooks、tool/memory/skills/lanes/prompt pipeline
+- app/surface: 进程入口、CLI/TUI/daemon 启动方式
+- plugins: runtime capability packs，包括 hook/tool/skill/memory 扩展，以及平台 gateway 安装
 
 ## 能力概览
 
@@ -34,8 +52,35 @@ port = 6379
 ```
 
 - 相对路径以配置文件所在目录为基准解析
-- 绝对路径和 npm 包名直接使用
+- 绝对路径和包名直接使用
 - `config` 子表原样透传给 `PluginFactory`，由 plugin 自己解释
+
+### 模块解析规则
+
+`plugins[*].module` 现在按下面的优先级解释：
+
+1. 绝对路径：直接作为文件模块导入
+2. `./` 或 `../` 开头的相对路径：相对于 `jar.toml` 所在目录解析
+3. 其他值：视为包名，先交给 Node 解析
+4. 如果 Node 解析失败，`jar-core` 会在当前 workspace 根目录下按 source-first 规则回退查找同名 workspace package
+
+workspace package 回退解析目前会在 `pnpm-workspace.yaml` 所在根目录下扫描：
+
+- `packages/*`
+- `apps/*`
+- `3rd/*`
+
+当找到 `package.json.name` 匹配的包后，按下列顺序查找插件入口：
+
+1. `package.json.exports["."]`
+2. `package.json.exports`（字符串形式）
+3. `package.json.main`
+4. `./src/plugin.ts`
+5. `./src/index.ts`
+6. `./dist/plugin.js`
+7. `./dist/index.js`
+
+这条回退链路的目标是支持 source-first workspace 开发，即使包还没有预构建、也没有安装到 `node_modules`，仍然可以通过包名声明 plugin。
 
 ## Plugin 接口
 
@@ -131,10 +176,12 @@ jar.toml plugins: [...]
        │
        ▼
 createPluginManager(config, hooks)   ← phase-init-stores（最早阶段）
+  resolve module path/package name
   import(modulePath)
   plugin.install({ config, hooks, services, logger })
     └─ hooks.register(...)           ← 立即生效，对后续所有 hook 调用点有效
     └─ services.register(...)        ← 注册供其他 plugin 使用的服务实例
+    └─ start long-lived gateway(s)   ← Slack / Telegram 这类 plugin 在这里启动平台 runtime
     └─ return { skills, tools, memoryProvider, ... }
        │
        ▼
@@ -310,14 +357,35 @@ export const createPlugin = (): JarPlugin => ({
 
 多个 plugin 都返回 `memoryProvider` 时，**最后加载的 plugin 生效**（last-wins）。加载顺序由 `jar.toml` 中的声明顺序决定。
 
+## 内置示例：Memory Workspace（MEMORY.md + notes/）
+
+仓库内置了一个“工作区记忆”示例 plugin：它在进程启动时读取 `MEMORY.md` 并作为 system prompt overlay 注入，同时通过 `tools:resolve` hook 为每个请求注入一组按 entity 隔离的 note 工具。
+
+实现位置：
+
+- `packages/jar-core/src/memory/workspace-plugin.ts`
+- 说明文档：`docs/memory-workspace.md`
+
+启用方式（本地 `tsx` 运行时）：
+
+```toml
+[[plugins]]
+module = "./packages/jar-core/src/memory/workspace-plugin.ts"
+
+[plugins.config]
+dir = ".jar/memory"
+```
+
 ## 相关文件
 
 | 文件 | 说明 |
 |------|------|
 | `packages/jar-core/src/plugins/types.ts` | `JarPlugin`、`PluginFactory`、`PluginInstallContext`、`PluginInstallResult`、`ServiceRegistry`、`PluginContribution` |
-| `packages/jar-core/src/plugins/manager.ts` | `createPluginManager()` 实现：动态 import、factory/default 导出约定、错误隔离、诊断记录 |
+| `packages/jar-core/src/plugins/manager.ts` | `createPluginManager()` 实现：包名/路径解析、workspace package 回退、动态 import、factory/default 导出约定、错误隔离、诊断记录 |
 | `packages/jar-core/src/plugins/index.ts` | re-exports |
 | `packages/jar-core/src/execution/phase-init-stores.ts` | plugin 加载时机，`createPluginManager` 调用点 |
 | `packages/jar-core/src/execution/resolve-tools.ts` | plugin tools 和 memoryProvider 的合并逻辑 |
 | `packages/jar-core/src/execution/phase-prepare-prompt.ts` | plugin skills 合并逻辑 |
 | `packages/jar-core/src/config.ts` | `plugins` 配置字段解析与路径归一化 |
+| `packages/jar-plugin-slack/src/plugin.ts` | Slack gateway plugin 入口 |
+| `packages/jar-plugin-telegram/src/plugin.ts` | Telegram gateway plugin 入口 |

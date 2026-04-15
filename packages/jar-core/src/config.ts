@@ -232,14 +232,24 @@ const normalizePluginsConfig = (
 ): Array<{ module: string; config: Record<string, unknown> }> => {
   return plugins.map((entry) => {
     if (typeof entry === "string") {
-      const modulePath = path.isAbsolute(entry) ? entry : path.resolve(configDirectory, entry);
+      const modulePath = normalizePluginModule(entry, configDirectory);
       return { module: modulePath, config: {} };
     }
-    const modulePath = path.isAbsolute(entry.module)
-      ? entry.module
-      : path.resolve(configDirectory, entry.module);
+    const modulePath = normalizePluginModule(entry.module, configDirectory);
     return { module: modulePath, config: entry.config ?? {} };
   });
+};
+
+const normalizePluginModule = (modulePath: string, configDirectory: string): string => {
+  if (path.isAbsolute(modulePath)) {
+    return modulePath;
+  }
+
+  if (modulePath.startsWith("./") || modulePath.startsWith("../")) {
+    return path.resolve(configDirectory, modulePath);
+  }
+
+  return modulePath;
 };
 
 const normalizeMemoryConfig = (

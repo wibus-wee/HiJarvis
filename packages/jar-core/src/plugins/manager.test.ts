@@ -189,7 +189,10 @@ test("PluginManager isolates import failures by default and records diagnostics"
 test("PluginManager resolves workspace package plugin modules by package name", async () => {
   const hooks = createHookRegistry();
   const manager = createPluginManager({
-    config: createRuntimeConfig(),
+    config: {
+      ...createRuntimeConfig(),
+      configFilePath: path.resolve(process.cwd(), "../../jar.toml"),
+    },
     hooks,
     plugins: [
       { module: "@hijarvis/jar-plugin-slack", config: {} },
@@ -199,7 +202,11 @@ test("PluginManager resolves workspace package plugin modules by package name", 
   await manager.load();
   const diagnostics = manager.getDiagnostics();
   assert.ok(
-    diagnostics.some((d) => d.phase === "install" && d.pluginName === "jar-gateway-slack" && d.level === "info"),
+    diagnostics.some(
+      (d) => d.phase === "install"
+        && d.pluginName === "jar-gateway-slack"
+        && d.modulePath === "@hijarvis/jar-plugin-slack",
+    ),
   );
 });
 

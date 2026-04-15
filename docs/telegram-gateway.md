@@ -1,6 +1,6 @@
 # Telegram Gateway
 
-本页说明 `apps/jar-telegram` 的运行方式、触发规则、thread 映射方式，以及它和现有 Jar runtime 的边界。
+本页说明 `@hijarvis/jar-plugin-telegram` 的运行方式、触发规则、thread 映射方式，以及它和现有 Jar runtime 的边界。
 
 ## 目标
 
@@ -20,12 +20,12 @@
 
 ## 当前形态
 
-`apps/jar-telegram` 是一个单独的 Node.js daemon，但它现在是一个 Telegram identity supervisor，而不是单 bot daemon。它会为 `platform.telegram.identities.*` 下的每个配置启动一个独立的 Telegram bot。
+`@hijarvis/jar-plugin-telegram` 不是一个独立 app，而是安装在 Jar runtime 里的 Telegram identity supervisor plugin。它会为 `platform.telegram.identities.*` 下的每个配置启动一个独立的 Telegram bot。
 
-入口是：
+主要入口是：
 
-- `apps/jar-telegram/src/main.ts`
-- `apps/jar-telegram/src/telegram-runtime.ts`
+- `packages/jar-plugin-telegram/src/plugin.ts`
+- `packages/jar-plugin-telegram/src/runtime.ts`
 
 服务会：
 
@@ -42,18 +42,21 @@
 开发时：
 
 ```bash
-pnpm dev:telegram
+pnpm dev:runtime -- --config ../../jar.toml
 ```
 
-显式指定配置文件：
+这个命令会启动 Jar runtime，并在 `jar.toml` 声明了 `@hijarvis/jar-plugin-telegram` 时装入 Telegram gateway plugin。
 
-```bash
-pnpm --filter @hijarvis/jar-telegram dev -- --config ./jar.toml
+核心前提是：
+
+```toml
+[[plugins]]
+module = "@hijarvis/jar-plugin-telegram"
 ```
 
 ## 配置来源
 
-Telegram gateway 现在优先从 `jar.toml` 的 `platform.telegram.identities.*` 读取配置。
+Telegram gateway plugin 现在优先从 `jar.toml` 的 `platform.telegram.identities.*` 读取配置。
 
 推荐形态：
 
@@ -101,7 +104,7 @@ JARVIS_TELEGRAM_ALLOWED_USERNAMES=wibus,jarvisuser
 
 ## 触发规则
 
-Telegram 现在也支持在当前 chat/topic 对应的 identity thread 中直接使用 `/btw <question>`。
+Telegram gateway plugin 现在也支持在当前 chat/topic 对应的 identity thread 中直接使用 `/btw <question>`。
 
 - `/btw` 读取当前 thread 的 live in-memory state
 - `/btw` 返回一次性 side question 回复
@@ -122,7 +125,7 @@ Telegram 现在也支持在当前 chat/topic 对应的 identity thread 中直接
 
 ## Entity 与 Session 映射
 
-Telegram gateway 现在区分三层：
+Telegram gateway plugin 现在区分三层：
 
 - `platform identity`：真实 Telegram bot 身份，例如 `telegram_main`
 - `entity`：该 Telegram bot 绑定的 Jarvis 身份，例如 `jarvis` 或 `pm`
@@ -172,7 +175,7 @@ Telegram Bot API 不提供像 Slack channel history 那样的“按需回看一�
 
 ## Streaming 行为
 
-Telegram gateway 使用 `@grammyjs/stream`：
+Telegram gateway plugin 使用 `@grammyjs/stream`：
 
 - assistant text delta 会边生成边推送到 Telegram draft/message
 - 如果模型这轮没有产生文本，会发一个简短 fallback reply
@@ -180,7 +183,7 @@ Telegram gateway 使用 `@grammyjs/stream`：
 
 ## 为什么 queue 仍然保留在内存
 
-第一版 Telegram gateway 的内存态只承担：
+第一版 Telegram gateway plugin 的内存态只承担：
 
 - 同一 chat/topic 的串行处理
 - 快速连发消息的批量合并
@@ -196,7 +199,7 @@ Telegram gateway 使用 `@grammyjs/stream`：
 
 最小验证路径：
 
-1. 启动 `apps/jar-telegram`
+1. 启动带有 `@hijarvis/jar-plugin-telegram` 的 Jar runtime
 2. 在 Telegram 私聊里连续发送两三条消息，确认可以走同一个 thread
 3. 发送一个较长请求，确认回复以 streaming 方式出现
 4. 在群聊里 `@mention` bot，确认它只在被触发时回复
