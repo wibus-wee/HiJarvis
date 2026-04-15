@@ -37,7 +37,13 @@ export interface HookMap {
 
   /** Transform the prompt before skill injection and preparation. */
   "prompt:transform": {
-    in: { session: SessionContext; prompt: PromptInput; skillTriggerText: string };
+    in: {
+      config: LoadedRuntimeConfig;
+      command: MessageIngressCommand;
+      session: SessionContext;
+      prompt: PromptInput;
+      skillTriggerText: string;
+    };
     out: { prompt: PromptInput; skillTriggerText: string };
   };
 
@@ -173,11 +179,11 @@ export interface HookRegistry {
    * registry.register({
    *   point: "prompt:transform",
    *   name: "inject-time",
-   *   handler: (input) => {
-   *     // input is typed as { session, prompt, skillTriggerText }
-   *     // must return { prompt, skillTriggerText }
-   *   },
-   * });
+     *   handler: (input) => {
+     *     // input is typed as { config, command, session, prompt, skillTriggerText }
+     *     // must return { prompt, skillTriggerText }
+     *   },
+     * });
    * ```
    */
   register<P extends HookPoint>(reg: HookRegistration<P>): () => void;

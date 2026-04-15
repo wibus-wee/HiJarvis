@@ -350,6 +350,32 @@ namespace = "jarvis-memory"
   }
 });
 
+test("loadAgentConfig keeps package-name plugin modules unchanged", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[[plugins]]
+module = "@hijarvis/jar-plugin-slack"
+
+[[plugins]]
+module = "./plugins/local-plugin.ts"
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.plugins, [
+      { module: "@hijarvis/jar-plugin-slack", config: {} },
+      { module: path.join(path.dirname(configPath), "plugins", "local-plugin.ts"), config: {} },
+    ]);
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
 test("loadAgentConfig reads logging config from jar.toml", async () => {
   const { provider, model } = pickProviderAndModel();
   const configPath = await writeConfigFile(`

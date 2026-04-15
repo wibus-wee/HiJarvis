@@ -46,6 +46,8 @@ describe("createHookRegistry", () => {
     });
 
     const result = await registry.transform("prompt:transform", {
+      config: {} as any,
+      command: {} as any,
       session: {} as any,
       prompt: "hello",
       skillTriggerText: "hello",

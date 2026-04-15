@@ -143,6 +143,8 @@ const executeMessageCommand = async (
 
     if (hooks?.has("prompt:transform")) {
       const transformed = await hooks.transform("prompt:transform", {
+        config,
+        command,
         session,
         prompt: promptInput,
         skillTriggerText,

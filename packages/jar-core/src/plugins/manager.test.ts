@@ -186,6 +186,23 @@ test("PluginManager isolates import failures by default and records diagnostics"
   assert.ok(diagnostics.some((d) => d.phase === "import" && d.level === "error"));
 });
 
+test("PluginManager resolves workspace package plugin modules by package name", async () => {
+  const hooks = createHookRegistry();
+  const manager = createPluginManager({
+    config: createRuntimeConfig(),
+    hooks,
+    plugins: [
+      { module: "@hijarvis/jar-plugin-slack", config: {} },
+    ],
+  });
+
+  await manager.load();
+  const diagnostics = manager.getDiagnostics();
+  assert.ok(
+    diagnostics.some((d) => d.phase === "install" && d.pluginName === "jar-gateway-slack" && d.level === "info"),
+  );
+});
+
 test("PluginManager collects tools contributed by plugins", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jar-plugin-tools-"));
   const pluginPath = path.join(tempDir, "tools-plugin.ts");
@@ -368,4 +385,3 @@ test("ServiceRegistry allows plugins to share instances across install() calls",
     delete (globalThis as any).__serviceConsumerSaw;
   }
 });
-

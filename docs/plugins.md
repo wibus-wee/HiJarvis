@@ -2,6 +2,8 @@
 
 Plugin 系统让外部模块可以通过一个统一的 `plugins:` 配置字段扩展 Jar 的运行时行为，而无需修改 `jar-core` 内部代码。
 
+一个典型的“轻插件”例子是 `packages/jar-core/src/memory/workspace-plugin.ts`：它不增加新系统边界，只是在 `prompt:transform` 里读取工作区内的 `MEMORY.md` 并直接注入当前 turn prompt。
+
 ## 能力概览
 
 一个 plugin 可以做五件事：
