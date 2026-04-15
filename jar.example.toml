@@ -133,3 +133,21 @@ max_web_response_bytes = 65536
 [sessions]
 # Optional. Session storage root, relative to the config file when not absolute.
 root_dir = ".jar/sessions"
+
+# ── memory-workspace plugin ──────────────────────────────────────────────────
+# Enables MEMORY.md-style persistent memory:
+#   - MEMORY.md is automatically injected into the system prompt on every startup
+#   - Agent can read/write notes/ files and update MEMORY.md via workspace tools
+#   - Coexists with the JSONL memory system above
+#
+# [[plugins]]
+# module = "./packages/jar-core/src/memory/workspace-plugin.ts"
+#
+# [plugins.config]
+# dir = ".jar/memory"   # Optional. Defaults to ".jar/memory" (same root as JSONL memory)
+
+[[plugins]]
+module = "@hijarvis/jar-plugin-slack"
+
+[[plugins]]
+module = "@hijarvis/jar-plugin-telegram"

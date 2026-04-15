@@ -5,15 +5,16 @@ import { App, LogLevel } from "@slack/bolt";
 import {
   buildTurnPrompt,
   buildThreadIdFromScope,
-  createLogger,
   executeIngressCommand,
   getFaultEnvelope,
-  loadRuntimeConfig,
   maybeExecuteSideQuestionIngress,
   type MessageIngressCommand,
   type LoadedRuntimeConfig,
   type Logger,
   type PlatformIdentityRef,
+  type PluginContribution,
+  type ServiceRegistry,
+  type HookRegistry,
 } from "@hijarvis/jar-core";
 import { z } from "zod";
 
@@ -24,11 +25,11 @@ import {
   formatChannelContextBlock,
   formatQueuedMessagesBlock,
   type SlackMessage,
-} from "./slack-prompt.js";
+} from "./prompt.js";
 import {
   parseSlackPlatformConfig,
   type SlackPlatformIdentityConfig,
-} from "./slack-config.js";
+} from "./config.js";
 
 const slackGatewayEnvSchema = z.object({
   SLACK_BOT_TOKEN: z.string().trim().min(1).optional(),
@@ -37,10 +38,6 @@ const slackGatewayEnvSchema = z.object({
   JARVIS_SLACK_CONTEXT_LOOKBACK_MINUTES: z.coerce.number().int().positive().optional(),
   JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT: z.coerce.number().int().positive().optional(),
 });
-
-type SlackGatewayRuntimeOptions = {
-  configPath: string;
-};
 
 type SlackGatewayEnv = z.infer<typeof slackGatewayEnvSchema>;
 
@@ -145,6 +142,8 @@ type SlackGatewayState = {
   identity: SlackGatewayIdentity;
   observedContextLimits: ObservedContextLimits;
   runtime: LoadedRuntimeConfig;
+  hooks: HookRegistry;
+  services: ServiceRegistry;
   slackConfig: SlackPlatformIdentityConfig;
   logger: Logger;
   slackClient: App["client"];
@@ -161,23 +160,26 @@ const maxQueueSize = 20;
 const seenEventTtlMs = 5 * 60_000;
 const seenMessageTtlMs = 5 * 60_000;
 
-export const startSlackGateway = async (
-  options: SlackGatewayRuntimeOptions,
-): Promise<void> => {
-  const runtimeConfig = await loadRuntimeConfig(options.configPath);
-  const logger = createLogger(runtimeConfig.logging).child({
-    component: "slack_gateway",
-  });
+export type StopFn = () => Promise<void>;
+
+export const startSlackIdentities = async (
+  config: LoadedRuntimeConfig,
+  hooks: HookRegistry,
+  services: ServiceRegistry,
+  logger: Logger,
+): Promise<StopFn[]> => {
   const env = loadSlackGatewayEnv(process.env);
-  const slackConfigs = parseSlackPlatformConfig(runtimeConfig.platform);
-  const identities = Object.values(runtimeConfig.platformIdentities).filter(
+  const slackConfigs = parseSlackPlatformConfig(config.platform);
+  const identities = Object.values(config.platformIdentities).filter(
     (identity): identity is PlatformIdentityRef => identity.platform === "slack",
   );
+
+  const stops: StopFn[] = [];
 
   for (const identityConfig of identities) {
     const slackConfig = slackConfigs[identityConfig.id];
     if (slackConfig === undefined) {
-      throw new Error(`Missing Slack runtime config for identity \"${identityConfig.id}\"`);
+      throw new Error(`Missing Slack runtime config for identity "${identityConfig.id}"`);
     }
 
     const tokens = resolveSlackTokens(slackConfig, env);
@@ -199,13 +201,16 @@ export const startSlackGateway = async (
     });
 
     const identity = await resolveBotIdentity(app);
+    const identityLogger = logger.child({ identityId: identityConfig.id, entityId: identityConfig.entityId });
     const state: SlackGatewayState = {
       identityConfig,
       identity,
       observedContextLimits,
-      runtime: runtimeConfig,
+      runtime: config,
+      hooks,
+      services,
       slackConfig,
-      logger: logger.child({ identityId: identityConfig.id, entityId: identityConfig.entityId }),
+      logger: identityLogger,
       slackClient: app.client,
       subscriptions: new Set<string>(),
       queues: new Map<string, ThreadQueueState>(),
@@ -215,25 +220,26 @@ export const startSlackGateway = async (
       seenMessages: new Map<string, number>(),
     };
 
-    state.logger.info("slack.gateway_initialized", {
-      configPath: path.resolve(options.configPath),
+    identityLogger.info("slack.gateway_initialized", {
       botUserId: identity.botUserId,
       contextLookbackMinutes: observedContextLimits.lookbackMinutes,
       contextMessageLimit: observedContextLimits.maxMessages,
-      logLevel: runtimeConfig.logging.level,
-      logToStderr: runtimeConfig.logging.stderr,
-      logFilePath: runtimeConfig.logging.filePath,
     });
 
     registerSlackHandlers(app, state);
     await app.start();
     process.stdout.write(
-      `Jar Slack identity ${identityConfig.id} running in Socket Mode using ${path.resolve(options.configPath)}\n`,
+      `Jar Slack identity ${identityConfig.id} running in Socket Mode\n`,
     );
-    state.logger.info("slack.gateway_started", {
-      configPath: path.resolve(options.configPath),
+    identityLogger.info("slack.gateway_started");
+
+    stops.push(async () => {
+      identityLogger.info("slack.gateway_stopping");
+      await app.stop();
     });
   }
+
+  return stops;
 };
 
 const resolveSlackTokens = (
@@ -547,14 +553,13 @@ const handleQueueEntry = async (
   }
 
   await respondInSlackThread({
-    runtime: state.runtime,
+    state,
     channel: entry.channel,
     threadTs: entry.threadTs,
     scopeKey,
     threadId,
     prompt,
     skillTriggerText: buildSlackSkillTriggerText(current, skippedMessages),
-    client: state,
     logger: requestLogger,
   });
 };
@@ -914,45 +919,50 @@ const includesBotMention = (text: string, botUserId: string): boolean => {
 };
 
 const respondInSlackThread = async ({
-  runtime,
+  state,
   channel,
   threadTs,
   scopeKey,
   threadId,
   prompt,
   skillTriggerText,
-  client,
   logger,
 }: {
-  runtime: LoadedRuntimeConfig;
+  state: SlackGatewayState;
   channel: string;
   threadTs: string;
   scopeKey: string;
   threadId: string;
   prompt: string;
   skillTriggerText: string;
-  client: SlackGatewayState;
   logger: Logger;
 }): Promise<void> => {
   const startedAt = Date.now();
   let turnId: string | undefined;
   let runId: string | undefined;
+
+  // Retrieve contributions lazily — by the time events fire, jar-runtime has
+  // already registered them in the services registry after manager.load().
+  const contributions = state.services.get<PluginContribution>("pluginContributions");
+
   try {
     logger.info("slack.reply_generation_started", {
       promptChars: prompt.length,
     });
     const execution = await executeIngressCommand({
-      config: runtime,
+      config: state.runtime,
+      hooks: state.hooks,
       logger,
+      pluginOverrides: contributions ?? { skills: [], overlays: [], tools: [] },
       command: {
         kind: "message",
         source: {
           platform: "slack",
-          identityId: client.identityConfig.id,
+          identityId: state.identityConfig.id,
         },
         routing: {
           platform: "slack",
-          identityId: client.identityConfig.id,
+          identityId: state.identityConfig.id,
           scope: scopeKey.startsWith("channel:") && threadTs === scopeKey.replace(/^channel:/, "")
             ? {
               kind: "slack",
@@ -992,7 +1002,7 @@ const respondInSlackThread = async ({
       : "I finished processing that, but I do not have a textual reply to send.";
 
     const response = await postSlackTextReply({
-      client,
+      client: state,
       channel,
       threadTs,
       scopeKey,
@@ -1024,7 +1034,7 @@ const respondInSlackThread = async ({
       phase: envelope?.phase,
     });
 
-    const fallback = await client.slackClient.chat.postMessage({
+    const fallback = await state.slackClient.chat.postMessage({
       channel,
       thread_ts: threadTs,
       ...createSlackReplyPayload(
@@ -1032,7 +1042,7 @@ const respondInSlackThread = async ({
       ),
     });
     if (fallback.ts) {
-      client.lastReplyTsByScope.set(scopeKey, fallback.ts);
+      state.lastReplyTsByScope.set(scopeKey, fallback.ts);
     }
   }
 };

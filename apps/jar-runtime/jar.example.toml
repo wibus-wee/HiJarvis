@@ -1,0 +1,58 @@
+# jar.example.toml — Jar Runtime configuration example
+#
+# This file shows how to configure jar-runtime with gateway plugins.
+# Copy this to jar.toml and fill in your credentials.
+
+# ── Agent ──────────────────────────────────────────────────────────────────────
+
+[agent]
+provider = "anthropic"
+model = "claude-sonnet-4-5"
+
+# ── Sessions ───────────────────────────────────────────────────────────────────
+
+[sessions]
+root_dir = ".jar/sessions"
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+
+[logging]
+level = "info"
+stderr = true
+# file_path = ".jar/logs/runtime.log"
+
+# ── Plugins ────────────────────────────────────────────────────────────────────
+# Gateway plugins are loaded here. Each plugin starts its own platform client
+# and registers event handlers during install().
+
+[[plugins]]
+module = "@hijarvis/jar-plugin-slack"
+
+[[plugins]]
+module = "@hijarvis/jar-plugin-telegram"
+
+# ── Platform identities ────────────────────────────────────────────────────────
+
+[platform_identities.my-slack-bot]
+platform = "slack"
+entity = "my-entity"
+
+[platform_identities.my-telegram-bot]
+platform = "telegram"
+entity = "my-entity"
+
+# ── Platform config ────────────────────────────────────────────────────────────
+
+[platform.slack.identities.my-slack-bot]
+entity = "my-entity"
+# bot_token = "xoxb-..."       # or set SLACK_BOT_TOKEN env var
+# app_token = "xapp-..."       # or set SLACK_APP_TOKEN env var
+# signing_secret = "..."       # or set SLACK_SIGNING_SECRET env var
+context_lookback_minutes = 15
+context_message_limit = 12
+
+[platform.telegram.identities.my-telegram-bot]
+entity = "my-entity"
+# bot_token = "..."            # or set TELEGRAM_BOT_TOKEN env var
+# allowed_chat_ids = [123456]  # optional whitelist
+# allowed_usernames = ["alice", "bob"]  # optional whitelist

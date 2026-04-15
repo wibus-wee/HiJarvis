@@ -1,14 +1,12 @@
 {
-  "name": "@hijarvis/jar-telegram",
+  "name": "@hijarvis/jar-plugin-telegram",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
     "test": "tsx --test src/*.test.ts src/**/*.test.ts",
     "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "tsx src/main.ts"
+    "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",

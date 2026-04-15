@@ -64,44 +64,14 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
 
-  apps/jar-slack:
+  apps/jar-runtime:
     dependencies:
       '@hijarvis/jar-core':
         specifier: workspace:*
         version: link:../../packages/jar-core
-      '@slack/bolt':
-        specifier: ^4.6.0
-        version: 4.6.0(@types/express@5.0.6)
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
-
-  apps/jar-telegram:
-    dependencies:
-      '@grammyjs/auto-retry':
-        specifier: ^2.0.2
-        version: 2.0.2(grammy@1.42.0)
-      '@grammyjs/runner':
-        specifier: ^2.0.3
-        version: 2.0.3(grammy@1.42.0)
-      '@grammyjs/stream':
-        specifier: ^1.0.1
-        version: 1.0.1(grammy@1.42.0)
-      '@hijarvis/jar-core':
-        specifier: workspace:*
-        version: link:../../packages/jar-core
-      grammy:
-        specifier: ^1.42.0
-        version: 1.42.0
-      tsx:
-        specifier: ^4.21.0
-        version: 4.21.0
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
 
   packages/jar-core:
     dependencies:
@@ -132,6 +102,45 @@ importers:
       ts-pattern:
         specifier: ^5.8.0
         version: 5.9.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+
+  packages/jar-plugin-slack:
+    dependencies:
+      '@hijarvis/jar-core':
+        specifier: workspace:*
+        version: link:../jar-core
+      '@slack/bolt':
+        specifier: ^4.6.0
+        version: 4.6.0(@types/express@5.0.6)
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+
+  packages/jar-plugin-telegram:
+    dependencies:
+      '@grammyjs/auto-retry':
+        specifier: ^2.0.2
+        version: 2.0.2(grammy@1.42.0)
+      '@grammyjs/runner':
+        specifier: ^2.0.3
+        version: 2.0.3(grammy@1.42.0)
+      '@grammyjs/stream':
+        specifier: ^1.0.1
+        version: 1.0.1(grammy@1.42.0)
+      '@hijarvis/jar-core':
+        specifier: workspace:*
+        version: link:../jar-core
+      grammy:
+        specifier: ^1.42.0
+        version: 1.42.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
       zod:
         specifier: ^4.3.6
         version: 4.3.6

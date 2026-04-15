@@ -236,7 +236,6 @@ export {
 // --- Plugin system ---
 export type {
   JarPlugin,
-  LoadedPlugin,
   PluginContribution,
   PluginDiagnostic,
   PluginDiagnosticLevel,
@@ -247,8 +246,9 @@ export type {
   PluginManager,
   PluginManagerFailureMode,
   PluginManagerOptions,
+  ServiceRegistry,
 } from "./plugins/index.js";
-export { createPluginManager } from "./plugins/index.js";
+export { createPluginManager, createServiceRegistry } from "./plugins/index.js";
 
 // --- Re-exported upstream types ---
 export type { AgentMessage } from "@mariozechner/pi-agent-core";

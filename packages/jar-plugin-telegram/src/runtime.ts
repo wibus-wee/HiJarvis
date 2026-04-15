@@ -1,4 +1,3 @@
-import path from "node:path";
 import process from "node:process";
 
 import { autoRetry } from "@grammyjs/auto-retry";
@@ -6,16 +5,17 @@ import { run, type RunnerHandle } from "@grammyjs/runner";
 import { stream, type StreamFlavor } from "@grammyjs/stream";
 import {
   buildThreadIdFromScope,
-  createLogger,
-  parseSideQuestionCommand,
   executeIngressCommand,
-  loadRuntimeConfig,
   getFaultEnvelope,
   maybeExecuteSideQuestionIngress,
+  parseSideQuestionCommand,
   type MessageIngressCommand,
   type LoadedRuntimeConfig,
   type Logger,
   type PlatformIdentityRef,
+  type PluginContribution,
+  type HookRegistry,
+  type ServiceRegistry,
 } from "@hijarvis/jar-core";
 import {
   Bot,
@@ -29,21 +29,17 @@ import {
   buildTelegramPrompt,
   type TelegramMessage,
   type TelegramReplyContext,
-} from "./telegram-prompt.js";
+} from "./prompt.js";
 import {
   parseTelegramPlatformConfig,
   type TelegramPlatformIdentityConfig,
-} from "./telegram-config.js";
+} from "./config.js";
 
 const telegramGatewayEnvSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().trim().min(1).optional(),
   JARVIS_TELEGRAM_ALLOWED_CHAT_IDS: z.string().trim().min(1).optional(),
   JARVIS_TELEGRAM_ALLOWED_USERNAMES: z.string().trim().min(1).optional(),
 });
-
-type TelegramGatewayRuntimeOptions = {
-  configPath: string;
-};
 
 type TelegramGatewayEnv = z.infer<typeof telegramGatewayEnvSchema>;
 type TelegramGatewayContext = StreamFlavor<Context>;
@@ -98,6 +94,8 @@ type ConversationQueueState = {
 type TelegramGatewayState = {
   identityConfig: PlatformIdentityRef;
   runtime: LoadedRuntimeConfig;
+  hooks: HookRegistry;
+  services: ServiceRegistry;
   telegramConfig: TelegramPlatformIdentityConfig;
   logger: Logger;
   identity: TelegramIdentity;
@@ -114,23 +112,26 @@ type AsyncIteratorWaiter = {
 const queueEntryTtlMs = 60_000;
 const maxQueueSize = 20;
 
-export const startTelegramGateway = async (
-  options: TelegramGatewayRuntimeOptions,
-): Promise<void> => {
-  const runtimeConfig = await loadRuntimeConfig(options.configPath);
-  const logger = createLogger(runtimeConfig.logging).child({
-    component: "telegram_gateway",
-  });
+export type StopFn = () => Promise<void>;
+
+export const startTelegramIdentities = async (
+  config: LoadedRuntimeConfig,
+  hooks: HookRegistry,
+  services: ServiceRegistry,
+  logger: Logger,
+): Promise<StopFn[]> => {
   const env = loadTelegramGatewayEnv(process.env);
-  const telegramConfigs = parseTelegramPlatformConfig(runtimeConfig.platform);
-  const identities = Object.values(runtimeConfig.platformIdentities).filter(
+  const telegramConfigs = parseTelegramPlatformConfig(config.platform);
+  const identities = Object.values(config.platformIdentities).filter(
     (identity): identity is PlatformIdentityRef => identity.platform === "telegram",
   );
+
+  const stops: StopFn[] = [];
 
   for (const identityConfig of identities) {
     const telegramConfig = telegramConfigs[identityConfig.id];
     if (telegramConfig === undefined) {
-      throw new Error(`Missing Telegram runtime config for identity \"${identityConfig.id}\"`);
+      throw new Error(`Missing Telegram runtime config for identity "${identityConfig.id}"`);
     }
 
     const botToken = resolveTelegramBotToken(telegramConfig, env);
@@ -141,11 +142,14 @@ export const startTelegramGateway = async (
     const me = await bot.api.getMe();
     const allowedChatIds = resolveAllowedChatIds(telegramConfig, env);
     const allowedUsernames = resolveAllowedUsernames(telegramConfig, env);
+    const identityLogger = logger.child({ identityId: identityConfig.id, entityId: identityConfig.entityId });
     const state: TelegramGatewayState = {
       identityConfig,
-      runtime: runtimeConfig,
+      runtime: config,
+      hooks,
+      services,
       telegramConfig,
-      logger: logger.child({ identityId: identityConfig.id, entityId: identityConfig.entityId }),
+      logger: identityLogger,
       identity: {
         botId: me.id,
         username: me.username,
@@ -155,28 +159,28 @@ export const startTelegramGateway = async (
       queues: new Map<string, ConversationQueueState>(),
     };
 
-    state.logger.info("telegram.gateway_initialized", {
-      configPath: path.resolve(options.configPath),
+    identityLogger.info("telegram.gateway_initialized", {
       botId: me.id,
       botUsername: me.username,
       allowedChatCount: allowedChatIds?.size ?? 0,
       allowedUsernameCount: allowedUsernames?.size ?? 0,
-      logLevel: runtimeConfig.logging.level,
-      logToStderr: runtimeConfig.logging.stderr,
-      logFilePath: runtimeConfig.logging.filePath,
     });
 
     registerTelegramHandlers(bot, state);
     const runner = run(bot);
-    registerShutdownHandlers(runner, state.logger);
 
     process.stdout.write(
-      `Jar Telegram identity ${identityConfig.id} running in long polling mode using ${path.resolve(options.configPath)}\n`,
+      `Jar Telegram identity ${identityConfig.id} running in long polling mode\n`,
     );
-    state.logger.info("telegram.gateway_started", {
-      configPath: path.resolve(options.configPath),
+    identityLogger.info("telegram.gateway_started");
+
+    stops.push(async () => {
+      identityLogger.info("telegram.gateway_stopping");
+      runner.stop();
     });
   }
+
+  return stops;
 };
 
 const registerTelegramHandlers = (
@@ -242,6 +246,8 @@ const registerTelegramHandlers = (
     try {
       const result = await executeIngressCommand({
         config: state.runtime,
+        hooks: state.hooks,
+        logger: requestLogger,
         command: {
           kind: "side_question",
           source: {
@@ -253,7 +259,6 @@ const registerTelegramHandlers = (
             text: parsed.question.text,
           },
         },
-        logger: requestLogger,
       });
       if (result.kind !== "side_question") {
         throw new Error("Telegram /btw expected a side-question execution result.");
@@ -691,9 +696,6 @@ const handleQueueEntry = async (
   entry: QueueEntry,
   skipped: TelegramMessageSeed[],
 ): Promise<void> => {
-  const sessionScope = entry.message.threadId === undefined
-    ? `chat:${entry.message.chatId}`
-    : `chat:${entry.message.chatId}:thread:${entry.message.threadId}`;
   const threadId = buildThreadIdFromScope({
     platform: "telegram",
     identityId: state.identityConfig.id,
@@ -754,7 +756,7 @@ const handleQueueEntry = async (
   }
 
   await respondInTelegramConversation({
-    runtime: state.runtime,
+    state,
     context: entry.context,
     conversationKey,
     threadId,
@@ -779,7 +781,7 @@ const materializeTelegramMessage = (
 };
 
 const respondInTelegramConversation = async (options: {
-  runtime: LoadedRuntimeConfig;
+  state: TelegramGatewayState;
   context: TelegramMessageContext;
   conversationKey: string;
   threadId: string;
@@ -793,9 +795,15 @@ const respondInTelegramConversation = async (options: {
   let turnId: string | undefined;
   let runId: string | undefined;
 
+  // Retrieve contributions lazily — by the time events fire, jar-runtime has
+  // already registered them in the services registry after manager.load().
+  const contributions = options.state.services.get<PluginContribution>("pluginContributions");
+
   const responseTask = executeIngressCommand({
-    config: options.runtime,
+    config: options.state.runtime,
+    hooks: options.state.hooks,
     logger: options.logger,
+    pluginOverrides: contributions ?? { skills: [], overlays: [], tools: [] },
     command: {
       kind: "message",
       source: {
@@ -964,19 +972,6 @@ const loadTelegramGatewayEnv = (
   rawEnv: NodeJS.ProcessEnv,
 ): TelegramGatewayEnv => {
   return telegramGatewayEnvSchema.parse(rawEnv);
-};
-
-const registerShutdownHandlers = (
-  runner: RunnerHandle,
-  logger: Logger,
-): void => {
-  const stopRunner = (): void => {
-    logger.info("telegram.gateway_stopping");
-    runner.stop();
-  };
-
-  process.once("SIGINT", stopRunner);
-  process.once("SIGTERM", stopRunner);
 };
 
 const toError = (error: unknown): Error => {

@@ -1,19 +1,16 @@
 {
-  "name": "@hijarvis/jar-slack",
+  "name": "@hijarvis/jar-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
     "check": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "start": "tsx src/main.ts"
   },
   "dependencies": {
     "@hijarvis/jar-core": "workspace:*",
-    "@slack/bolt": "^4.6.0",
-    "tsx": "^4.21.0",
-    "zod": "^4.3.6"
+    "tsx": "^4.21.0"
   }
 }
