@@ -8,7 +8,6 @@ import type { LoadedRuntimeConfig } from "../config.js";
 import type { MessageIngressCommand } from "../ingress.js";
 import { createHookRegistry } from "../hooks/index.js";
 import { executeIngressCommand } from "../execution-service.js";
-import { createPluginManager } from "./manager.js";
 
 const createRuntimeConfig = (rootDir: string): LoadedRuntimeConfig => ({
   configFilePath: path.join(rootDir, "jar.toml"),
@@ -66,7 +65,7 @@ const createRuntimeConfig = (rootDir: string): LoadedRuntimeConfig => ({
       },
     },
   },
-  plugins: [], // important: do not use v1 loader in this test
+  plugins: [], // plugins are loaded via createPluginManager, not config.plugins
   entities: {
     jarvis: {
       id: "jarvis",
@@ -93,7 +92,7 @@ const createCommand = (threadId: string, text: string): MessageIngressCommand =>
   audit: { trigger: "user_input" },
 });
 
-test("PluginManager contributions can be wired into execution via pluginOverrides without touching config.plugins", async () => {
+test("Plugin skills and hooks are wired into execution when hooks registry is passed directly", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-plugin-integration-"));
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jar-plugin-module-"));
   const skillPath = path.join(tempDir, "SKILL.md");
@@ -139,26 +138,20 @@ Use this skill when asked.
       });
     `, "utf8");
 
-    const config = createRuntimeConfig(rootDir);
-    const hooks = createHookRegistry();
-    const manager = createPluginManager({
-      config,
-      hooks,
+    // Build a config that references the plugin module so createPluginManager picks it up.
+    const config: LoadedRuntimeConfig = {
+      ...createRuntimeConfig(rootDir),
       plugins: [{ module: pluginPath, config: {} }],
-    });
-    await manager.load();
+    };
+    const hooks = createHookRegistry();
 
-    const contributions = manager.getContributions();
-
+    // Pass hooks directly — initStores will call createPluginManager internally.
+    // No manual pluginOverrides needed.
     await assert.rejects(
       () => executeIngressCommand({
         config,
-        command: createCommand("thread_integration", "please use $demo-skill"),
+        command: createCommand("thread_integration_v2", "please use $demo-skill"),
         hooks,
-        pluginOverrides: {
-          skills: contributions.skills,
-          overlays: contributions.overlays,
-        },
       }),
       /No API key for provider: openai/i,
     );

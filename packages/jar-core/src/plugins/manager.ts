@@ -1,8 +1,11 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
+import type { AgentTool } from "@mariozechner/pi-agent-core";
+
 import type { LoadedRuntimeConfig } from "../config.js";
 import type { HookRegistry } from "../hooks/index.js";
+import type { MemoryProviderFactory } from "../memory/index.js";
 import type { SkillEntry } from "../skills.js";
 import type { PromptSection } from "../prompt-builder.js";
 import type {
@@ -13,7 +16,9 @@ import type {
   PluginManagerFailureMode,
   PluginManagerOptions,
   PluginFactory,
+  ServiceRegistry,
 } from "./types.js";
+import { createServiceRegistry } from "./types.js";
 
 type PluginModule = {
   createPlugin?: PluginFactory;
@@ -25,6 +30,8 @@ type InstalledPlugin = {
   modulePath: string;
   skills: SkillEntry[];
   overlays: PromptSection[];
+  tools: AgentTool[];
+  memoryProvider?: MemoryProviderFactory;
   cleanup?: () => void | Promise<void>;
 };
 
@@ -34,6 +41,7 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
   const logger = options.logger;
   const failureMode: PluginManagerFailureMode = options.defaultFailureMode ?? "isolate";
   const pluginEntries = options.plugins ?? config.plugins;
+  const serviceRegistry: ServiceRegistry = options.serviceRegistry ?? createServiceRegistry();
 
   let loaded = false;
   let shutdown = false;
@@ -108,7 +116,7 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
 
           let result: Awaited<ReturnType<JarPlugin["install"]>>;
           try {
-            result = await plugin.install({ config, hooks });
+            result = await plugin.install({ config, hooks, services: serviceRegistry, logger: logger as any }); // logger type is a structural subset of Logger
           } catch (error) {
             record({
               pluginName: plugin.name,
@@ -125,6 +133,8 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
             modulePath,
             skills: result.skills ?? [],
             overlays: result.overlays ?? [],
+            tools: result.tools ?? [],
+            memoryProvider: result.memoryProvider,
             cleanup: result.cleanup,
           });
 
@@ -142,10 +152,16 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
     getContributions(): PluginContribution {
       const skills: SkillEntry[] = [];
       const overlays: PromptSection[] = [];
+      const tools: AgentTool[] = [];
+      let memoryProvider: MemoryProviderFactory | undefined;
 
       for (const plugin of installed) {
         skills.push(...plugin.skills);
         overlays.push(...plugin.overlays);
+        tools.push(...plugin.tools);
+        if (plugin.memoryProvider !== undefined) {
+          memoryProvider = plugin.memoryProvider; // last-wins
+        }
       }
 
       const skillsOverlay = renderPluginSkillsOverlay(skills, config.skills?.maxCatalogChars ?? 12_000);
@@ -153,11 +169,15 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
         overlays.push(skillsOverlay);
       }
 
-      return { skills, overlays };
+      return { skills, overlays, tools, memoryProvider };
     },
 
     getDiagnostics(): PluginDiagnostic[] {
       return diagnostics.slice();
+    },
+
+    getServiceRegistry(): ServiceRegistry {
+      return serviceRegistry;
     },
 
     async shutdown(): Promise<void> {

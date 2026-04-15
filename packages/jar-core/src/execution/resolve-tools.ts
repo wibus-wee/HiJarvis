@@ -4,6 +4,7 @@ import type { LoadedRuntimeConfig } from "../config.js";
 import type { MessageIngressCommand } from "../ingress.js";
 import {
   type MemoryProvider,
+  type MemoryProviderFactory,
   resolveConfiguredMemoryProvider,
 } from "../memory/index.js";
 import { createDefaultTools, createMemoryTools } from "../tools.js";
@@ -27,6 +28,10 @@ export const resolveEntityMemoryScope = (
 export const resolveMessageTools = async (
   config: LoadedRuntimeConfig,
   command: MessageIngressCommand,
+  pluginExtensions?: {
+    tools?: AgentTool[];
+    memoryProvider?: MemoryProviderFactory;
+  },
   dependencies: {
     createDefaultTools?: typeof createDefaultTools;
     createMemoryTools?: (entityId: string, provider: MemoryProvider) => AgentTool[];
@@ -35,11 +40,22 @@ export const resolveMessageTools = async (
 ): Promise<AgentTool[]> => {
   const defaultTools = (dependencies.createDefaultTools ?? createDefaultTools)(config.toolOptions);
   if (!config.memory.enabled) {
-    return defaultTools;
+    return [...defaultTools, ...(pluginExtensions?.tools ?? [])];
   }
 
   const entityId = resolveEntityMemoryScope(config, command);
-  const provider = await (dependencies.resolveMemoryProvider ?? resolveConfiguredMemoryProvider)(config);
+
+  // Plugin-contributed memory provider takes precedence over the built-in resolution path.
+  let provider: MemoryProvider;
+  if (pluginExtensions?.memoryProvider !== undefined) {
+    provider = await pluginExtensions.memoryProvider({
+      providerName: config.memory.provider,
+      providerConfig: config.memory.providers[config.memory.provider] ?? {},
+    });
+  } else {
+    provider = await (dependencies.resolveMemoryProvider ?? resolveConfiguredMemoryProvider)(config);
+  }
+
   const memoryTools = (dependencies.createMemoryTools ?? createMemoryTools)(entityId, provider);
-  return [...defaultTools, ...memoryTools];
+  return [...defaultTools, ...memoryTools, ...(pluginExtensions?.tools ?? [])];
 };

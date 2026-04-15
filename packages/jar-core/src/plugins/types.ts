@@ -1,7 +1,61 @@
+import type { AgentTool } from "@mariozechner/pi-agent-core";
+
 import type { LoadedRuntimeConfig } from "../config.js";
 import type { HookRegistry } from "../hooks/index.js";
+import type { Logger } from "../logger.js";
+import type { MemoryProviderFactory } from "../memory/index.js";
 import type { SkillEntry } from "../skills.js";
 import type { PromptSection } from "../prompt-builder.js";
+
+// ── Service registry ─────────────────────────────────
+
+/**
+ * A simple in-process service registry for sharing instances between plugins.
+ *
+ * Plugins can register named services during `install()` and retrieve services
+ * registered by other plugins (provided load order is respected).
+ *
+ * @example
+ * ```ts
+ * // Plugin A registers a Redis client
+ * install({ services }) {
+ *   services.register("redis", redisClient);
+ *   return {};
+ * }
+ *
+ * // Plugin B retrieves it
+ * install({ services }) {
+ *   const redis = services.get<Redis>("redis");
+ *   return {};
+ * }
+ * ```
+ */
+export type ServiceRegistry = {
+  /** Register a named service. Throws if the name is already taken. */
+  register<T>(name: string, instance: T): void;
+  /** Retrieve a service by name, or `undefined` if not registered. */
+  get<T>(name: string): T | undefined;
+  /** Check whether a service is registered. */
+  has(name: string): boolean;
+};
+
+export const createServiceRegistry = (): ServiceRegistry => {
+  const store = new Map<string, unknown>();
+  return {
+    register<T>(name: string, instance: T): void {
+      if (store.has(name)) {
+        throw new Error(`Service "${name}" is already registered`);
+      }
+      store.set(name, instance);
+    },
+    get<T>(name: string): T | undefined {
+      return store.get(name) as T | undefined;
+    },
+    has(name: string): boolean {
+      return store.has(name);
+    },
+  };
+};
 
 // ── Plugin context ───────────────────────────────────
 
@@ -10,10 +64,14 @@ import type { PromptSection } from "../prompt-builder.js";
  *
  * - `config` — the fully loaded runtime config (read-only reference)
  * - `hooks` — the shared hook registry; call `hooks.register()` here to attach handlers
+ * - `services` — in-process service registry for sharing instances between plugins
+ * - `logger` — optional logger for plugin diagnostics
  */
 export type PluginInstallContext = {
   config: LoadedRuntimeConfig;
   hooks: HookRegistry;
+  services: ServiceRegistry;
+  logger?: Logger;
 };
 
 // ── Plugin result ────────────────────────────────────
@@ -44,6 +102,27 @@ export type PluginInstallResult = {
   overlays?: PromptSection[];
 
   /**
+   * Additional `AgentTool` objects to make available to the agent.
+   *
+   * These are merged with the default tools (file, bash, patch, web) and any
+   * memory tools before the agent is created.
+   */
+  tools?: AgentTool[];
+
+  /**
+   * A `MemoryProviderFactory` that overrides the configured memory provider.
+   *
+   * When multiple plugins contribute a memory provider, the last one loaded
+   * wins. Use this to replace the built-in `filesystem` provider with a
+   * custom implementation (e.g. Redis, SQLite).
+   *
+   * The factory receives the same `{ providerName, providerConfig }` context
+   * that the built-in resolution path uses, so it can read provider-specific
+   * config from `jarvis.toml`.
+   */
+  memoryProvider?: MemoryProviderFactory;
+
+  /**
    * Optional teardown function.
    *
    * Called when the plugin is unloaded (e.g. on process exit or config reload).
@@ -57,6 +136,8 @@ export type PluginInstallResult = {
 export type PluginContribution = {
   skills: SkillEntry[];
   overlays: PromptSection[];
+  tools: AgentTool[];
+  memoryProvider?: MemoryProviderFactory;
 };
 
 export type PluginDiagnosticPhase =
@@ -84,12 +165,14 @@ export type PluginManagerOptions = {
   logger?: { info?: (msg: string, fields?: any) => void; warn?: (msg: string, fields?: any) => void; error?: (msg: string, fields?: any) => void };
   defaultFailureMode?: PluginManagerFailureMode;
   plugins?: Array<{ module: string; config: Record<string, unknown> }>;
+  serviceRegistry?: ServiceRegistry;
 };
 
 export type PluginManager = {
   load(): Promise<void>;
   getContributions(): PluginContribution;
   getDiagnostics(): PluginDiagnostic[];
+  getServiceRegistry(): ServiceRegistry;
   shutdown(): Promise<void>;
 };
 
@@ -153,17 +236,3 @@ export interface JarPlugin {
 export type PluginFactory = (
   pluginConfig: Record<string, unknown>,
 ) => JarPlugin | Promise<JarPlugin>;
-
-// ── Loaded plugin ────────────────────────────────────
-
-/**
- * Internal record of a successfully loaded and installed plugin.
- */
-export type LoadedPlugin = {
-  /** Plugin name, as returned by `JarPlugin.name`. */
-  name: string;
-  /** Skills contributed by this plugin (may be empty). */
-  skills: SkillEntry[];
-  /** Optional cleanup function to call on teardown. */
-  cleanup?: () => void | Promise<void>;
-};

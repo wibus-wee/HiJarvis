@@ -128,7 +128,7 @@ test("resolveMessageTools adds memory tools only when memory is enabled", () => 
   const memoryTools = [{ name: "memory_search" }] as AgentTool[];
   const provider = {} as MemoryProvider;
 
-  const withMemory = resolveMessageTools(createConfig(), createCommand("slack_main"), {
+  const withMemory = resolveMessageTools(createConfig(), createCommand("slack_main"), undefined, {
     createDefaultTools: () => defaultTools,
     resolveMemoryProvider: async () => provider,
     createMemoryTools: (_entityId: string, _provider: MemoryProvider) => memoryTools,
@@ -143,7 +143,7 @@ test("resolveMessageTools skips provider resolution when memory is disabled", as
   const defaultTools = [{ name: "read_file" }] as AgentTool[];
   let resolveCalled = false;
 
-  const withoutMemory = await resolveMessageTools(createConfig({ enabled: false }), createCommand("slack_main"), {
+  const withoutMemory = await resolveMessageTools(createConfig({ enabled: false }), createCommand("slack_main"), undefined, {
     createDefaultTools: () => defaultTools,
     resolveMemoryProvider: async () => {
       resolveCalled = true;

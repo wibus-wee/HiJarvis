@@ -3,6 +3,7 @@ import type { Agent, AgentTool } from "@mariozechner/pi-agent-core";
 import type { LoadedRuntimeConfig } from "../config.js";
 import type { HookRegistry } from "../hooks/index.js";
 import type { Logger } from "../logger.js";
+import type { MemoryProviderFactory } from "../memory/index.js";
 import type {
   ConversationStateStore,
   EventLogStore,
@@ -51,6 +52,8 @@ export type StoresContext = {
   startTime: number;
   pluginSkills?: SkillEntry[];
   pluginOverlays?: PromptSection[];
+  pluginTools?: AgentTool[];
+  pluginMemoryProvider?: MemoryProviderFactory;
 };
 
 /**

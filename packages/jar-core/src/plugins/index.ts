@@ -1,6 +1,5 @@
 export type {
   JarPlugin,
-  LoadedPlugin,
   PluginContribution,
   PluginDiagnostic,
   PluginDiagnosticLevel,
@@ -11,6 +10,7 @@ export type {
   PluginManager,
   PluginManagerFailureMode,
   PluginManagerOptions,
+  ServiceRegistry,
 } from "./types.js";
-export { loadPlugins } from "./loader.js";
+export { createServiceRegistry } from "./types.js";
 export { createPluginManager } from "./manager.js";

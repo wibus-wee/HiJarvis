@@ -6,7 +6,10 @@ import { resolveMessageTools } from "./resolve-tools.js";
 import type { AgentContext, PreparedPromptContext } from "./types.js";
 
 export const createAgentContext = async (ctx: PreparedPromptContext): Promise<AgentContext> => {
-  let tools = await resolveMessageTools(ctx.config, ctx.command);
+  let tools = await resolveMessageTools(ctx.config, ctx.command, {
+    tools: ctx.pluginTools,
+    memoryProvider: ctx.pluginMemoryProvider,
+  });
 
   // ── Hook: tools:resolve ──────────────────────────────────────
   if (ctx.hooks?.has("tools:resolve")) {
