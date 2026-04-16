@@ -2,3 +2,5 @@ packages:
   - packages/*
   - apps/*
   - 3rd/*
+allowBuilds:
+  docsify: true

@@ -14,6 +14,7 @@
   "devDependencies": {
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
+    "docsify-cli": "^4.4.4",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }
