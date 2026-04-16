@@ -12,12 +12,14 @@ Jar 的 skills 机制参考了 Codex 的做法，但做了适配到当前 Jar ru
 
 ## Discovery
 
-Jar 启动时会在以下 roots 里扫描 `SKILL.md`：
+Jar 在运行时初始化阶段会在以下 roots 里扫描 `SKILL.md`：
 
 - `.jarvis/skills`
 - `~/.jarvis/skills`
 
 也可以通过 `jar.toml` 里的 `[skills].roots` 覆盖。
+
+此外 plugin 也可以通过返回 `{ skillRoots: [...] }` 贡献额外 roots。最终会把 `[skills].roots` 与 plugin `skillRoots` 合并后再执行同一套扫描、解析与 catalog 渲染逻辑。
 
 每个 skill 目录至少包含一个 `SKILL.md`。Jar 会读取 frontmatter 中的：
 
@@ -36,8 +38,8 @@ Jar 启动时会在以下 roots 里扫描 `SKILL.md`：
 
 运行时分两层：
 
-1. 启动阶段
-   Jar 解析所有 skill 元数据，并把可隐式触发的 skills catalog 追加到 runtime instruction overlay。
+1. 初始化阶段
+   Jar 解析所有 skill 元数据，并把可隐式触发的 skills catalog 追加到 system prompt overlay。
 2. 每轮执行前
    Jar 从用户触发文本里提取 `$skill-name`，读取对应 `SKILL.md` 正文，先生成 `PromptContextFragment`，再在 provider 边界把它渲染成 `<skill>...</skill>` block 注入当前 prompt。
 
@@ -77,7 +79,9 @@ Jar 通过两层清洗来保证这一点：
   prompt context fragment 的渲染、注入、memory-excluded 清洗与 trigger text 提取。
 - `packages/jar-core/src/config.ts`
   `[skills]` 配置解析与 runtime 初始化。
-- `packages/jar-core/src/runtime.ts`
-  把 catalog 追加到 runtime prompt overlay，并在 compaction 前清洗旧的 memory-excluded fragments。
+- `packages/jar-core/src/execution/phase-init-stores.ts`
+  合并 config roots 与 plugin roots，并为后续 phases 准备 `SkillsRuntime`。
+- `packages/jar-core/src/execution/phase-create-agent.ts`
+  把 skills catalog 作为 system prompt overlay 注入 agent。
 - `packages/jar-core/src/execution-service.ts`
   执行前把 skill fragments 注入当前 turn，并在默认持久化路径里去掉 memory-excluded fragments。

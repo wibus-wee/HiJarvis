@@ -2,6 +2,7 @@ import { createAgent } from "../runtime.js";
 import {
   updateLiveThreadCaptureForSideQuestion,
 } from "../side-question/live-thread-registry.js";
+import { getSkillsCatalogOverlays } from "../skills.js";
 import { resolveMessageTools } from "./resolve-tools.js";
 import type { AgentContext, PreparedPromptContext } from "./types.js";
 
@@ -36,6 +37,7 @@ export const createAgentContext = async (ctx: PreparedPromptContext): Promise<Ag
     : undefined;
 
   const systemPromptOverlays = [
+    ...getSkillsCatalogOverlays(ctx.skills),
     ...(ctx.config.agent.systemPromptOverlays ?? []),
     ...(ctx.pluginOverlays ?? []),
   ];

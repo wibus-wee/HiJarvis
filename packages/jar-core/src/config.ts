@@ -9,7 +9,6 @@ import {
   type CompactionSettings,
 } from "./compaction/index.js";
 import {
-  getSkillsCatalogOverlays,
   resolveSkillsRuntime,
   type SkillsRuntime,
   type SkillsConfigInput,
@@ -323,10 +322,7 @@ export const loadRuntimeConfig = async (
   const { skillsConfig: _, ...rest } = baseConfig;
   return {
     ...rest,
-    agent: {
-      ...rest.agent,
-      systemPromptOverlays: getSkillsCatalogOverlays(skills),
-    },
+    agent: rest.agent,
     skills,
   };
 };

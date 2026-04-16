@@ -803,7 +803,7 @@ const respondInTelegramConversation = async (options: {
     config: options.state.runtime,
     hooks: options.state.hooks,
     logger: options.logger,
-    pluginOverrides: contributions ?? { skills: [], overlays: [], tools: [] },
+    pluginOverrides: contributions ?? { skillRoots: [], overlays: [], tools: [] },
     command: {
       kind: "message",
       source: {

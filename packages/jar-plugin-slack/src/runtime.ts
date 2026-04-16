@@ -953,7 +953,7 @@ const respondInSlackThread = async ({
       config: state.runtime,
       hooks: state.hooks,
       logger,
-      pluginOverrides: contributions ?? { skills: [], overlays: [], tools: [] },
+      pluginOverrides: contributions ?? { skillRoots: [], overlays: [], tools: [] },
       command: {
         kind: "message",
         source: {

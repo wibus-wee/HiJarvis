@@ -234,7 +234,7 @@ Telegram gateway plugin 默认使用 long polling，而不是 webhook，并且�
 
 Skills 的运行时语义是 Codex-style 的两层注入：
 
-- 启动时扫描 `roots`，读取每个 `SKILL.md` 的 frontmatter，并把可隐式触发的 skill 清单拼进 system prompt overlay。
+- 运行时初始化阶段扫描所有 skills roots（`[skills].roots` + plugin 贡献的 `skillRoots`），读取每个 `SKILL.md` 的 frontmatter，并把可隐式触发的 skill 清单拼进 system prompt overlay。
 - 每一轮只会根据用户显式写出的 `$skill-name` 去读取对应 `SKILL.md` 正文，并把正文作为 turn-scoped block 注入到当前 prompt。
 - 注入过的 `<skill>...</skill>` block 不会长期保存在 session 历史里；旧消息会在后续轮次进入模型前被清洗掉。
 
@@ -247,7 +247,7 @@ Skills 的运行时语义是 Codex-style 的两层注入：
 Plugin 系统在 `phase-init-stores` 时加载，支持三种扩展能力：
 
 - **注册 hooks**：通过 `context.hooks.register()` 接入任意 pipeline 阶段
-- **贡献 Skills**：返回 `{ skills: [...] }` 直接注入 catalog，不需要文件系统路径
+- **贡献 Skills**：返回 `{ skillRoots: [...] }`，由 core 扫描 `SKILL.md` 并合并到 catalog 与注入逻辑
 - **封装 Memory Provider**：通过 `tools:resolve` hook 追加 memory tools，非侵入式
 
 Plugin 模块期望导出 `createPlugin: PluginFactory` 或 `default: JarPlugin`。详见 [Plugins](./plugins.md)。

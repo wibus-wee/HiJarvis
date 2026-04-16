@@ -4,7 +4,6 @@ import type { LoadedRuntimeConfig } from "../config.js";
 import type { HookRegistry } from "../hooks/index.js";
 import type { Logger } from "../logger.js";
 import type { MemoryProviderFactory } from "../memory/index.js";
-import type { SkillEntry } from "../skills.js";
 import type { PromptSection } from "../prompt-builder.js";
 
 // ── Service registry ─────────────────────────────────
@@ -83,15 +82,13 @@ export type PluginInstallContext = {
  */
 export type PluginInstallResult = {
   /**
-   * Additional `SkillEntry` objects to inject into the skills catalog.
+   * Additional skill roots (directories) to discover `SKILL.md` files from.
    *
-   * These are merged with the file-system-scanned skills before the catalog
-   * is rendered, so they appear in the agent's system prompt overlay.
-   *
-   * Useful for npm packages that embed their own `SKILL.md` content and want
-   * to expose it without requiring the user to configure a `skillRoots` path.
+   * Each root should contain one or more skill directories. A skill directory
+   * contains a `SKILL.md` file (with YAML frontmatter) and may contain
+   * `agents/openai.yaml` to configure `allow_implicit_invocation`.
    */
-  skills?: SkillEntry[];
+  skillRoots?: string[];
 
   /**
    * Additional prompt overlay sections to inject into the system prompt.
@@ -134,7 +131,7 @@ export type PluginInstallResult = {
 // ── v2: manager-facing diagnostics and contributions ─────────
 
 export type PluginContribution = {
-  skills: SkillEntry[];
+  skillRoots: string[];
   overlays: PromptSection[];
   tools: AgentTool[];
   memoryProvider?: MemoryProviderFactory;

@@ -276,7 +276,7 @@ const resolveRootPath = (root: string, configDirectory: string): string => {
   return path.resolve(configDirectory, root);
 };
 
-const loadSkillsFromRoots = async (options: {
+export const loadSkillsFromRoots = async (options: {
   roots: string[];
   maxScanDepth: number;
   maxSkills: number;
@@ -501,7 +501,7 @@ const sanitizeSingleLine = (value: string): string => {
   return value.split(/\s+/).filter(Boolean).join(" ").trim();
 };
 
-const renderSkillsCatalog = (
+export const renderSkillsCatalog = (
   entries: SkillEntry[],
   maxCatalogChars: number,
 ): string | null => {

@@ -13,7 +13,7 @@ Plugin 系统让外部模块可以通过统一的 `plugins` 配置字段扩展 J
 1. `jar.toml` 先声明要装入哪些 plugin。
 2. `loadRuntimeConfig()` 负责把 plugin module 字段规范化，但不会提前 import 模块。
 3. `phase-init-stores` 调用 `createPluginManager().load()`，在任何 turn 执行前完成 plugin import 和 install。
-4. plugin 可以在 install 阶段启动长期运行的 adapter/gateway，并把 hooks、tools、skills、memory provider 注入主 runtime。
+4. plugin 可以在 install 阶段启动长期运行的 adapter/gateway，并把 hooks、tools、skillRoots、memory provider 注入主 runtime。
 5. 后续所有 ingress execution 都运行在“core runtime + installed plugins”这个组合体上。
 
 因此更准确的边界应该是：
@@ -29,7 +29,7 @@ Plugin 系统让外部模块可以通过统一的 `plugins` 配置字段扩展 J
 | 能力 | 机制 | 说明 |
 |------|------|------|
 | 注册 hooks | `context.hooks.register()` | 接入 11 个 hook 点，拦截或观察执行管道 |
-| 贡献 Skills | 返回 `{ skills: [...] }` | 合并到 catalog，出现在 agent 系统提示 |
+| 贡献 Skills | 返回 `{ skillRoots: [...] }` | core 扫描 `SKILL.md`，合并到 catalog 与注入逻辑 |
 | 贡献 AgentTools | 返回 `{ tools: [...] }` | 追加到默认工具列表，agent 可直接调用 |
 | 替换 Memory Provider | 返回 `{ memoryProvider: factory }` | 覆盖内置 filesystem provider，last-wins |
 | 共享服务实例 | `context.services.register()` / `.get()` | 跨 plugin 共享连接、客户端等长期对象 |
@@ -121,7 +121,7 @@ type PluginInstallContext = {
 
 ```typescript
 type PluginInstallResult = {
-  skills?: SkillEntry[];                    // 注入 catalog 的额外 skills
+  skillRoots?: string[];                   // 贡献额外 skills roots（directories）
   overlays?: PromptSection[];               // 注入系统提示的额外片段
   tools?: AgentTool[];                      // 追加到 agent 工具列表
   memoryProvider?: MemoryProviderFactory;   // 替换内置 memory provider（last-wins）
@@ -182,11 +182,11 @@ createPluginManager(config, hooks)   ← phase-init-stores（最早阶段）
     └─ hooks.register(...)           ← 立即生效，对后续所有 hook 调用点有效
     └─ services.register(...)        ← 注册供其他 plugin 使用的服务实例
     └─ start long-lived gateway(s)   ← Slack / Telegram 这类 plugin 在这里启动平台 runtime
-    └─ return { skills, tools, memoryProvider, ... }
+    └─ return { skillRoots, tools, memoryProvider, ... }
        │
        ▼
 StoresContext                        ← 传递给后续 phases
-  .pluginSkills                      ← phase-prepare-prompt 合并到 catalog
+  .skills                            ← 合并 config + plugin roots 后的 SkillsRuntime
   .pluginOverlays                    ← phase-create-agent 注入系统提示
   .pluginTools                       ← phase-create-agent 追加到工具列表
   .pluginMemoryProvider              ← phase-create-agent 替换 memory provider
@@ -221,7 +221,7 @@ export const createPlugin = (): JarPlugin => ({
 });
 ```
 
-### 2. 贡献 Skills（npm 包内嵌 skill）
+### 2. 贡献 Skills（npm 包内嵌 skills 目录）
 
 ```typescript
 // my-skill-plugin.ts
@@ -233,16 +233,20 @@ export const createPlugin = (): JarPlugin => ({
   name: "my-skill-plugin",
   install() {
     return {
-      skills: [{
-        name: "vector-memory",
-        description: "Search semantic memory via Qdrant",
-        path: path.join(path.dirname(fileURLToPath(import.meta.url)), "SKILL.md"),
-        allowImplicitInvocation: true,
-      }],
+      skillRoots: [path.join(path.dirname(fileURLToPath(import.meta.url)), "skills")],
     };
   },
 });
 ```
+
+目录结构示例：
+
+    my-plugin/
+      src/plugin.ts
+      skills/
+        vector-memory/
+          SKILL.md
+          agents/openai.yaml
 
 ### 3. 贡献 AgentTools
 
@@ -383,9 +387,9 @@ dir = ".jar/memory"
 | `packages/jar-core/src/plugins/types.ts` | `JarPlugin`、`PluginFactory`、`PluginInstallContext`、`PluginInstallResult`、`ServiceRegistry`、`PluginContribution` |
 | `packages/jar-core/src/plugins/manager.ts` | `createPluginManager()` 实现：包名/路径解析、workspace package 回退、动态 import、factory/default 导出约定、错误隔离、诊断记录 |
 | `packages/jar-core/src/plugins/index.ts` | re-exports |
-| `packages/jar-core/src/execution/phase-init-stores.ts` | plugin 加载时机，`createPluginManager` 调用点 |
+| `packages/jar-core/src/execution/phase-init-stores.ts` | plugin 加载时机，skills roots 合并与 discovery 入口 |
 | `packages/jar-core/src/execution/resolve-tools.ts` | plugin tools 和 memoryProvider 的合并逻辑 |
-| `packages/jar-core/src/execution/phase-prepare-prompt.ts` | plugin skills 合并逻辑 |
+| `packages/jar-core/src/skills.ts` | skills discovery、catalog rendering 与 per-turn 注入 |
 | `packages/jar-core/src/config.ts` | `plugins` 配置字段解析与路径归一化 |
 | `packages/jar-plugin-slack/src/plugin.ts` | Slack gateway plugin 入口 |
 | `packages/jar-plugin-telegram/src/plugin.ts` | Telegram gateway plugin 入口 |

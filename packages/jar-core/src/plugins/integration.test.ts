@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -40,8 +40,8 @@ const createRuntimeConfig = (rootDir: string): LoadedRuntimeConfig => ({
     catalog: "",
     errors: [],
     truncatedByLimit: false,
-    maxScanDepth: 0,
-    maxSkills: 0,
+    maxScanDepth: 6,
+    maxSkills: 2000,
     maxCatalogChars: 4096,
     maxBodyChars: 4096,
   },
@@ -95,10 +95,13 @@ const createCommand = (threadId: string, text: string): MessageIngressCommand =>
 test("Plugin skills and hooks are wired into execution when hooks registry is passed directly", async () => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-plugin-integration-"));
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "jar-plugin-module-"));
-  const skillPath = path.join(tempDir, "SKILL.md");
+  const skillRoot = path.join(tempDir, "skills");
+  const skillDir = path.join(skillRoot, "demo-skill");
+  const skillPath = path.join(skillDir, "SKILL.md");
   const pluginPath = path.join(tempDir, "plugin.ts");
 
   try {
+    await mkdir(skillDir, { recursive: true });
     await writeFile(skillPath, `
 ---
 name: demo-skill
@@ -127,12 +130,7 @@ Use this skill when asked.
           });
 
           return {
-            skills: [{
-              name: "demo-skill",
-              description: "Demo skill for plugin integration test.",
-              path: ${JSON.stringify(skillPath)},
-              allowImplicitInvocation: true,
-            }],
+            skillRoots: [${JSON.stringify(skillRoot)}],
           };
         },
       });
@@ -163,4 +161,3 @@ Use this skill when asked.
     delete (globalThis as any).__pluginPreparedMarker;
   }
 });
-

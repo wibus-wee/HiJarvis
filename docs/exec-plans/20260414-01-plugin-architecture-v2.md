@@ -137,7 +137,7 @@ v2 MVP 的验收标准是行为可验证，而不是“代码存在”：
 In `packages/jar-core/src/plugins/types.ts`, define:
 
     export type PluginContribution = {
-      skills?: SkillEntry[];
+      skillRoots?: string[];
       overlays?: PromptSection[];
     };
 
@@ -168,9 +168,10 @@ In `packages/jar-core/src/plugins/manager.ts`, define:
 Dependencies:
 
 - Use existing `HookRegistry` from `packages/jar-core/src/hooks`.
-- Use existing `SkillEntry` and skill runtime helpers from `packages/jar-core/src/skills.ts`.
+- Use existing skill discovery helpers from `packages/jar-core/src/skills.ts` (scan `SKILL.md` from roots).
 - Use existing prompt section type `PromptSection` from `packages/jar-core/src/prompt-builder.ts`.
 - For tests, use Node’s `node:test` and filesystem temp directories (consistent with existing tests in `jar-core`).
 
 Revision note (2026-04-14 10:04Z): Initial ExecPlan draft created to design and implement plugin architecture v2 without changing current app runtime wiring.
 Revision note (2026-04-14 10:09Z): Rewrote prose into Chinese to match repo conventions for Markdown docs; reduced MVP scope (dropped `tools` contribution and `module-resolution`), and clarified the minimal overlay strategy to avoid a large `loadRuntimeConfig()` refactor.
+Revision note (2026-04-16 03:20Z): Updated the `PluginContribution` skills field to `skillRoots` to match the unified skill discovery model implemented in `jar-core`.

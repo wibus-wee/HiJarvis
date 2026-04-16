@@ -7,7 +7,6 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { LoadedRuntimeConfig } from "../config.js";
 import type { HookRegistry } from "../hooks/index.js";
 import type { MemoryProviderFactory } from "../memory/index.js";
-import type { SkillEntry } from "../skills.js";
 import type { PromptSection } from "../prompt-builder.js";
 import type {
   JarPlugin,
@@ -29,7 +28,7 @@ type PluginModule = {
 type InstalledPlugin = {
   name: string;
   modulePath: string;
-  skills: SkillEntry[];
+  skillRoots: string[];
   overlays: PromptSection[];
   tools: AgentTool[];
   memoryProvider?: MemoryProviderFactory;
@@ -132,7 +131,7 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
           installed.push({
             name: plugin.name,
             modulePath,
-            skills: result.skills ?? [],
+            skillRoots: result.skillRoots ?? [],
             overlays: result.overlays ?? [],
             tools: result.tools ?? [],
             memoryProvider: result.memoryProvider,
@@ -151,13 +150,13 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
     },
 
     getContributions(): PluginContribution {
-      const skills: SkillEntry[] = [];
+      const skillRoots: string[] = [];
       const overlays: PromptSection[] = [];
       const tools: AgentTool[] = [];
       let memoryProvider: MemoryProviderFactory | undefined;
 
       for (const plugin of installed) {
-        skills.push(...plugin.skills);
+        skillRoots.push(...plugin.skillRoots);
         overlays.push(...plugin.overlays);
         tools.push(...plugin.tools);
         if (plugin.memoryProvider !== undefined) {
@@ -165,12 +164,7 @@ export const createPluginManager = (options: PluginManagerOptions): PluginManage
         }
       }
 
-      const skillsOverlay = renderPluginSkillsOverlay(skills, config.skills?.maxCatalogChars ?? 12_000);
-      if (skillsOverlay !== null) {
-        overlays.push(skillsOverlay);
-      }
-
-      return { skills, overlays, tools, memoryProvider };
+      return { skillRoots, overlays, tools, memoryProvider };
     },
 
     getDiagnostics(): PluginDiagnostic[] {
@@ -420,44 +414,6 @@ const toErrorMessage = (error: unknown, fallback: string): string => {
   return `${fallback}: ${String(error)}`;
 };
 
-const renderPluginSkillsOverlay = (
-  entries: SkillEntry[],
-  maxChars: number,
-): PromptSection | null => {
-  const skills = entries.filter((skill) => skill.allowImplicitInvocation);
-  if (skills.length === 0) {
-    return null;
-  }
-
-  const headerLines = [
-    "## Plugin Skills",
-    "The following skills were contributed by plugins.",
-    "To use a skill, mention it as `$SkillName` in your message.",
-    "### Available plugin skills",
-  ];
-
-  const skillLines = skills.map((skill) => `- ${skill.name}: ${skill.description} (file: ${skill.path})`);
-  const lines = [...headerLines, ...skillLines];
-
-  if (estimateJoinedLength(lines) <= maxChars) {
-    return { body: lines.join("\n") };
-  }
-
-  const trimmed = skillLines.slice();
-  while (trimmed.length > 0) {
-    const candidate = [...headerLines, ...trimmed];
-    if (estimateJoinedLength(candidate) <= maxChars) {
-      return { body: candidate.join("\n") };
-    }
-    trimmed.pop();
-  }
-
-  return { body: headerLines.join("\n") };
-};
-
-const estimateJoinedLength = (lines: string[]): number => {
-  if (lines.length === 0) {
-    return 0;
-  }
-  return lines.reduce((total, line) => total + line.length, 0) + (lines.length - 1);
-};
+// PluginManager intentionally does not render a skills catalog overlay.
+// Skills discovery is unified in the core pipeline so config roots and plugin
+// roots share a single catalog/render/injection implementation.

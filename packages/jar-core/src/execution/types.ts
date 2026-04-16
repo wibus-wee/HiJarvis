@@ -12,7 +12,7 @@ import type {
   UsageStore,
 } from "../persistence.js";
 import type { MessageIngressCommand } from "../ingress.js";
-import type { SkillEntry, SkillPromptInjection } from "../skills.js";
+import type { SkillsRuntime, SkillPromptInjection } from "../skills.js";
 import type { ThreadExecutionTracker } from "../thread-execution.js";
 import type { PromptSection } from "../prompt-builder.js";
 
@@ -42,6 +42,7 @@ export type IngressResult = MessageIngressResult | SideQuestionIngressResult;
  */
 export type StoresContext = {
   config: LoadedRuntimeConfig;
+  skills: SkillsRuntime;
   command: MessageIngressCommand;
   logger?: Logger;
   hooks?: HookRegistry;
@@ -50,7 +51,6 @@ export type StoresContext = {
   eventStore: EventLogStore;
   usageStore: UsageStore;
   startTime: number;
-  pluginSkills?: SkillEntry[];
   pluginOverlays?: PromptSection[];
   pluginTools?: AgentTool[];
   pluginMemoryProvider?: MemoryProviderFactory;

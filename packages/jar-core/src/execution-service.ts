@@ -7,11 +7,12 @@ import {
   type MessageIngressCommand,
 } from "./ingress.js";
 import type { Logger } from "./logger.js";
+import type { MemoryProviderFactory } from "./memory/index.js";
 import type { PromptInput } from "./prompt-executor.js";
 import { executeSideQuestion } from "./side-question/execute-side-question.js";
 import { unregisterLiveThreadForSideQuestion } from "./side-question/live-thread-registry.js";
 import type { PromptSection } from "./prompt-builder.js";
-import type { SkillEntry } from "./skills.js";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
 
 import {
   initStores,
@@ -53,7 +54,12 @@ export const executeIngressCommand = async (options: {
   command: IngressCommand;
   logger?: Logger;
   hooks?: HookRegistry;
-  pluginOverrides?: { skills?: SkillEntry[]; overlays?: PromptSection[] };
+  pluginOverrides?: {
+    skillRoots?: string[];
+    overlays?: PromptSection[];
+    tools?: AgentTool[];
+    memoryProvider?: MemoryProviderFactory;
+  };
 }): Promise<IngressResult> => {
   if (options.command.kind === "side_question") {
     const result = await executeSideQuestion({
@@ -114,7 +120,12 @@ const executeMessageCommand = async (
   command: MessageIngressCommand,
   logger?: Logger,
   hooks?: HookRegistry,
-  pluginOverrides?: { skills?: SkillEntry[]; overlays?: PromptSection[] },
+  pluginOverrides?: {
+    skillRoots?: string[];
+    overlays?: PromptSection[];
+    tools?: AgentTool[];
+    memoryProvider?: MemoryProviderFactory;
+  },
 ): Promise<MessageIngressResult> => {
 
   // ── Hook: ingress:before ─────────────────────────────────────

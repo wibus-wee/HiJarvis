@@ -7,7 +7,7 @@ import {
   type PromptInput,
 } from "../prompt-executor.js";
 import { createAgent } from "../runtime.js";
-import { preparePromptWithSkills } from "../skills.js";
+import { getSkillsCatalogOverlays, preparePromptWithSkills } from "../skills.js";
 import { captureLiveThreadForSideQuestion } from "./live-thread-registry.js";
 
 export type SideQuestionResult = {
@@ -36,8 +36,13 @@ export const executeSideQuestion = async (options: {
   });
 
   const agentConfig = options.config.agent;
+  const systemPromptOverlays = [
+    ...getSkillsCatalogOverlays(options.config.skills),
+    ...(agentConfig.systemPromptOverlays ?? []),
+  ];
   const agent = createAgent({
     ...agentConfig,
+    systemPromptOverlays,
     tools: options.tools ?? ([] satisfies AgentTool[]),
     logger: options.logger,
     compactionEventSink: () => {
