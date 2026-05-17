@@ -154,6 +154,17 @@ export type PlatformIdentityRef = {
   entityId: string;
 };
 
+export type DefaultRuntimeConfigOptions = {
+  provider: string;
+  model: string;
+  systemPrompt: string;
+  apiKey?: string;
+  baseUrl?: string;
+  thinkingLevel?: ThinkingLevel;
+  sessionsRootDir?: string;
+  workspaceRoot?: string;
+};
+
 export const loadBaseConfig = async (
   configFilePath: string,
 ): Promise<LoadedBaseConfig> => {
@@ -330,6 +341,63 @@ export const loadRuntimeConfig = async (
 export type LoadedAgentConfig = LoadedRuntimeConfig;
 
 export const loadAgentConfig = loadRuntimeConfig;
+
+export const defaultRuntimeConfig = async (
+  options: DefaultRuntimeConfigOptions,
+): Promise<LoadedRuntimeConfig> => {
+  const provider = parseProvider(options.provider);
+  const model = parseModel(provider, options.model);
+  const cwd = process.cwd();
+
+  return {
+    configFilePath: "",
+    logging: { level: "info", stderr: true },
+    agent: {
+      provider,
+      model,
+      systemPrompt: options.systemPrompt,
+      thinkingLevel: options.thinkingLevel ?? "minimal",
+      providerConfig: {
+        apiKey: options.apiKey,
+        baseUrl: options.baseUrl,
+      },
+      execution: {
+        requestTimeoutMs: 120_000,
+        retryAttempts: 5,
+        retryInitialDelayMs: 1_000,
+        retryBackoffMultiplier: 2,
+        retryMaxDelayMs: 30_000,
+      },
+      compaction: { ...defaultCompactionSettings },
+    },
+    toolOptions: {
+      provider,
+      model,
+      providerBaseUrl: options.baseUrl,
+      providerApiKey: options.apiKey,
+      workspaceRoot: options.workspaceRoot ?? cwd,
+      maxFileBytes: 32_768,
+      commandTimeoutMs: 30_000,
+      maxCommandOutputBytes: 32_768,
+      webRequestTimeoutMs: 30_000,
+      maxWebResponseBytes: 65_536,
+      maxConcurrentShells: 10,
+    },
+    sessions: {
+      rootDir: options.sessionsRootDir ?? path.resolve(cwd, ".jar/sessions"),
+    },
+    memory: {
+      enabled: false,
+      provider: "filesystem",
+      providers: {},
+    },
+    plugins: [],
+    entities: {},
+    platformIdentities: {},
+    platform: {},
+    skills: await resolveSkillsRuntime({ enabled: false }, cwd),
+  };
+};
 
 const parseRawConfig = (input: Record<string, unknown>): RawConfig => {
   const result = rawConfigSchema.safeParse(input);

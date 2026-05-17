@@ -134,10 +134,12 @@ export type { ToolOptions } from "./tools.js";
 
 // --- Convenience: config loading ---
 export {
+  defaultRuntimeConfig,
   loadAgentConfig,
   loadBaseConfig,
   loadRuntimeConfig,
   resolveSkillsFromConfig,
+  type DefaultRuntimeConfigOptions,
   type LoadedEntityConfig,
   type LoadedAgentConfig,
   type LoadedBaseConfig,

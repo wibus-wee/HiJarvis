@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
 
-import { loadAgentConfig } from "./config.js";
+import { defaultRuntimeConfig, loadAgentConfig } from "./config.js";
 import { defaultCompactionSettings } from "./compaction/index.js";
 
 const pickProviderAndModel = (): { provider: KnownProvider; model: string } => {
@@ -53,6 +53,132 @@ const writeConfigFile = async (
 const cleanupConfigFile = async (configPath: string): Promise<void> => {
   await rm(path.dirname(configPath), { recursive: true, force: true });
 };
+
+// --- defaultRuntimeConfig tests ---
+
+test("defaultRuntimeConfig applies all defaults", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const config = await defaultRuntimeConfig({
+    provider,
+    model,
+    systemPrompt: "You are a test agent.",
+  });
+
+  assert.equal(config.configFilePath, "");
+  assert.deepEqual(config.logging, { level: "info", stderr: true });
+  assert.equal(config.agent.provider, provider);
+  assert.equal(config.agent.model, model);
+  assert.equal(config.agent.systemPrompt, "You are a test agent.");
+  assert.equal(config.agent.thinkingLevel, "minimal");
+  assert.deepEqual(config.agent.providerConfig, {
+    apiKey: undefined,
+    baseUrl: undefined,
+  });
+  assert.deepEqual(config.agent.execution, {
+    requestTimeoutMs: 120_000,
+    retryAttempts: 5,
+    retryInitialDelayMs: 1_000,
+    retryBackoffMultiplier: 2,
+    retryMaxDelayMs: 30_000,
+  });
+  assert.deepEqual(config.agent.compaction, {
+    enabled: true,
+    triggerRatio: 0.9,
+    budgetRatio: 0.9,
+    summaryMaxTokens: 1024,
+  });
+  assert.deepEqual(config.toolOptions, {
+    provider,
+    model,
+    providerBaseUrl: undefined,
+    providerApiKey: undefined,
+    workspaceRoot: process.cwd(),
+    maxFileBytes: 32_768,
+    commandTimeoutMs: 30_000,
+    maxCommandOutputBytes: 32_768,
+    webRequestTimeoutMs: 30_000,
+    maxWebResponseBytes: 65_536,
+    maxConcurrentShells: 10,
+  });
+  assert.equal(config.sessions.rootDir, path.join(process.cwd(), ".jar", "sessions"));
+  assert.deepEqual(config.memory, {
+    enabled: false,
+    provider: "filesystem",
+    providers: {},
+  });
+  assert.deepEqual(config.plugins, []);
+  assert.deepEqual(config.entities, {});
+  assert.deepEqual(config.platformIdentities, {});
+  assert.deepEqual(config.platform, {});
+  assert.equal(config.skills.enabled, false);
+  assert.equal(config.skills.entries.length, 0);
+  assert.equal(config.skills.catalog, null);
+});
+
+test("defaultRuntimeConfig rejects unknown provider", async () => {
+  await assert.rejects(
+    () => defaultRuntimeConfig({
+      provider: "nonexistent-provider-xyz",
+      model: "some-model",
+      systemPrompt: "test",
+    }),
+    /Unsupported provider/,
+  );
+});
+
+test("defaultRuntimeConfig rejects unknown model", async () => {
+  const { provider } = pickProviderAndModel();
+  await assert.rejects(
+    () => defaultRuntimeConfig({
+      provider,
+      model: "nonexistent-model-xyz",
+      systemPrompt: "test",
+    }),
+    /Unsupported model/,
+  );
+});
+
+test("defaultRuntimeConfig propagates apiKey and baseUrl", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const config = await defaultRuntimeConfig({
+    provider,
+    model,
+    systemPrompt: "test",
+    apiKey: "sk-test-key",
+    baseUrl: "https://api.example.test",
+  });
+
+  assert.equal(config.agent.providerConfig.apiKey, "sk-test-key");
+  assert.equal(config.agent.providerConfig.baseUrl, "https://api.example.test");
+  assert.equal(config.toolOptions.providerApiKey, "sk-test-key");
+  assert.equal(config.toolOptions.providerBaseUrl, "https://api.example.test");
+});
+
+test("defaultRuntimeConfig propagates thinkingLevel", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const config = await defaultRuntimeConfig({
+    provider,
+    model,
+    systemPrompt: "test",
+    thinkingLevel: "high",
+  });
+
+  assert.equal(config.agent.thinkingLevel, "high");
+});
+
+test("defaultRuntimeConfig uses custom sessionsRootDir and workspaceRoot", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const config = await defaultRuntimeConfig({
+    provider,
+    model,
+    systemPrompt: "test",
+    sessionsRootDir: "/tmp/my-sessions",
+    workspaceRoot: "/tmp/my-workspace",
+  });
+
+  assert.equal(config.sessions.rootDir, "/tmp/my-sessions");
+  assert.equal(config.toolOptions.workspaceRoot, "/tmp/my-workspace");
+});
 
 test("loadAgentConfig applies default prompt execution policy values", async () => {
   const { provider, model } = pickProviderAndModel();
