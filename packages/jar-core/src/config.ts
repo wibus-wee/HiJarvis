@@ -3,7 +3,11 @@ import path from "node:path";
 
 import { logLevels, type LogLevel } from "./logger.js";
 import type { PromptExecutionPolicy } from "./prompt-executor.js";
-import type { JarAgentConfig, RuntimeProviderConfig } from "./runtime.js";
+import type {
+  JarAgentConfig,
+  RuntimeModelConfig,
+  RuntimeProviderConfig,
+} from "./runtime.js";
 import {
   defaultCompactionSettings,
   type CompactionSettings,
@@ -13,7 +17,7 @@ import {
   type SkillsRuntime,
   type SkillsConfigInput,
 } from "./skills.js";
-import { getModels, getProviders, type KnownProvider } from "@mariozechner/pi-ai";
+import { getModels, getProviders, type Api, type KnownProvider, type Provider } from "@mariozechner/pi-ai";
 import { parse } from "smol-toml";
 import { z } from "zod";
 
@@ -107,10 +111,54 @@ const rawConfigSchema = z.object({
 
 type RawConfig = z.infer<typeof rawConfigSchema>;
 
+const providerModelCostSchema = z.object({
+  input: z.number().min(0).optional(),
+  output: z.number().min(0).optional(),
+  cache_read: z.number().min(0).optional(),
+  cache_write: z.number().min(0).optional(),
+  cacheRead: z.number().min(0).optional(),
+  cacheWrite: z.number().min(0).optional(),
+}).loose();
+
+const providerModelLimitSchema = z.object({
+  context: z.number().int().positive().optional(),
+  output: z.number().int().positive().optional(),
+}).loose();
+
+const providerModelModalitiesSchema = z.object({
+  input: z.array(nonEmptyString).optional(),
+}).loose();
+
+const providerModelSchema = z.object({
+  id: nonEmptyString.optional(),
+  name: nonEmptyString.optional(),
+  api: nonEmptyString.optional(),
+  base_url: z.string().trim().url().optional(),
+  baseUrl: z.string().trim().url().optional(),
+  reasoning: z.boolean().optional(),
+  vision: z.boolean().optional(),
+  tool_call: z.boolean().optional(),
+  toolCall: z.boolean().optional(),
+  input: z.array(z.enum(["text", "image"])).optional(),
+  context_window: z.number().int().positive().optional(),
+  contextWindow: z.number().int().positive().optional(),
+  max_tokens: z.number().int().positive().optional(),
+  maxTokens: z.number().int().positive().optional(),
+  cost: providerModelCostSchema.optional(),
+  limit: providerModelLimitSchema.optional(),
+  modalities: providerModelModalitiesSchema.optional(),
+  headers: z.record(nonEmptyString, nonEmptyString).optional(),
+  compat: z.record(z.string(), z.unknown()).optional(),
+}).loose();
+
 const providerConfigSchema = z.object({
   api_key: nonEmptyString.optional(),
   base_url: z.string().trim().url().optional(),
-}).strict();
+  api: nonEmptyString.optional(),
+  headers: z.record(nonEmptyString, nonEmptyString).optional(),
+  compat: z.record(z.string(), z.unknown()).optional(),
+  models: z.record(nonEmptyString, providerModelSchema).optional(),
+}).loose();
 
 export type LoadedBaseConfig = {
   configFilePath: string;
@@ -158,8 +206,10 @@ export type DefaultRuntimeConfigOptions = {
   provider: string;
   model: string;
   systemPrompt: string;
+  api?: Api;
   apiKey?: string;
   baseUrl?: string;
+  models?: Record<string, RuntimeModelConfig>;
   thinkingLevel?: ThinkingLevel;
   sessionsRootDir?: string;
   workspaceRoot?: string;
@@ -173,11 +223,11 @@ export const loadBaseConfig = async (
   const parsedToml = parse(configFileContent) as Record<string, unknown>;
   const parsedConfig = parseRawConfig(parsedToml);
 
-  const provider = parseProvider(parsedConfig.agent.provider);
-  const providerConfig = parseProviderConfig(parsedConfig.provider, provider);
+  const providerConfig = parseProviderConfig(parsedConfig.provider, parsedConfig.agent.provider);
+  const provider = parseProvider(parsedConfig.agent.provider, providerConfig);
   const execution = parseExecutionConfig(parsedConfig.agent);
   const compaction = parseCompactionConfig(parsedConfig.agent);
-  const model = parseModel(provider, parsedConfig.agent.model);
+  const model = parseModel(provider, parsedConfig.agent.model, providerConfig);
   const configDirectory = path.dirname(absoluteConfigPath);
   const sessionRoot = path.resolve(
     configDirectory,
@@ -200,7 +250,7 @@ export const loadBaseConfig = async (
       model,
       systemPrompt: parsedConfig.agent.system_prompt,
       thinkingLevel: parsedConfig.agent.thinking_level,
-      providerConfig: toRuntimeProviderConfig(providerConfig),
+      providerConfig,
       execution,
       compaction,
     },
@@ -208,8 +258,8 @@ export const loadBaseConfig = async (
     toolOptions: {
       provider,
       model,
-      providerBaseUrl: providerConfig.base_url,
-      providerApiKey: providerConfig.api_key,
+      providerBaseUrl: providerConfig.baseUrl,
+      providerApiKey: providerConfig.apiKey,
       workspaceRoot: path.resolve(
         configDirectory,
         parsedConfig.tools.workspace_root ?? ".",
@@ -345,8 +395,14 @@ export const loadAgentConfig = loadRuntimeConfig;
 export const defaultRuntimeConfig = async (
   options: DefaultRuntimeConfigOptions,
 ): Promise<LoadedRuntimeConfig> => {
-  const provider = parseProvider(options.provider);
-  const model = parseModel(provider, options.model);
+  const inlineProviderConfig = {
+    api: options.api,
+    apiKey: options.apiKey,
+    baseUrl: options.baseUrl,
+    models: options.models,
+  } satisfies RuntimeProviderConfig;
+  const provider = parseProvider(options.provider, inlineProviderConfig);
+  const model = parseModel(provider, options.model, inlineProviderConfig);
   const cwd = process.cwd();
 
   return {
@@ -358,8 +414,10 @@ export const defaultRuntimeConfig = async (
       systemPrompt: options.systemPrompt,
       thinkingLevel: options.thinkingLevel ?? "minimal",
       providerConfig: {
+        ...(options.api === undefined ? {} : { api: options.api }),
         apiKey: options.apiKey,
         baseUrl: options.baseUrl,
+        ...(options.models === undefined ? {} : { models: options.models }),
       },
       execution: {
         requestTimeoutMs: 120_000,
@@ -415,30 +473,49 @@ const parseRawConfig = (input: Record<string, unknown>): RawConfig => {
   throw new Error(`Invalid TOML config:\n${message}`);
 };
 
-const parseProvider = (value: string): KnownProvider => {
+const parseProvider = (
+  value: string,
+  providerConfig: RuntimeProviderConfig,
+): Provider => {
   const providers = new Set<string>(getProviders());
   if (!providers.has(value)) {
+    if (providerConfig.api !== undefined) {
+      return value;
+    }
+
     throw new Error(
-      `Unsupported provider "${value}". Available providers: ${[
+      `Unsupported provider "${value}". Configure provider.${value}.api for custom OpenAI-compatible or Anthropic-compatible providers. Available built-in providers: ${[
         ...providers,
       ].join(", ")}`,
     );
   }
 
-  return value as KnownProvider;
+  return value;
 };
 
-const parseModel = (provider: KnownProvider, value: string): string => {
-  const availableModels = getModels(provider).map((candidate) => candidate.id);
-  if (!availableModels.includes(value)) {
+const parseModel = (
+  provider: Provider,
+  value: string,
+  providerConfig: RuntimeProviderConfig,
+): string => {
+  const availableModels = isKnownProvider(provider)
+    ? getModels(provider).map((candidate) => candidate.id)
+    : [];
+  const configuredModels = providerConfig.models ?? {};
+
+  if (!availableModels.includes(value) && configuredModels[value] === undefined) {
     throw new Error(
-      `Unsupported model "${value}" for provider "${provider}". Known models include: ${availableModels
+      `Unsupported model "${value}" for provider "${provider}". Configure provider.${provider}.models."${value}" for custom models. Known models include: ${availableModels
         .slice(0, 20)
         .join(", ")}`,
     );
   }
 
   return value;
+};
+
+const isKnownProvider = (provider: Provider): provider is KnownProvider => {
+  return (getProviders() as string[]).includes(provider);
 };
 
 const parseExecutionConfig = (
@@ -568,8 +645,8 @@ const parseCompactionConfig = (
 
 const parseProviderConfig = (
   providerTables: RawConfig["provider"],
-  provider: KnownProvider,
-) => {
+  provider: string,
+): RuntimeProviderConfig => {
   const rawProviderConfig = providerTables[provider];
   if (rawProviderConfig === undefined) {
     return {};
@@ -577,7 +654,7 @@ const parseProviderConfig = (
 
   const result = providerConfigSchema.safeParse(rawProviderConfig);
   if (result.success) {
-    return result.data;
+    return providerConfigToRuntime(result.data);
   }
 
   const message = result.error.issues
@@ -590,12 +667,107 @@ const parseProviderConfig = (
   throw new Error(`Invalid TOML config:\n${message}`);
 };
 
-const toRuntimeProviderConfig = (
-  providerConfig: { api_key?: string | undefined; base_url?: string | undefined },
+const providerConfigToRuntime = (
+  providerConfig: z.infer<typeof providerConfigSchema>,
 ): RuntimeProviderConfig => {
   return {
+    ...(providerConfig.api === undefined ? {} : { api: providerConfig.api as Api }),
     apiKey: providerConfig.api_key,
     baseUrl: providerConfig.base_url,
+    ...(providerConfig.headers === undefined ? {} : { headers: providerConfig.headers }),
+    ...(providerConfig.compat === undefined ? {} : { compat: providerConfig.compat }),
+    ...(providerConfig.models === undefined
+      ? {}
+      : { models: normalizeProviderModels(providerConfig.models) }),
+  };
+};
+
+const normalizeProviderModels = (
+  models: Record<string, z.infer<typeof providerModelSchema>>,
+): Record<string, RuntimeModelConfig> => {
+  return Object.fromEntries(
+    Object.entries(models).map(([modelId, model]) => [
+      modelId,
+      normalizeProviderModel(model),
+    ]),
+  );
+};
+
+const normalizeProviderModel = (
+  model: z.infer<typeof providerModelSchema>,
+): RuntimeModelConfig => {
+  return {
+    ...(model.name === undefined ? {} : { name: model.name }),
+    ...(model.api === undefined ? {} : { api: model.api as Api }),
+    ...(readModelBaseUrl(model) === undefined ? {} : { baseUrl: readModelBaseUrl(model) }),
+    ...(model.reasoning === undefined ? {} : { reasoning: model.reasoning }),
+    ...(readModelInput(model) === undefined ? {} : { input: readModelInput(model) }),
+    ...(readModelCost(model) === undefined ? {} : { cost: readModelCost(model) }),
+    ...(readContextWindow(model) === undefined ? {} : { contextWindow: readContextWindow(model) }),
+    ...(readMaxTokens(model) === undefined ? {} : { maxTokens: readMaxTokens(model) }),
+    ...(model.headers === undefined ? {} : { headers: model.headers }),
+    ...(model.compat === undefined ? {} : { compat: model.compat }),
+    ...(readToolCallSupport(model) === undefined ? {} : { toolCall: readToolCallSupport(model) }),
+  };
+};
+
+const readModelBaseUrl = (
+  model: z.infer<typeof providerModelSchema>,
+): string | undefined => model.base_url ?? model.baseUrl;
+
+const readContextWindow = (
+  model: z.infer<typeof providerModelSchema>,
+): number | undefined => model.context_window ?? model.contextWindow ?? model.limit?.context;
+
+const readMaxTokens = (
+  model: z.infer<typeof providerModelSchema>,
+): number | undefined => model.max_tokens ?? model.maxTokens ?? model.limit?.output;
+
+const readToolCallSupport = (
+  model: z.infer<typeof providerModelSchema>,
+): boolean | undefined => model.tool_call ?? model.toolCall;
+
+const readModelInput = (
+  model: z.infer<typeof providerModelSchema>,
+): Array<"text" | "image"> | undefined => {
+  if (model.input !== undefined) {
+    return model.input;
+  }
+
+  const input = model.modalities?.input;
+  if (input !== undefined) {
+    const supportedInput = input.filter(
+      (item): item is "text" | "image" => item === "text" || item === "image",
+    );
+    if (supportedInput.length > 0) {
+      return supportedInput;
+    }
+  }
+
+  if (model.vision !== undefined) {
+    return model.vision ? ["text", "image"] : ["text"];
+  }
+
+  return undefined;
+};
+
+const readModelCost = (
+  model: z.infer<typeof providerModelSchema>,
+): RuntimeModelConfig["cost"] | undefined => {
+  const cost = model.cost;
+  if (cost === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(cost.input === undefined ? {} : { input: cost.input }),
+    ...(cost.output === undefined ? {} : { output: cost.output }),
+    ...((cost.cache_read ?? cost.cacheRead) === undefined
+      ? {}
+      : { cacheRead: cost.cache_read ?? cost.cacheRead }),
+    ...((cost.cache_write ?? cost.cacheWrite) === undefined
+      ? {}
+      : { cacheWrite: cost.cache_write ?? cost.cacheWrite }),
   };
 };
 

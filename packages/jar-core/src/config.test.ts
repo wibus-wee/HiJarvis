@@ -788,3 +788,126 @@ signing_secret = "main-secret"
     await cleanupConfigFile(configPath);
   }
 });
+
+test("loadAgentConfig reads an OpenAI-compatible custom model from provider config", async () => {
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "local-openai"
+model = "llama-3.1-8b"
+system_prompt = "You are a test agent."
+
+[provider.local-openai]
+api = "openai-completions"
+api_key = "local-key"
+base_url = "http://localhost:11434/v1"
+
+[provider.local-openai.models."llama-3.1-8b"]
+name = "Llama 3.1 8B"
+reasoning = false
+tool_call = true
+
+[provider.local-openai.models."llama-3.1-8b".modalities]
+input = ["text", "image", "pdf"]
+
+[provider.local-openai.models."llama-3.1-8b".limit]
+context = 131072
+output = 32768
+
+[provider.local-openai.models."llama-3.1-8b".cost]
+input = 0
+output = 0
+cache_read = 0
+cache_write = 0
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.equal(config.agent.provider, "local-openai");
+    assert.equal(config.agent.model, "llama-3.1-8b");
+    assert.deepEqual(config.agent.providerConfig, {
+      api: "openai-completions",
+      apiKey: "local-key",
+      baseUrl: "http://localhost:11434/v1",
+      models: {
+        "llama-3.1-8b": {
+          name: "Llama 3.1 8B",
+          reasoning: false,
+          input: ["text", "image"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 131072,
+          maxTokens: 32768,
+          toolCall: true,
+        },
+      },
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads an Anthropic-compatible custom model without treating it as OpenAI-compatible", async () => {
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "proxied-anthropic"
+model = "claude-proxy"
+system_prompt = "You are a test agent."
+
+[provider.proxied-anthropic]
+api = "anthropic-messages"
+api_key = "anthropic-key"
+base_url = "https://anthropic-proxy.example.test"
+
+[provider.proxied-anthropic.models.claude-proxy]
+name = "Claude Proxy"
+context_window = 200000
+max_tokens = 8192
+vision = true
+tool_call = true
+reasoning = true
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.equal(config.agent.provider, "proxied-anthropic");
+    assert.equal(config.agent.providerConfig.api, "anthropic-messages");
+    assert.equal(config.agent.providerConfig.baseUrl, "https://anthropic-proxy.example.test");
+    assert.deepEqual(config.agent.providerConfig.models?.["claude-proxy"], {
+      name: "Claude Proxy",
+      reasoning: true,
+      input: ["text", "image"],
+      contextWindow: 200000,
+      maxTokens: 8192,
+      toolCall: true,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig reads model metadata overrides for built-in registry models", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[provider.${provider}.models."${model}"]
+context_window = 64000
+max_tokens = 4096
+vision = false
+tool_call = true
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.deepEqual(config.agent.providerConfig.models?.[model], {
+      input: ["text"],
+      contextWindow: 64000,
+      maxTokens: 4096,
+      toolCall: true,
+    });
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});

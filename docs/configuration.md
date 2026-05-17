@@ -160,10 +160,57 @@ root_dir = ".jar/threads"
 
 - `api_key`: optional provider API key. If omitted, `pi-ai` falls back to provider-specific environment variables.
 - `base_url`: optional endpoint override. Useful for OpenAI-compatible gateways, proxies, and local model servers.
+- `api`: optional `pi-ai` API interface for custom providers or custom models. Common values are `openai-completions`, `openai-responses`, and `anthropic-messages`.
+- `headers`: optional custom HTTP headers forwarded through the resolved model.
+- `compat`: optional `pi-ai` compatibility override object for OpenAI-compatible APIs.
+- `models`: optional model metadata overrides keyed by model id.
 
 `agent.provider` selects which provider sub-table is used at runtime. For example, when `agent.provider = "openai"`, Jar reads only `[provider.openai]`.
 
 Inactive provider tables are allowed. They are ignored until selected by `agent.provider`.
+
+Custom provider names are allowed when the selected provider table declares `api`. Keep the provider name and API interface separate: `provider = "local-openai"` with `api = "openai-completions"` is an OpenAI-compatible endpoint, while `api = "anthropic-messages"` is an Anthropic-compatible endpoint.
+
+Model override tables support both Jar-native keys and `models.dev`-style metadata:
+
+```toml
+[agent]
+provider = "local-openai"
+model = "llama-3.1-8b"
+
+[provider.local-openai]
+api = "openai-completions"
+base_url = "http://localhost:11434/v1"
+api_key = "local-key"
+
+[provider.local-openai.models."llama-3.1-8b"]
+name = "Llama 3.1 8B"
+reasoning = false
+tool_call = true
+
+[provider.local-openai.models."llama-3.1-8b".modalities]
+input = ["text", "image"]
+
+[provider.local-openai.models."llama-3.1-8b".limit]
+context = 131072
+output = 32768
+
+[provider.local-openai.models."llama-3.1-8b".cost]
+input = 0
+output = 0
+cache_read = 0
+cache_write = 0
+```
+
+For a built-in model, the same table overrides registry metadata without changing the provider:
+
+```toml
+[provider.openai.models.gpt-4o-mini]
+context_window = 64000
+max_tokens = 4096
+vision = false
+tool_call = true
+```
 
 The built-in `web_search` tool reads the same active provider selection. Today the OpenAI branch is implemented against the Responses `web_search` tool, while non-OpenAI branches intentionally remain extension seams in `packages/jar-core/src/tools/web-search-tool.ts`.
 
@@ -303,7 +350,7 @@ Plugin 模块期望导出 `createPlugin: PluginFactory` 或 `default: JarPlugin`
 - `apps/jar-cli/src/main.ts` loads the config from `@hijarvis/jar-core` and wires it into the same core package.
 - `packages/jar-plugin-slack/src/runtime.ts` reads `platform.slack`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
 - `packages/jar-plugin-telegram/src/runtime.ts` reads `platform.telegram`, emits summary logs through `config.logging`, and only uses environment variables as overrides.
-- `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model and overrides `model.baseUrl` when `provider.<name>.base_url` is set.
+- `packages/jar-core/src/runtime.ts` resolves the selected `pi-ai` model from the built-in registry plus optional `provider.<name>.models.<model>` overrides, or constructs a custom model when the selected provider declares `api`.
 - `packages/jar-core/src/config.ts` resolves `skills` at startup and passes the catalog/runtime metadata into `packages/jar-core/src/runtime.ts` and `packages/jar-core/src/thread-executor.ts`.
 - `apps/jar-cli/src/main.ts` and `packages/jar-repl-ink/src/repl.tsx` use the same prompt execution policy for timeout, retry, and error classification.
 - `packages/jar-core/src/thread-executor.ts` emits thread/tool summary logs without streaming every token delta.
@@ -332,9 +379,9 @@ Platform-specific tables are validated when the gateway plugin starts:
 Common failure cases:
 
 - unknown top-level table names
-- unsupported `agent.provider`
-- a model id that does not exist for the selected provider
-- invalid provider-specific keys under `provider.<name>`
+- unsupported `agent.provider` without `provider.<name>.api`
+- a model id that does not exist for the selected provider and has no `provider.<name>.models.<model>` config
+- invalid provider-specific values under `provider.<name>`
 - invalid `provider.<name>.base_url`
 - invalid `[skills]` numeric limits
 - non-positive tool limits

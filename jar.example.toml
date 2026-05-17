@@ -44,6 +44,42 @@ api_key = "replace-me"
 # Optional. Useful for OpenAI-compatible gateways, local models, or proxies.
 base_url = "https://api.openai.com/v1"
 
+# Custom OpenAI-compatible provider example. Select it with:
+#   [agent]
+#   provider = "local-openai"
+#   model = "llama-3.1-8b"
+#
+# [provider.local-openai]
+# api = "openai-completions"
+# api_key = "local-key"
+# base_url = "http://localhost:11434/v1"
+#
+# [provider.local-openai.models."llama-3.1-8b"]
+# name = "Llama 3.1 8B"
+# context_window = 131072
+# max_tokens = 32768
+# vision = true
+# tool_call = true
+# reasoning = false
+
+# Custom Anthropic-compatible provider example. Select it with:
+#   [agent]
+#   provider = "proxied-anthropic"
+#   model = "claude-proxy"
+#
+# [provider.proxied-anthropic]
+# api = "anthropic-messages"
+# api_key = "replace-me"
+# base_url = "https://anthropic-proxy.example.test"
+#
+# [provider.proxied-anthropic.models.claude-proxy]
+# name = "Claude Proxy"
+# context_window = 200000
+# max_tokens = 8192
+# vision = true
+# tool_call = true
+# reasoning = true
+
 [platform.slack.identities.slack_main]
 # Required. Bind this real Slack bot identity to one entity.
 entity = "jarvis"

@@ -1,9 +1,9 @@
 import path from "node:path";
 
-import type { KnownProvider } from "@mariozechner/pi-ai";
+import type { Provider } from "@mariozechner/pi-ai";
 
 export type ToolOptions = {
-  provider: KnownProvider;
+  provider: Provider;
   model: string;
   providerBaseUrl?: string;
   providerApiKey?: string;

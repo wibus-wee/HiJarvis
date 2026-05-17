@@ -126,15 +126,26 @@ Platform-specific tables are validated when each gateway plugin starts:
 
 ## Model Resolution
 
-Jar does not construct custom `pi-ai` models from scratch.
+Jar resolves models in two layers:
 
-Instead it:
+1. If `agent.provider` and `agent.model` exist in the `pi-ai` registry, Jar starts from that built-in model.
+2. If `provider.<name>.models.<model>` is configured, Jar applies those metadata overrides. If the provider/model is not in the built-in registry, Jar constructs a custom `pi-ai` `Model` from that table.
 
-1. Uses `getModels(provider)` to fetch the built-in model registry.
-2. Finds the configured model id.
-3. Clones the selected model and overrides `baseUrl` when needed.
+Custom providers must declare the provider API interface explicitly with `provider.<name>.api`. This is intentionally separate from the provider name:
 
-That keeps provider/model metadata aligned with `pi-ai` while still allowing custom gateways and proxies.
+- `api = "openai-completions"` means an OpenAI-compatible Chat Completions interface.
+- `api = "openai-responses"` means the OpenAI Responses interface.
+- `api = "anthropic-messages"` means an Anthropic Messages-compatible interface.
+
+The model table accepts Jar-native snake_case fields such as `context_window`, `max_tokens`, `vision`, and `tool_call`, plus the relevant `models.dev` shapes:
+
+- `limit.context` -> `contextWindow`
+- `limit.output` -> `maxTokens`
+- `modalities.input` containing `"image"` -> vision support
+- `tool_call` -> tool-call support
+- `cost.cache_read` / `cost.cache_write` -> cache pricing metadata
+
+For custom models, `api`, `base_url`, `context_window`, and `max_tokens` must be available through the provider table or model table. If `tool_call = false` and Jar has tools configured, runtime creation fails early instead of sending unsupported tool payloads upstream.
 
 ## Agent Construction
 
