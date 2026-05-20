@@ -7,11 +7,14 @@ import {
   generateThreadRunId,
   generateThreadTurnId,
   type CompactionEvent,
+  type CostTotals,
+  type ExecutionUsageSummary,
   type ThreadItem,
   type ThreadRun,
   type ThreadRunKind,
   type ThreadTurn,
   type ThreadTurnTrigger,
+  type TokenUsageTotals,
 } from "./execution-types.js";
 import {
   getPromptTextInput,
@@ -48,6 +51,7 @@ export type ThreadExecutionTracker = {
     delayMs?: number;
   }) => Promise<void>;
   recordNote: (payload: Record<string, unknown>) => Promise<void>;
+  getUsageSummary: () => ExecutionUsageSummary | null;
   complete: (outputText: string) => Promise<void>;
   fail: (message: string) => Promise<void>;
 };
@@ -92,14 +96,14 @@ export const startThreadExecutionTracker = async (
 
   let settled = false;
 
-  const accumulatedUsage = {
+  const accumulatedUsage: TokenUsageTotals = {
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheWriteTokens: 0,
     totalTokens: 0,
   };
-  const accumulatedCost = {
+  const accumulatedCost: CostTotals = {
     input: 0,
     output: 0,
     cacheRead: 0,
@@ -117,6 +121,17 @@ export const startThreadExecutionTracker = async (
     });
   };
 
+  const getUsageSummary = (): ExecutionUsageSummary | null => {
+    if (usageTurnCount === 0) {
+      return null;
+    }
+    return {
+      usage: { ...accumulatedUsage },
+      cost: { ...accumulatedCost },
+      llmTurnCount: usageTurnCount,
+    };
+  };
+
   const complete = async (outputText: string): Promise<void> => {
     if (settled) {
       return;
@@ -130,15 +145,12 @@ export const startThreadExecutionTracker = async (
       completedAt,
     });
 
-    if (usageTurnCount > 0) {
+    const usageSummary = getUsageSummary();
+    if (usageSummary) {
       await appendItem({
         type: "usage_summary",
         status: "completed",
-        payload: {
-          usage: { ...accumulatedUsage },
-          cost: { ...accumulatedCost },
-          llmTurnCount: usageTurnCount,
-        },
+        payload: usageSummary,
       });
     }
 
@@ -178,6 +190,7 @@ export const startThreadExecutionTracker = async (
     run,
     turnId: turn.turnId,
     runId: run.runId,
+    getUsageSummary,
     recordEvent: async (event) => {
       switch (event.type) {
         case "message_update":

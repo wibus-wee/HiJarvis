@@ -128,19 +128,29 @@ export type UsageRecord = {
   platform: "cli" | "slack" | "telegram";
   model: string;
   provider: string;
-  usage: {
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheWriteTokens: number;
-    totalTokens: number;
-  };
-  cost: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    total: number;
-  };
+  usage: TokenUsageTotals;
+  cost: CostTotals;
   recordedAt: number;
+};
+
+export type TokenUsageTotals = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+};
+
+export type CostTotals = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+};
+
+export type ExecutionUsageSummary = {
+  usage: TokenUsageTotals;
+  cost: CostTotals;
+  llmTurnCount: number;
 };

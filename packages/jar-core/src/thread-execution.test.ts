@@ -7,6 +7,7 @@ import test from "node:test";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, AssistantMessageEvent, Usage } from "@mariozechner/pi-ai";
 
+import type { LoadedRuntimeConfig } from "./config.js";
 import { createFileSystemConversationStateStore, createFileSystemExecutionAuditStore } from "./persistence.js";
 import { startThreadExecutionTracker } from "./thread-execution.js";
 
@@ -20,67 +21,7 @@ test("startThreadExecutionTracker records turn, run, and items", async () => {
         kind: "local_thread",
         threadId: "thread_main",
       },
-    }, {
-      configFilePath: path.join(rootDir, "jar.toml"),
-      logging: { level: "info", stderr: true },
-      agent: {
-        provider: "openai",
-        model: "gpt-4o-mini",
-        systemPrompt: "You are Jarvis.",
-        thinkingLevel: "minimal",
-        providerConfig: {},
-        execution: {
-          requestTimeoutMs: 120_000,
-          retryAttempts: 0,
-          retryInitialDelayMs: 1_000,
-          retryBackoffMultiplier: 2,
-          retryMaxDelayMs: 30_000,
-        },
-        compaction: {
-          enabled: true,
-          triggerRatio: 0.9,
-          budgetRatio: 0.9,
-          summaryMaxTokens: 1024,
-        },
-        systemPromptOverlays: [],
-      },
-      skills: {
-        enabled: false,
-        roots: [],
-        entries: [],
-        catalog: "",
-        errors: [],
-        truncatedByLimit: false,
-        maxScanDepth: 0,
-        maxSkills: 0,
-        maxCatalogChars: 0,
-        maxBodyChars: 0,
-      },
-      toolOptions: {
-        provider: "openai",
-        model: "gpt-4o-mini",
-        workspaceRoot: rootDir,
-        maxFileBytes: 32_768,
-        commandTimeoutMs: 30_000,
-        maxCommandOutputBytes: 32_768,
-        webRequestTimeoutMs: 30_000,
-        maxWebResponseBytes: 65_536,
-      },
-      sessions: { rootDir },
-      memory: {
-        enabled: true,
-        provider: "filesystem",
-        providers: {
-          filesystem: {
-            rootDir: path.join(rootDir, ".jar", "memory"),
-          },
-        },
-      },
-      plugins: [],
-      entities: {},
-      platformIdentities: {},
-      platform: {},
-    });
+    }, createRuntimeConfig(rootDir));
     const auditStore = createFileSystemExecutionAuditStore();
 
     const tracker = await startThreadExecutionTracker({
@@ -199,6 +140,74 @@ test("startThreadExecutionTracker records turn, run, and items", async () => {
   }
 });
 
+test("startThreadExecutionTracker exposes accumulated usage for execution results", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "jar-thread-usage-"));
+  try {
+    const stateStore = createFileSystemConversationStateStore();
+    const session = await stateStore.load({
+      platform: "cli",
+      scope: {
+        kind: "local_thread",
+        threadId: "thread_usage",
+      },
+    }, createRuntimeConfig(rootDir));
+    const auditStore = createFileSystemExecutionAuditStore();
+
+    const tracker = await startThreadExecutionTracker({
+      threadId: session.threadId,
+      auditStore,
+      prompt: "Report usage.",
+      trigger: "user_input",
+    });
+
+    assert.equal(tracker.getUsageSummary(), null);
+
+    await tracker.recordEvent(createMessageEndEvent({
+      role: "assistant",
+      content: [{ type: "text", text: "Done." }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "gpt-4o-mini",
+      usage: usage({
+        input: 11,
+        output: 7,
+        cacheRead: 3,
+        cacheWrite: 2,
+        totalTokens: 23,
+        cost: {
+          input: 0.0011,
+          output: 0.0021,
+          cacheRead: 0.0003,
+          cacheWrite: 0.0002,
+          total: 0.0037,
+        },
+      }),
+      timestamp: Date.now(),
+      stopReason: "stop",
+    }));
+
+    assert.deepEqual(tracker.getUsageSummary(), {
+      usage: {
+        inputTokens: 11,
+        outputTokens: 7,
+        cacheReadTokens: 3,
+        cacheWriteTokens: 2,
+        totalTokens: 23,
+      },
+      cost: {
+        input: 0.0011,
+        output: 0.0021,
+        cacheRead: 0.0003,
+        cacheWrite: 0.0002,
+        total: 0.0037,
+      },
+      llmTurnCount: 1,
+    });
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 const readJsonl = async (filePath: string): Promise<Record<string, any>[]> => {
   const content = await readFile(filePath, "utf8");
   return content
@@ -255,7 +264,7 @@ const createToolExecutionEndEvent = (
 };
 
 const emptyUsage = (): Usage => {
-  return {
+  return usage({
     input: 0,
     output: 0,
     cacheRead: 0,
@@ -268,5 +277,69 @@ const emptyUsage = (): Usage => {
       cacheWrite: 0,
       total: 0,
     },
-  };
+  });
 };
+
+const usage = (input: Usage): Usage => input;
+
+const createRuntimeConfig = (rootDir: string): LoadedRuntimeConfig => ({
+  configFilePath: path.join(rootDir, "jar.toml"),
+  logging: { level: "info" as const, stderr: true },
+  agent: {
+    provider: "openai" as const,
+    model: "gpt-4o-mini",
+    systemPrompt: "You are Jarvis.",
+    thinkingLevel: "minimal" as const,
+    providerConfig: {},
+    execution: {
+      requestTimeoutMs: 120_000,
+      retryAttempts: 0,
+      retryInitialDelayMs: 1_000,
+      retryBackoffMultiplier: 2,
+      retryMaxDelayMs: 30_000,
+    },
+    compaction: {
+      enabled: true,
+      triggerRatio: 0.9,
+      budgetRatio: 0.9,
+      summaryMaxTokens: 1024,
+    },
+    systemPromptOverlays: [],
+  },
+  skills: {
+    enabled: false,
+    roots: [],
+    entries: [],
+    catalog: "",
+    errors: [],
+    truncatedByLimit: false,
+    maxScanDepth: 0,
+    maxSkills: 0,
+    maxCatalogChars: 0,
+    maxBodyChars: 0,
+  },
+  toolOptions: {
+    provider: "openai" as const,
+    model: "gpt-4o-mini",
+    workspaceRoot: rootDir,
+    maxFileBytes: 32_768,
+    commandTimeoutMs: 30_000,
+    maxCommandOutputBytes: 32_768,
+    webRequestTimeoutMs: 30_000,
+    maxWebResponseBytes: 65_536,
+  },
+  sessions: { rootDir },
+  memory: {
+    enabled: true,
+    provider: "filesystem" as const,
+    providers: {
+      filesystem: {
+        rootDir: path.join(rootDir, ".jar", "memory"),
+      },
+    },
+  },
+  plugins: [],
+  entities: {},
+  platformIdentities: {},
+  platform: {},
+});

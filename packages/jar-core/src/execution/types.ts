@@ -15,6 +15,7 @@ import type { MessageIngressCommand } from "../ingress.js";
 import type { SkillsRuntime, SkillPromptInjection } from "../skills.js";
 import type { ThreadExecutionTracker } from "../thread-execution.js";
 import type { PromptSection } from "../prompt-builder.js";
+import type { CostTotals, TokenUsageTotals } from "../execution-types.js";
 
 // ── Result types ──────────────────────────────────────────────
 
@@ -24,6 +25,11 @@ export type MessageIngressResult = {
   threadId: string;
   turnId: string;
   runId: string;
+  model: string;
+  provider: string;
+  usage?: TokenUsageTotals;
+  cost?: CostTotals;
+  llmTurnCount?: number;
 };
 
 export type SideQuestionIngressResult = {

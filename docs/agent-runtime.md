@@ -181,7 +181,7 @@ Prompt assembly is now split into two layers:
 - emits summary logs for prompt/tool boundaries
 - executes the prompt using the retry/timeout policy from `config.agent.execution`
 - invokes registered hooks at each pipeline stage when a `HookRegistry` is provided (see [Hooks](#hooks) below)
-- returns the accumulated assistant text together with `turnId` and `runId` for the caller to post back to the platform
+- returns the accumulated assistant text together with `turnId`, `runId`, `model`, `provider`, and optional usage/cost totals for the caller to post back to the platform or forward into host-owned billing/analytics
 
 `packages/jar-core/src/ingress.ts` owns the normalized command types and `/btw` parsing. CLI `--thread`, the Ink REPL, Slack, and Telegram all route `/btw <question>` through the same ingress path so the answer reads from the current live in-memory parent thread state without appending a normal persisted turn.
 
@@ -213,10 +213,12 @@ In one-shot mode, `apps/jar-cli/src/main.ts` subscribes to the agent event strea
 Jar does not currently render:
 
 - full event traces
-- usage or token stats
+- usage or token stats in the CLI/TUI surfaces
 - tool partial updates
 - structured reasoning blocks
 - persisted transcripts
+
+The execution service still records model usage internally when the upstream assistant `message_end` includes usage. For programmatic callers, `MessageIngressResult` now includes the configured `model` and `provider` on every successful message turn. When at least one assistant LLM turn reports usage, the result also includes `usage`, `cost`, and `llmTurnCount`; callers that own external dashboards or billing can consume this result directly instead of reading Jar's `usage.jsonl`.
 
 Slack and Telegram gateways additionally emit request-level summary logs. These logs intentionally summarize stage boundaries instead of mirroring every streaming delta, which keeps long-running sessions readable at `info` level. When the execution service is used, the core logs also attach `turnId` and `runId` to prompt/tool stage records.
 

@@ -47,11 +47,21 @@ export const executeAndFinalize = async (ctx: SubscribedContext): Promise<Messag
     outputChars: ctx.outputRef.text.trim().length,
   });
 
+  const usageSummary = ctx.tracker.getUsageSummary();
   return {
     kind: "message",
     outputText: ctx.outputRef.text,
     threadId: ctx.conversation.threadId,
     turnId: ctx.tracker.turnId,
     runId: ctx.tracker.runId,
+    model: ctx.config.agent.model,
+    provider: ctx.config.agent.provider,
+    ...(usageSummary === null
+      ? {}
+      : {
+          usage: usageSummary.usage,
+          cost: usageSummary.cost,
+          llmTurnCount: usageSummary.llmTurnCount,
+        }),
   };
 };

@@ -54,6 +54,9 @@ export {
   type ThreadTurnOutput,
   type ThreadTurnStatus,
   type ThreadTurnTrigger,
+  type CostTotals,
+  type ExecutionUsageSummary,
+  type TokenUsageTotals,
   type UsageRecord,
 } from "./execution-types.js";
 
