@@ -213,6 +213,8 @@ export type DefaultRuntimeConfigOptions = {
   thinkingLevel?: ThinkingLevel;
   sessionsRootDir?: string;
   workspaceRoot?: string;
+  /** Extra environment variables injected into every spawned shell subprocess. */
+  extraShellEnv?: Record<string, string>;
 };
 
 export const loadBaseConfig = async (
@@ -440,6 +442,7 @@ export const defaultRuntimeConfig = async (
       webRequestTimeoutMs: 30_000,
       maxWebResponseBytes: 65_536,
       maxConcurrentShells: 10,
+      ...(options.extraShellEnv ? { extraShellEnv: options.extraShellEnv } : {}),
     },
     sessions: {
       rootDir: options.sessionsRootDir ?? path.resolve(cwd, ".jar/sessions"),

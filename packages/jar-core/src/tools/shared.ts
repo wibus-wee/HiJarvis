@@ -14,6 +14,8 @@ export type ToolOptions = {
   webRequestTimeoutMs: number;
   maxWebResponseBytes: number;
   maxConcurrentShells?: number;
+  /** Extra environment variables injected into every spawned shell subprocess. */
+  extraShellEnv?: Record<string, string>;
 };
 
 export const validateToolOptions = (options: ToolOptions): ToolOptions => {

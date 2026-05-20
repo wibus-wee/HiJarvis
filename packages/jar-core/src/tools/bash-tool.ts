@@ -357,6 +357,9 @@ const createShellManager = (options: ToolOptions): ShellManager => {
         reject: false,
         shell: true,
         stripFinalNewline: false,
+        ...(options.extraShellEnv
+          ? { env: { ...process.env, ...options.extraShellEnv } }
+          : {}),
         ...(params.background
           ? {}
           : { timeout: options.commandTimeoutMs }),
