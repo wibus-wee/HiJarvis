@@ -265,7 +265,7 @@ Telegram gateway plugin 默认使用 long polling，而不是 webhook，并且�
 - `stderr`: 是否把摘要日志同时输出到 `stderr`。默认：`true`。当前实现基于 `pino-pretty`，面向本地开发可读性。
 - `file_path`: 可选的日志文件路径。相对路径会以配置文件所在目录为基准。当前实现会写入 `pino` JSONL，适合后续 grep 或脚本分析。
 
-这套日志的设计目标不是替代 `.jar/threads/<threadId>/lanes/main/events.jsonl`，而是提供一层更适合开发和排障的“链路摘要”：
+这套日志的设计目标不是替代可选的 `.jar/threads/<threadId>/lanes/main/events.jsonl` raw trace，而是提供一层默认开启、体积更可控的“链路摘要”：
 
 - `info`：只输出关键阶段边界，例如 Slack 事件接收、队列合并、channel delta 抓取、session 执行开始/结束、reply 发回 Slack。
 - `debug`：在 `info` 基础上补充更多低层事件，例如 message 落盘、被忽略或被去重的 Slack 事件。
@@ -343,7 +343,8 @@ Plugin 模块期望导出 `createPlugin: PluginFactory` 或 `default: JarPlugin`
 
 ### `[sessions]`
 
-- `root_dir`: thread/lane 存储目录。相对路径会以配置文件所在目录为基准。默认：`.jar/threads`。
+- `root_dir`: thread/lane 存储目录。相对路径会以配置文件所在目录为基准。默认：`.jar/sessions`。
+- `record_events`: 是否写入 lane 内的 raw `events.jsonl`。默认：`false`。这个文件会记录底层 agent event，包含 streaming delta，长期开启可能快速膨胀到 GB 级；只建议在显式排查事件流问题时临时开启。
 
 ## Runtime Notes
 

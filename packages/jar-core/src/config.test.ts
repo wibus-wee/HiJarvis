@@ -101,6 +101,7 @@ test("defaultRuntimeConfig applies all defaults", async () => {
     maxConcurrentShells: 10,
   });
   assert.equal(config.sessions.rootDir, path.join(process.cwd(), ".jar", "sessions"));
+  assert.equal(config.sessions.recordEvents, false);
   assert.deepEqual(config.memory, {
     enabled: false,
     provider: "filesystem",
@@ -177,7 +178,45 @@ test("defaultRuntimeConfig uses custom sessionsRootDir and workspaceRoot", async
   });
 
   assert.equal(config.sessions.rootDir, "/tmp/my-sessions");
+  assert.equal(config.sessions.recordEvents, false);
   assert.equal(config.toolOptions.workspaceRoot, "/tmp/my-workspace");
+});
+
+test("loadAgentConfig disables raw event recording by default", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.equal(config.sessions.recordEvents, false);
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
+});
+
+test("loadAgentConfig enables raw event recording only when explicitly configured", async () => {
+  const { provider, model } = pickProviderAndModel();
+  const configPath = await writeConfigFile(`
+[agent]
+provider = "${provider}"
+model = "${model}"
+system_prompt = "You are a test agent."
+
+[sessions]
+record_events = true
+`);
+
+  try {
+    const config = await loadAgentConfig(configPath);
+    assert.equal(config.sessions.recordEvents, true);
+  } finally {
+    await cleanupConfigFile(configPath);
+  }
 });
 
 test("loadAgentConfig applies default prompt execution policy values", async () => {

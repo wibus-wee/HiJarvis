@@ -47,6 +47,7 @@ const createConfig = (memory: Partial<LoadedMemoryConfig> = {}): LoadedRuntimeCo
   },
   sessions: {
     rootDir: "/tmp/.jar/sessions",
+    recordEvents: false,
   },
   memory: {
     enabled: true,

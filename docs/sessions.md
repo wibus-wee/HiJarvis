@@ -22,7 +22,7 @@ Jar 现在使用 tape-backed lane 模型。正常执行路径的主语已经不�
 - `threads/<threadId>/lanes/main/meta.json`: lane 元信息。
 - `threads/<threadId>/lanes/main/tape.jsonl`: append-only tape，作为当前 conversation truth。
 - `threads/<threadId>/lanes/main/head.json`: 派生缓存，只用于加速与调试，不是 source of truth；当前会缓存 `messages` 与 `lastOffset`，避免 append 时为计算下一个 offset 全量重读 `tape.jsonl`。
-- `threads/<threadId>/lanes/main/events.jsonl`: 底层事件流审计。
+- `threads/<threadId>/lanes/main/events.jsonl`: 底层事件流审计，仅当 `[sessions].record_events = true` 时写入。
 - `threads/<threadId>/lanes/main/turns.jsonl`: turn 级结构化记录。
 - `threads/<threadId>/lanes/main/runs.jsonl`: run 级结构化记录。
 - `threads/<threadId>/lanes/main/items.jsonl`: item 级细粒度执行记录。
@@ -38,7 +38,7 @@ Tape 是 append-only 的事实流。正常用户消息、assistant 最终消息�
 - `tape.jsonl` 是 canonical truth。
 - `head.json` 是 derived cache。
 - `turns.jsonl` / `runs.jsonl` / `items.jsonl` 是审计投影。
-- `events.jsonl` 是底层事件审计，不是恢复真相。
+- `events.jsonl` 是底层事件审计，不是恢复真相。默认不写入，避免 streaming delta 长期累积出巨大文件。
 
 这和旧模型不同。旧模型里，`session.json` 与 `messages.jsonl` 共同承担恢复职责；新模型里，恢复应该围绕 tape 和 lane checkpoint 发生。
 

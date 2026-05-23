@@ -69,7 +69,9 @@ export const initStores = async (
     hooks,
     stateStore: createFileSystemConversationStateStore(),
     auditStore: createFileSystemExecutionAuditStore(),
-    eventStore: createFileSystemEventLogStore(),
+    eventStore: createFileSystemEventLogStore({
+      recordEvents: config.sessions.recordEvents,
+    }),
     usageStore: createFileSystemUsageStore(config.sessions.rootDir),
     startTime: Date.now(),
     pluginOverlays,

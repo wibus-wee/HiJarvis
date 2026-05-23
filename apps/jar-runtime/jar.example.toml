@@ -13,6 +13,9 @@ model = "claude-sonnet-4-5"
 
 [sessions]
 root_dir = ".jar/sessions"
+# WARNING: raw event traces include every streaming delta and can grow very large.
+# Enable only when debugging low-level event flow.
+# record_events = true
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 

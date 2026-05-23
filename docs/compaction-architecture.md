@@ -187,7 +187,7 @@ Important files:
 
 - `tape.jsonl` - append-only lane facts and checkpoints
 - `head.json` - optional derived materialized head cache
-- `events.jsonl` - agent events and compaction events
+- `events.jsonl` - optional raw agent events and compaction events when `[sessions].record_events = true`
 - `turns.jsonl`, `runs.jsonl`, `items.jsonl` - higher-level execution tracking
 
 Recovery on the new path materializes the current lane view from tape plus the latest checkpoint. Any head file is derived cache only. The architecture target is that canonical truth lives in tape entries, not in a mutable snapshot file.
@@ -204,7 +204,7 @@ Flow:
 
 During execution:
 
-- every agent event is appended to `events.jsonl`
+- every agent event is offered to the event log store; it appends to `events.jsonl` only when `[sessions].record_events = true`
 - on `message_end`, the final assistant message is appended to the lane tape
 - then `runPostTurnCompaction(...)` may compact the session history using usage-based policy
 
@@ -213,7 +213,7 @@ If `post_turn` compaction happens:
 - `compactHistoryNow(..., "post_turn", ...)` returns compacted messages plus stage telemetry
 - `agent.state.messages` is replaced
 - the lane appends a checkpoint record that carries the new compacted head
-- a compaction event is appended to `events.jsonl`
+- a compaction event is offered to the event log store and written to `events.jsonl` only when `[sessions].record_events = true`
 - a structured compaction item is written into `items.jsonl`
 
 ## Developer Mental Model

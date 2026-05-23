@@ -135,9 +135,9 @@ JARVIS_SLACK_CONTEXT_MESSAGE_LIMIT=12
 
 Slack gateway plugin 现在会输出一层摘要型运行日志，用于回答“这条请求现在跑到哪一步了”。
 
-推荐把这层日志理解成开发排障视图，而不是最终审计真相：
+推荐把这层日志理解成开发排障视图。默认情况下 raw event trace 不会落盘，只有显式配置 `[sessions].record_events = true` 时才会生成：
 
-- 审计真相：`.jar/threads/<threadId>/lanes/main/events.jsonl`
+- raw event trace：`.jar/threads/<threadId>/lanes/main/events.jsonl`
 - 开发视图：`[logging].file_path` 对应的 runtime log
 
 默认 `info` 级会覆盖这些关键阶段：

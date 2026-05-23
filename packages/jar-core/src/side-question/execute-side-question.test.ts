@@ -173,7 +173,7 @@ const createRuntimeConfig = (): LoadedRuntimeConfig => ({
     webRequestTimeoutMs: 30000,
     maxWebResponseBytes: 65536,
   },
-  sessions: { rootDir: "/tmp" },
+  sessions: { rootDir: "/tmp", recordEvents: false },
   memory: {
     enabled: true,
     provider: "filesystem",

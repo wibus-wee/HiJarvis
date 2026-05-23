@@ -367,7 +367,7 @@ Jar 现在正在显式收敛到五层执行对象：
 - `tape.jsonl` 正在成为上下文恢复的主来源
 - `head.json` 如果存在，也只是 derived cache，不是 source of truth
 - `turns.jsonl`、`runs.jsonl`、`items.jsonl` 只承担执行审计与后续扩展职责
-- `events.jsonl` 继续保留原始底层事件流，不被 `items` 取代
+- `events.jsonl` 是可选 raw 底层事件流，仅在 `[sessions].record_events = true` 时写入；默认不被 `items` 取代，但也不默认落盘
 
 If any of these behaviors change, update this document together with `apps/jar-cli/src/main.ts`, `packages/jar-core/src/runtime.ts`, and any affected adapter package.
 

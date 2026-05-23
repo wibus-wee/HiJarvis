@@ -93,6 +93,9 @@ const rawConfigSchema = z.object({
   }).strict().default({}),
   sessions: z.object({
     root_dir: nonEmptyString.optional(),
+    // WARNING: raw event traces capture streaming deltas and can grow very large.
+    // Keep this off unless you explicitly need low-level event debugging.
+    record_events: z.boolean().optional(),
   }).strict().default({}),
   tools: z.object({
     workspace_root: nonEmptyString.optional(),
@@ -172,6 +175,7 @@ export type LoadedBaseConfig = {
   toolOptions: ToolOptions;
   sessions: {
     rootDir: string;
+    recordEvents: boolean;
   };
   memory: LoadedMemoryConfig;
   plugins: Array<{ module: string; config: Record<string, unknown> }>;
@@ -276,6 +280,7 @@ export const loadBaseConfig = async (
     },
     sessions: {
       rootDir: sessionRoot,
+      recordEvents: parsedConfig.sessions.record_events ?? false,
     },
     memory: memoryConfig,
     plugins: pluginsConfig,
@@ -446,6 +451,7 @@ export const defaultRuntimeConfig = async (
     },
     sessions: {
       rootDir: options.sessionsRootDir ?? path.resolve(cwd, ".jar/sessions"),
+      recordEvents: false,
     },
     memory: {
       enabled: false,

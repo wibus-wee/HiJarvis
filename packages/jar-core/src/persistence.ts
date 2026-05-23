@@ -231,7 +231,17 @@ export const createFileSystemExecutionAuditStore = (): ExecutionAuditStore => {
   };
 };
 
-export const createFileSystemEventLogStore = (): EventLogStore => {
+export const createFileSystemEventLogStore = (
+  options: { recordEvents?: boolean } = {},
+): EventLogStore => {
+  if (!options.recordEvents) {
+    // WARNING: raw event traces include every streaming delta and can explode in size.
+    // Keep this disabled unless a caller explicitly opts into deep event inspection.
+    return {
+      appendEvent: async () => {},
+    };
+  }
+
   return {
     appendEvent: async (threadId, event) => {
       const handle = await getHandle(threadId);

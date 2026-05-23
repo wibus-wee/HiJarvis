@@ -41,7 +41,7 @@ const createConfig = (overrides: Partial<LoadedRuntimeConfig["memory"]> = {}): L
     webRequestTimeoutMs: 30_000,
     maxWebResponseBytes: 65_536,
   },
-  sessions: { rootDir: "/tmp/.jar/sessions" },
+  sessions: { rootDir: "/tmp/.jar/sessions", recordEvents: false },
   memory: {
     enabled: true,
     provider: "filesystem",
