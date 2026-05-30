@@ -10,8 +10,8 @@ import {
   loadThreadMessages,
   preparePromptWithSkills,
   type MessageIngressCommand,
-} from "@hijarvis/jar-core";
-import { runRepl } from "@hijarvis/jar-repl-ink";
+} from "@hijarvis/core";
+import { runRepl } from "@hijarvis/repl-ink";
 
 import { renderAgentEvent } from "./render-agent-event.js";
 

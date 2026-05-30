@@ -1,20 +1,35 @@
 {
-  "name": "@hijarvis/jar-plugin-slack",
+  "name": "@hijarvis/plugin-slack",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/plugin.ts"
+  "license": "MIT",
+  "author": "wibus-wee",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wibus-wee/HiJarvis.git",
+    "directory": "packages/jar-plugin-slack"
   },
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/plugin.d.mts",
+      "import": "./dist/plugin.mjs"
+    }
+  },
+  "main": "./dist/plugin.mjs",
+  "types": "./dist/plugin.d.mts",
   "scripts": {
-    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "build": "tsdown",
     "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json"
+    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@hijarvis/jar-core": "workspace:*",
+    "@hijarvis/core": "workspace:*",
     "@slack/bolt": "^4.6.0",
-    "tsx": "^4.21.0",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }

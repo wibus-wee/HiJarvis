@@ -1,4 +1,4 @@
-import { buildTurnPrompt } from "@hijarvis/jar-core";
+import { buildTurnPrompt } from "@hijarvis/core";
 
 const slackMarkdownBlockChunkLimit = 3_000;
 const slackMarkdownTotalLimit = 12_000;

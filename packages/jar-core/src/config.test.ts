@@ -524,7 +524,7 @@ model = "${model}"
 system_prompt = "You are a test agent."
 
 [[plugins]]
-module = "@hijarvis/jar-plugin-slack"
+module = "@hijarvis/plugin-slack"
 
 [[plugins]]
 module = "./plugins/local-plugin.ts"
@@ -533,7 +533,7 @@ module = "./plugins/local-plugin.ts"
   try {
     const config = await loadAgentConfig(configPath);
     assert.deepEqual(config.plugins, [
-      { module: "@hijarvis/jar-plugin-slack", config: {} },
+      { module: "@hijarvis/plugin-slack", config: {} },
       { module: path.join(path.dirname(configPath), "plugins", "local-plugin.ts"), config: {} },
     ]);
   } finally {

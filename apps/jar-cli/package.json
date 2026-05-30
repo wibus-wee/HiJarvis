@@ -1,19 +1,38 @@
 {
-  "name": "@hijarvis/jar-cli",
+  "name": "@hijarvis/cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
+  "license": "MIT",
+  "author": "wibus-wee",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wibus-wee/HiJarvis.git",
+    "directory": "apps/jar-cli"
+  },
+  "files": ["dist"],
+  "bin": {
+    "jar": "./dist/main.mjs"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/main.mjs"
+    }
+  },
+  "main": "./dist/main.mjs",
   "scripts": {
-    "dev": "tsx src/main.ts",
+    "build": "tsdown",
     "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json",
-    "start": "tsx src/main.ts"
+    "dev": "tsx src/main.ts",
+    "start": "tsx src/main.ts",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@hijarvis/jar-core": "workspace:*",
-    "@hijarvis/jar-repl-ink": "workspace:*",
+    "@hijarvis/core": "workspace:*",
+    "@hijarvis/repl-ink": "workspace:*",
     "@mariozechner/pi-agent-core": "^0.65.2",
-    "tsx": "^4.21.0",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }

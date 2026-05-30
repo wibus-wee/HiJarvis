@@ -4,8 +4,8 @@ import type {
   PluginInstallContext,
   PluginInstallResult,
   Logger,
-} from "@hijarvis/jar-core";
-import { createLogger } from "@hijarvis/jar-core";
+} from "@hijarvis/core";
+import { createLogger } from "@hijarvis/core";
 import { startTelegramIdentities, type StopFn } from "./runtime.js";
 
 export const createPlugin: PluginFactory = (_pluginConfig) => {

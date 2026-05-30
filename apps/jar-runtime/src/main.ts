@@ -6,7 +6,7 @@ import {
   createLogger,
   createPluginManager,
   loadRuntimeConfig,
-} from "@hijarvis/jar-core";
+} from "@hijarvis/core";
 
 type CliOptions = {
   configPath: string;
@@ -117,16 +117,16 @@ const parseCliOptions = (argv: string[]): CliOptions => {
 };
 
 const printUsage = (): void => {
-  process.stdout.write(`Usage: pnpm --filter @hijarvis/jar-runtime dev -- --config ./jar.toml
+  process.stdout.write(`Usage: pnpm --filter @hijarvis/runtime dev -- --config ./jar.toml
 
 Gateways are loaded as plugins declared in the [plugins] section of jar.toml.
 
 Example jar.toml:
   [[plugins]]
-  module = "@hijarvis/jar-plugin-slack"
+  module = "@hijarvis/plugin-slack"
 
   [[plugins]]
-  module = "@hijarvis/jar-plugin-telegram"
+  module = "@hijarvis/plugin-telegram"
 
 Options:
   --config, -c <path>   Path to jar.toml config file (default: jar.toml)

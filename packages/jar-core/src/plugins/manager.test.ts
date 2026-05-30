@@ -195,7 +195,7 @@ test("PluginManager resolves workspace package plugin modules by package name", 
     },
     hooks,
     plugins: [
-      { module: "@hijarvis/jar-plugin-slack", config: {} },
+      { module: "@hijarvis/plugin-slack", config: {} },
     ],
   });
 
@@ -205,7 +205,7 @@ test("PluginManager resolves workspace package plugin modules by package name", 
     diagnostics.some(
       (d) => d.phase === "install"
         && d.pluginName === "jar-gateway-slack"
-        && d.modulePath === "@hijarvis/jar-plugin-slack",
+        && d.modulePath === "@hijarvis/plugin-slack",
     ),
   );
 });

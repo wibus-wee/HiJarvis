@@ -15,7 +15,7 @@ import {
   type PluginContribution,
   type ServiceRegistry,
   type HookRegistry,
-} from "@hijarvis/jar-core";
+} from "@hijarvis/core";
 import { z } from "zod";
 
 import {

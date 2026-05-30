@@ -1,15 +1,28 @@
 {
-  "name": "@hijarvis/jar-repl-ink",
+  "name": "@hijarvis/repl-ink",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "types": "./src/index.ts",
-  "exports": {
-    ".": "./src/index.ts"
+  "license": "MIT",
+  "author": "wibus-wee",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wibus-wee/HiJarvis.git",
+    "directory": "packages/jar-repl-ink"
   },
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
   "scripts": {
+    "build": "tsdown",
+    "check": "tsc --noEmit",
     "test": "tsx --test src/*.test.ts src/**/*.test.ts",
-    "check": "tsc --noEmit"
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@inkjs/ui": "^2.0.0",

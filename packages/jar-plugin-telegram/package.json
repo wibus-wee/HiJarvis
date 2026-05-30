@@ -1,23 +1,38 @@
 {
-  "name": "@hijarvis/jar-plugin-telegram",
+  "name": "@hijarvis/plugin-telegram",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "exports": {
-    ".": "./src/plugin.ts"
+  "license": "MIT",
+  "author": "wibus-wee",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wibus-wee/HiJarvis.git",
+    "directory": "packages/jar-plugin-telegram"
   },
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/plugin.d.mts",
+      "import": "./dist/plugin.mjs"
+    }
+  },
+  "main": "./dist/plugin.mjs",
+  "types": "./dist/plugin.d.mts",
   "scripts": {
-    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "build": "tsdown",
     "check": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json"
+    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/runner": "^2.0.3",
     "@grammyjs/stream": "^1.0.1",
-    "@hijarvis/jar-core": "workspace:*",
+    "@hijarvis/core": "workspace:*",
     "grammy": "^1.42.0",
-    "tsx": "^4.21.0",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }

@@ -16,7 +16,7 @@ import {
   type PluginContribution,
   type HookRegistry,
   type ServiceRegistry,
-} from "@hijarvis/jar-core";
+} from "@hijarvis/core";
 import {
   Bot,
   type Context,

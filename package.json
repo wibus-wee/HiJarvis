@@ -7,14 +7,16 @@
     "build": "pnpm -r --if-present build",
     "check": "pnpm -r --if-present check",
     "test": "pnpm -r --if-present test",
-    "dev": "pnpm --filter @hijarvis/jar-cli dev --config ../../jar.toml",
-    "dev:runtime": "pnpm --filter @hijarvis/jar-runtime dev -- --config ../../jar.toml"
+    "release": "pnpm build && pnpm publish -r --access public --no-git-checks",
+    "dev": "pnpm --filter @hijarvis/cli dev --config ../../jar.toml",
+    "dev:runtime": "pnpm --filter @hijarvis/runtime dev -- --config ../../jar.toml"
   },
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "docsify-cli": "^4.4.4",
+    "tsdown": "^0.22.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }
