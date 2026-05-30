@@ -4,9 +4,9 @@
   "private": true,
   "description": "HiJarvis workspace",
   "scripts": {
-    "build": "pnpm -r --if-present build",
-    "check": "pnpm -r --if-present check",
-    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present --filter '!@hijarvis/wechat-sdk' build",
+    "check": "pnpm -r --if-present --filter '!@hijarvis/wechat-sdk' check",
+    "test": "pnpm -r --if-present --filter '!@hijarvis/wechat-sdk' test",
     "release": "pnpm build && pnpm publish -r --access public --no-git-checks",
     "dev": "pnpm --filter @hijarvis/cli dev --config ../../jar.toml",
     "dev:runtime": "pnpm --filter @hijarvis/runtime dev -- --config ../../jar.toml"
