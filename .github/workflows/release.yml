@@ -23,6 +23,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - run: npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
 
@@ -32,5 +36,5 @@ jobs:
       - name: Publish
         run: |
           for pkg in packages/jar-core packages/jar-plugin-slack packages/jar-plugin-telegram packages/jar-repl-ink apps/jar-cli; do
-            npm publish "./$pkg" --access public --provenance
+            npm publish "./$pkg" --access public
           done
