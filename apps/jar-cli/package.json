@@ -23,8 +23,7 @@
     "build": "tsdown",
     "check": "tsc --noEmit",
     "dev": "tsx src/main.ts",
-    "start": "tsx src/main.ts",
-    "prepublishOnly": "pnpm run build"
+    "start": "tsx src/main.ts"
   },
   "dependencies": {
     "@hijarvis/core": "workspace:*",

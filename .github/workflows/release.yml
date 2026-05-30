@@ -31,4 +31,7 @@ jobs:
         run: pnpm build
 
       - name: Publish
-        run: pnpm publish -r --access public --no-git-checks
+        run: |
+          for pkg in packages/jar-core packages/jar-plugin-slack packages/jar-plugin-telegram packages/jar-repl-ink apps/jar-cli; do
+            npm publish "./$pkg" --access public
+          done

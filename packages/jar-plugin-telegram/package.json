@@ -21,8 +21,7 @@
   "scripts": {
     "build": "tsdown",
     "check": "tsc --noEmit",
-    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
-    "prepublishOnly": "pnpm run build"
+    "test": "tsx --test src/*.test.ts src/**/*.test.ts"
   },
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",
